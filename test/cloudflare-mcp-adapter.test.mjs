@@ -165,3 +165,49 @@ test('MCP 2026 tool responses are adapted without granting extra tools', async t
   assert.equal(legacy.body.result.resultType, undefined);
   assert.deepEqual(methods, ['tools/list', 'tools/call', 'tools/list']);
 });
+
+
+test('Codex MCP tools remain hidden until local permission is enabled', async t => {
+  const codexName = 'magpie-codex-bridge_codex_submit_task';
+  const upstream = http.createServer(async (req, res) => {
+    let data = '';
+    for await (const part of req) data += part;
+    const incoming = JSON.parse(data);
+    const result = incoming.method === 'tools/list'
+      ? { tools: [
+          { name: 'magpie-codex-bridge_projects', inputSchema: { type: 'object' } },
+          { name: codexName, inputSchema: { type: 'object' } },
+          { name: 'unrelated_plugin_shell', inputSchema: { type: 'object' } },
+        ] }
+      : { content: [{ type:'text', text:'{"taskId":"test"}' }] };
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({jsonrpc:'2.0', id:incoming.id, result}));
+  });
+  const upstreamPort = await listen(upstream);
+  let enabled = false;
+  const bridge = createBridge({
+    verifyJWT: check, upstream: 'http://127.0.0.1:' + upstreamPort,
+    isCodexEnabled: () => enabled,
+  });
+  const port = await listen(bridge);
+  t.after(async () => { await close(bridge); await close(upstream); });
+  const call = async (method, params) => {
+    const res = await fetch('http://127.0.0.1:' + port + '/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Cf-Access-Jwt-Assertion':makeJWT() },
+      body: JSON.stringify({ jsonrpc:'2.0', id:10, method, params }),
+    });
+    return { code:res.status, json:await res.json() };
+  };
+  let listing = await call('tools/list', {});
+  assert.deepEqual(listing.json.result.tools.map(t=>t.name), ['magpie-codex-bridge_projects']);
+  assert.equal((await call('tools/call', {name:codexName, arguments:{}})).code, 403);
+  enabled = true;
+  listing = await call('tools/list', {});
+  assert.deepEqual(listing.json.result.tools.map(t=>t.name),
+    ['magpie-codex-bridge_projects', codexName]);
+  assert.equal(listing.json.result.tools[1].annotations.readOnlyHint, false);
+  assert.equal(listing.json.result.tools[1].annotations.destructiveHint, true);
+  assert.equal((await call('tools/call', {name:codexName, arguments:{}})).code, 200);
+  assert.equal((await call('tools/call', {name:'unrelated_plugin_shell', arguments:{}})).code, 403);
+});

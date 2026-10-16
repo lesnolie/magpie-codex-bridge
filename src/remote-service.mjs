@@ -37,6 +37,7 @@ export async function writeBootstrapStatus(stage, reason = null, env = process.e
 }
 
 const CONFIG_BASENAME = 'cloudflare-mcp.json';
+const MANAGER_RUNTIME_VERSION = '0.4.1-alpha.1';
 const COPIES = Object.freeze([
   ['../scripts/cloudflare-mcp-adapter.mjs', 'cloudflare-mcp-adapter.mjs'],
   ['../scripts/cloudflare-mcp-manager.mjs', 'cloudflare-mcp-manager.mjs'],
@@ -156,6 +157,40 @@ async function copyStable(source, target) {
   } finally { await unlink(tmp).catch(() => {}); }
   return true;
 }
+/** Local Codex authorization is independent of whether service autostart is enabled. */
+export function shouldEnableCodexRemotePermission(options = {}) {
+  return options.codexEnabled === true;
+}
+
+/**
+ * Replace a stale instance of THIS plugin's managed Windows supervisor.
+ * Strictly match the complete managed script argv token, never processes
+ * using the same TCP port or generic node.exe processes. Fail closed when
+ * Windows cannot inspect processes; never kill another user's service.
+ */
+export function managedManagerReloadScript(manager) {
+  if (!path.win32.isAbsolute(manager) || !manager.toLowerCase().endsWith('\\cloudflare-mcp-manager.mjs')) {
+    throw Error('Reload requires the exact managed supervisor path');
+  }
+  const target = psLiteral(manager);
+  return "$ErrorActionPreference='Stop';" +
+    "$target=" + target + ";" +
+    "$escaped=[regex]::Escape($target);" +
+    "$pattern='(^|\\s)' + '\"?' + $escaped + '\"?' + '(\\s|$)';" +
+    "$matches=@(Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" | " +
+    "Where-Object { $_.CommandLine -and ($_.CommandLine -match $pattern) });" +
+    "if($matches.Count -gt 1){throw 'Multiple managed supervisors; refusing unsafe restart'};" +
+    "if($matches.Count -eq 1){" +
+    "Stop-Process -Id $matches[0].ProcessId -ErrorAction Stop;" +
+    "Start-Sleep -Milliseconds 350;}";
+}
+async function reloadOldManager(manager) {
+  const script = managedManagerReloadScript(manager);
+  await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+    Buffer.from(script, 'utf16le').toString('base64'),
+  ], { windowsHide: true, timeout: 12000, maxBuffer: 64 * 1024 });
+}
+
 export async function reconcileRemoteService(options = {}) {
   if (typeof options.remoteAutoStart !== 'boolean' && typeof options.codexEnabled !== 'boolean') return { state: 'unchanged' };
   if (process.platform !== 'win32') return { state: 'unsupported-platform' };
@@ -163,7 +198,7 @@ export async function reconcileRemoteService(options = {}) {
   // remote calls grant themselves Codex access; local Magpie options are authoritative.
   const grant = remotePaths();
   await mkdir(grant.base, { recursive: true });
-  if (options.remoteAutoStart === true && options.codexEnabled === true) {
+  if (shouldEnableCodexRemotePermission(options)) {
     await writeFile(grant.codexEnabledFile, 'enabled\n');
   } else {
     await unlink(grant.codexEnabledFile).catch(error => { if (error.code !== 'ENOENT') throw error; });
@@ -200,11 +235,24 @@ export async function reconcileRemoteService(options = {}) {
   await writeStartup('set', startupCommand(node, p.manager));
   await writeFile(p.enabledFile, 'enabled\n');
   await cleanupOldTask();
+  // Previously running supervisors keep the OLD adapter module in memory.
+  // Copying files and launching a second manager is insufficient because the
+  // existing process holds the unique named-pipe lock. Stop ONLY our own
+  // supervisor (exact script command line) before launching the upgraded code.
+  const revisionFile = path.join(p.base, 'managed-runtime-version.txt');
+  let priorRevision = '';
+  try { priorRevision = (await readFile(revisionFile, 'utf8')).trim(); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (changed || priorRevision !== MANAGER_RUNTIME_VERSION) {
+    await writeBootstrapStatus('reloading-managed-adapter');
+    await reloadOldManager(p.manager);
+  }
   // Registry Run starts at next Windows sign-in; spawn detached now.
   // The supervisor owns its process singleton, not the Magpie plugin host.
   await writeBootstrapStatus('starting-manager');
   try {
     await launchManager(node, p.manager);
+    await writeFile(path.join(p.base, 'managed-runtime-version.txt'), MANAGER_RUNTIME_VERSION + '\n');
   } catch (error) {
     throw Error('Could not start local background manager: ' + (error.code || error.message));
   }

@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { projectRoots } from './projects.mjs';
+import { gitBaseline, reviewFolder, saveReviewReceipt, readReviewReceipt, reviewInbox, reviewChanges } from './codex-review.mjs';
 
 const MAX_PROMPT = 12000;
 const MAX_OUTPUT = 12000;
@@ -130,6 +131,8 @@ export function createCodexTasks(options = {}, dependencies = {}) {
   // MCP tool discovery. Resolve the executable only after local opt-in and submit.
   const binary = () => dependencies.binary || resolveCodexBinary(options);
   const args = dependencies.args || ['app-server', '--listen', 'stdio://'];
+  // Optional override for tests; real receipts belong to the local user, not the repository.
+  const receiptDir = dependencies.reviewDir === false ? null : dependencies.reviewDir || reviewFolder();
   function allowed(project) {
     if (options.codexEnabled !== true) throw new Error('Codex is disabled in local Magpie settings');
     const p = roots().find(x => x.name === project);
@@ -149,6 +152,7 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       startedAt: task.startedAt, completedAt: task.completedAt || null,
       phase: task.phase || null,
       output: bounded(task.output), error: task.error || null,
+      needsReview: task.state !== 'running',
     };
   }
   function addOutput(job, delta) {
@@ -165,6 +169,10 @@ export function createCodexTasks(options = {}, dependencies = {}) {
     }, RUN_LIMIT_MS);
     try {
       job.phase = 'launch';
+      // Record the initial revision before Codex can touch project files.
+      const baseline = await gitBaseline(projectRoot);
+      job.baselineHead = baseline.head;
+      job.baselineDirty = baseline.dirty;
       const executable = binary();
       const child = launch(executable, args, {
         cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], shell: false,
@@ -234,6 +242,11 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       job.completedAt = new Date().toISOString();
       rpc?.stop();
       job.rpc = null;
+      if (receiptDir) {
+        try { await saveReviewReceipt(receiptDir, job); }
+        catch (err) { console.warn('[magpie-local-review] Review receipt not saved:', err?.code || 'error'); }
+      }
+      job.resolveDone?.();
     }
   }
   return {
@@ -245,6 +258,7 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       const task = { id, project, prompt: prompt.trim(), state: 'running',
         startedAt: new Date().toISOString(), phase: 'queued', output: '', threadId: null,
         turnId: null, error: null, rpc: null, cancelRequested: false };
+      task.done = new Promise(resolve => { task.resolveDone = resolve; });
       jobs.set(id, task);
       if (jobs.size > MAX_JOBS) {
         const old = [...jobs.values()].find(x => x.state !== 'running' && x.id !== id);
@@ -255,6 +269,48 @@ export function createCodexTasks(options = {}, dependencies = {}) {
     },
     status({ project, taskId } = {}) { return JSON.stringify(view(lookup(project, taskId))); },
     result({ project, taskId } = {}) { return JSON.stringify(view(lookup(project, taskId))); },
+    async wait({ project, taskId, waitMs = 12000 } = {}) {
+      allowed(project);
+      const task = jobs.get(taskId);
+      if (!task) {
+        if (!receiptDir) throw Error('Unknown task in this project');
+        const record = await readReviewReceipt(receiptDir, taskId).catch(() => null);
+        if (!record || record.project !== project) throw Error('Unknown task in this project');
+        return JSON.stringify({ ...record, needsReview: true });
+      }
+      if (task.project !== project) throw Error('Unknown task in this project');
+      if (task.state === 'running') {
+        const ms = Math.min(15000, Math.max(0, Number(waitMs) || 12000));
+        await Promise.race([
+          task.done,
+          new Promise(resolve => setTimeout(resolve, ms)),
+        ]);
+      }
+      return JSON.stringify(view(task));
+    },
+    async inbox({ project } = {}) {
+      if (options.codexEnabled !== true) throw Error('Codex is disabled in local Magpie settings');
+      const list = roots();
+      if (project && !list.some(p => p.name === project)) throw Error('Project is not on the local allowlist');
+      const permitted = list.map(x => x.name).filter(name => !project || project === name);
+      const entries = receiptDir ? await reviewInbox(receiptDir, permitted, [...jobs.values()])
+        : await reviewInbox('/definitely/not-an-inbox', permitted, [...jobs.values()]);
+      return JSON.stringify(entries);
+    },
+    async changes({ project, taskId, file } = {}) {
+      const { root } = allowed(project);
+      let task = jobs.get(taskId);
+      if (task && task.project !== project) throw Error('Unknown task in this project');
+      if (!task) {
+        if (!receiptDir) throw Error('Unknown task in this project');
+        task = await readReviewReceipt(receiptDir, taskId).catch(() => null);
+      }
+      if (!task || (task.project || '') !== project) throw Error('Unknown task in this project');
+      if (task.state === 'running') throw Error('Task still running; call codex_wait_task');
+      const report = await reviewChanges(root, task, file);
+      return JSON.stringify({ taskId, project, state: task.state, output: bounded(task.output || ''),
+        error: task.error || null, ...report });
+    },
     async cancel({ project, taskId } = {}) {
       const task = lookup(project, taskId);
       if (task.state !== 'running') return JSON.stringify(view(task));

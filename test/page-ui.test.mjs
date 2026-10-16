@@ -21,7 +21,7 @@ class Element {
 }
 const wait = () => new Promise((r) => setImmediate(r));
 
-function runPage(initial = {}, { modalResult = true, models = null, modelReadError = false } = {}) {
+function runPage(initial = {}, { modalResult = true, models = null, modelReadError = false, snapshot = undefined } = {}) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new Element());
@@ -30,6 +30,7 @@ function runPage(initial = {}, { modalResult = true, models = null, modelReadErr
   let options = structuredClone(initial);
   const saved = [];
   const sandbox = {
+    __magpieLocalModelCatalog: snapshot,
     magpie: {
       ready: Promise.resolve(),
       options: {
@@ -232,6 +233,32 @@ test('picker declares a scoped read-only permission and no direct network reques
   assert.deepEqual(pkg.magpie.permissions,['models:list']);
   assert.match(js,/magpie\.read\('models:list'/);
   assert.doesNotMatch(js,/XMLHttpRequest|fetch\(/);
+});
+
+test('model picker works without Magpie host patch using local gateway catalog snapshot', async () => {
+  const app = runPage({}, { modelReadError: true, snapshot: {
+    source: 'Magpie Gateway', updatedAt: '2026-10-17T00:00:00Z',
+    models: [
+      { id:'deepseek/deepseek-v4', name:'DeepSeek V4', group:'deepseek', threadModel:'deepseek/deepseek-v4', modelProvider:'magpie' },
+      { id:'openai/gpt-sample', name:'GPT Sample', group:'openai', threadModel:'openai/gpt-sample', modelProvider:'magpie' },
+    ],
+  }});
+  await wait();
+  await wait();
+  assert.match(app.element('modelPickerStatus').textContent, /Magpie Gateway.*2 个模型/);
+  app.element('codexModel').value = 'deepseek/deepseek-v4';
+  await app.element('codexModel').fire('change');
+  await app.element('saveCodexConfig').fire('click');
+  assert.equal(app.options.codexModel, 'deepseek/deepseek-v4');
+  assert.equal(app.options.codexModelProvider, 'magpie');
+});
+
+test('sandbox model script is bundled locally and does not need host models:list', () => {
+  const html = readFileSync(new URL('../page/index.html', import.meta.url), 'utf8');
+  const js = readFileSync(new URL('../page/app.js', import.meta.url), 'utf8');
+  assert.match(html, /src="model-catalog\.js" defer/);
+  assert.match(js, /__magpieLocalModelCatalog/);
+  assert.doesNotMatch(js, /\bfetch\s*\(/);
 });
 
 test('remote service switch only writes the local Magpie options and preserves roots', async () => {

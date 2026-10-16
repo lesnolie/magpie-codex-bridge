@@ -112,8 +112,11 @@
     }
   });
   render();
+  updateStatus('已连接 Magpie。请输入完整文件夹路径，然后点击添加项目。');
 })().catch((error) => {
   const s = document.getElementById('status');
-  s.textContent = `项目管理界面初始化失败：${error?.message || error}`;
-  s.classList.add('error');
+  const message = `项目管理界面初始化失败：${error?.message || error}。请检查 Magpie 是否已加载插件通信脚本。`;
+  if (s) { s.textContent = message; s.classList.add('error'); }
+  const fieldStatus = document.getElementById('fieldStatus');
+  if (fieldStatus) { fieldStatus.textContent = message; fieldStatus.hidden = false; fieldStatus.classList.add('error'); }
 });

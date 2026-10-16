@@ -1,5 +1,6 @@
 import { realpath, lstat, readdir, readFile } from 'node:fs/promises';
-import { statSync, realpathSync } from 'node:fs';
+import { statSync, realpathSync, existsSync, readFileSync } from 'node:fs';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
@@ -18,8 +19,25 @@ export function isAllowedEntry(name, isDirectory = false) {
   return SAFE_BASENAMES.has(name) || SAFE_EXT.has(path.extname(name).toLowerCase());
 }
 
+/** The picker writes a separate local-only allowlist; the MCP tool surface cannot edit it. */
+export function projectsConfigPath(config = {}) {
+  const specified = config.configPath || process.env.MAGPIE_REVIEW_CONFIG_PATH;
+  if (specified) return path.resolve(specified);
+  return process.platform === 'win32'
+    ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'magpie-local-review', 'projects.json')
+    : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'magpie-local-review', 'projects.json');
+}
+
 export function projectRoots(config = {}) {
-  const input = config.roots ?? (process.env.MAGPIE_REVIEW_ROOTS || '').split(';').filter(Boolean);
+  const file = projectsConfigPath(config);
+  let input;
+  if (existsSync(file)) {
+    const parsed = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+    if (!parsed || !Array.isArray(parsed.roots)) throw new Error('Invalid project manager configuration: expected roots array');
+    input = parsed.roots;
+  } else {
+    input = config.roots ?? (process.env.MAGPIE_REVIEW_ROOTS || '').split(';').filter(Boolean);
+  }
   if (!Array.isArray(input)) throw new Error('roots must be a list');
   const roots = input.map((entry, i) => {
     const folder = typeof entry === 'string' ? entry : entry?.path;
@@ -81,20 +99,21 @@ async function readSafe(actual, bytes = DEFAULT_MAX_BYTES) {
 }
 
 export function createProjectTools(config = {}) {
-  // Resolve configured project folders once, without exposing a dynamic root-selection tool.
-  const roots = projectRoots(config);
+  // Re-read the local allowlist for every request so the native picker takes effect immediately.
+  // No MCP tool can add/remove roots; only the local user can edit the config file.
+  const roots = () => projectRoots(config);
   const maxBytes = Math.min(DEFAULT_MAX_BYTES, Math.max(1024, Number(config.maxBytes) || DEFAULT_MAX_BYTES));
   return {
-    projects: async () => safeOutput({ projects: roots.map(x => ({ name: x.name, directory: path.basename(x.root) })), readOnly: true }),
+    projects: async () => safeOutput({ projects: roots().map(x => ({ name: x.name, directory: path.basename(x.root) })), readOnly: true }),
     list_files: async ({ project, directory = '.' }) => {
-      const p = get(roots, project);
+      const p = get(roots(), project);
       const { actual } = await locate(p, directory, 'directory');
       const entries = await readdir(actual, { withFileTypes: true });
       const items = entries.filter(e => !e.isSymbolicLink() && (e.isFile() || e.isDirectory()) && isAllowedEntry(e.name, e.isDirectory())).slice(0, MAX_RESULTS).map(e => ({ name: e.name, type: e.isDirectory() ? 'directory' : 'file' }));
       return safeOutput({ project, directory, entries: items, truncated: entries.length > MAX_RESULTS });
     },
     read_file: async ({ project, file, startLine = 1, maxLines = 180 }) => {
-      const p = get(roots, project);
+      const p = get(roots(), project);
       const { actual } = await locate(p, file);
       const txt = await readSafe(actual, maxBytes);
       const lines = txt.split(/\r?\n/);
@@ -105,7 +124,7 @@ export function createProjectTools(config = {}) {
     },
     search_text: async ({ project, query, directory = '.', maxMatches = 30 }) => {
       if (typeof query !== 'string' || !query.trim() || query.length > 200) throw new Error('query must contain 1-200 characters');
-      const p = get(roots, project);
+      const p = get(roots(), project);
       const { actual } = await locate(p, directory, 'directory');
       const matches = [];
       let scanned = 0;
@@ -134,7 +153,7 @@ export function createProjectTools(config = {}) {
       return safeOutput({ project, query, matches, filesScanned: scanned, capped: scanned >= 300 || matches.length >= limit });
     },
     git_status: async ({ project }) => {
-      const p = get(roots, project);
+      const p = get(roots(), project);
       const { stdout } = await execFileAsync('git', ['-c', 'core.fsmonitor=false', 'status', '--short', '--untracked-files=normal'], { cwd: p.root, timeout: 5000, maxBuffer: 250000, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } });
       const records = stdout.split(/\r?\n/).filter(Boolean).filter(line => {
         const f = line.slice(3).replace(/^"|"$/g, '').replace(/\\/g, '/');
@@ -143,7 +162,7 @@ export function createProjectTools(config = {}) {
       return safeOutput({ project, changes: records.slice(0, MAX_RESULTS), truncated: records.length > MAX_RESULTS });
     },
     git_diff: async ({ project, file }) => {
-      const p = get(roots, project);
+      const p = get(roots(), project);
       await locate(p, file);
       const { stdout } = await execFileAsync('git', ['-c', 'core.fsmonitor=false', '-c', 'diff.external=', 'diff', '--no-ext-diff', '--no-textconv', '--', file], { cwd: p.root, timeout: 5000, maxBuffer: 100000, env: { ...process.env, GIT_PAGER: 'cat', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } });
       return safeOutput({ project, file, ...textLimit(stdout) });

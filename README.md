@@ -29,9 +29,21 @@ Local Codex (budget model) ── edits/tests ──> allowed project directory 
 
 No arbitrary shell, code write, git push or Codex session tools. The Magpie tools endpoint exposes **all enabled plugins' tools**, not just this one. Turn off unrelated sensitive tool plugins before granting remote access.
 
-## Configure allowed folders
+## Select folders with a Windows dialog (v0.3.1 alpha)
 
-Do **not** make the root of a drive or your whole home directory available. Add only projects you intend to review. Configure via the Magpie UI (Settings → Plugins → Installed → plugin Options), or edit `~/.config/magpie/plugins.json` in **the Magpie host's own environment**:
+**No editing `plugins.json` is required.** On a native Windows Magpie installation, download/extract this repository (or the standalone configuration-helper ZIP) and double-click `scripts/manage-projects.cmd`. The helper opens a native **Choose folder** dialog with **Add folder**, **Remove selected** and **Done**. You may manage multiple approved projects at any time. Changes take effect on the **next MCP tool call**, without restarting Magpie. The helper runs locally only, does not start a network service, and is not callable through MCP.
+
+The helper stores its small allowlist at `%APPDATA%\magpie-local-review\projects.json`, not inside Magpie's own `plugins.json`. Project names are derived from directory names (Latin letters/numbers; others transliterated to `-` or given a `project` name). This is intentionally separate from Codex's working-folder list. Removing a folder immediately blocks **new** MCP reads but does not retract data already returned in the conversation.
+
+If you previously configured `options.roots`, the local picker file, once created, **takes precedence** over those inline options. Deleting the picker file restores the old inline options. This design keeps older plugin installations working and makes the picker authoritative when used.
+
+**Windows/WSL distinction:** The picker writes the Windows `%APPDATA%` file. If Magpie itself runs inside WSL/Linux, it cannot automatically see that Windows file. Use the original explicit Linux `roots` option (or point `MAGPIE_REVIEW_CONFIG_PATH` in Magpie's environment to a shared, accessible JSON file) until a WSL-specific helper is provided. On macOS/Linux, the original manual options remain available.
+
+**Magpie UI limitation:** Magpie does not expose a supported arbitrary native UI panel/command hook for this OpenCode-style *tool plugin*. The chooser is a small separate local desktop helper, not a new button in Magpie's Plugins screen.
+
+## Configure allowed folders (alternative / non-Windows)
+
+Do **not** make the root of a drive or your whole home directory available. Add only projects you intend to review. If the Windows folder picker cannot be used, edit `~/.config/magpie/plugins.json` in **the Magpie host's own environment**:
 
 ```json
 {
@@ -52,7 +64,7 @@ Do **not** make the root of a drive or your whole home directory available. Add 
 
 Local source install: `magpie plugin add ./magpie-local-review`. Git branch install: `magpie plugin add github:lesnolie/magpie-codex-bridge#feat/local-project-review` (test installation; do not replace your production plugin automatically). Magpie's installed tools list will include six new tools. Run `npm test` to validate the plugin itself.
 
-> Until this branch is merged, treat it as a preview, not a production release. If Magpie already has the same GitHub plugin spec installed at another ref, use a local folder copy for isolated testing.
+> The picker has passed local automated tests but has not yet been exercised on your Windows Magpie installation. Use a test branch until verified.
 
 ## Connect ChatGPT Web
 
@@ -87,4 +99,4 @@ npm run check
 npm test
 ```
 
-Tests are local Node mocks with a temporary Git repository, and **do not** prove that ChatGPT Web or Magpie on your Windows computer can reach the tools. The `main` branch remains unchanged pending acceptance.
+Tests are local Node mocks with a temporary Git repository, and **do not** prove that ChatGPT Web or Magpie on your Windows computer can reach the tools. Mainline publication is subject to real Windows acceptance testing.

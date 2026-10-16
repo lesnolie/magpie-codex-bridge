@@ -14,6 +14,19 @@ const MAX_OUTPUT = 12000;
 const MAX_JOBS = 30;
 const RUN_LIMIT_MS = 15 * 60_000;
 
+// Diagnostics never return raw stderr: provider URLs, credentials or local paths
+// can appear there. Only coarse, pre-defined failure categories are exposed.
+export function classifyCodexStderr(stderr = '') {
+  const s = String(stderr).toLowerCase();
+  if (/unrecognized (subcommand|option)|unexpected argument|unknown (argument|option)/.test(s)) return 'Codex CLI arguments incompatible; verify installed Codex version and app-server support';
+  if (/not logged in|authentication|unauthorized|invalid api key|401 /.test(s)) return 'Codex provider authentication failed; verify local Codex credentials';
+  if (/provider|model|config\.toml/.test(s)) return 'Codex model/provider configuration failed; inspect local config.toml and Codex CLI';
+  if (/permission denied|access is denied|eacces/.test(s)) return 'Codex executable or project access denied by Windows';
+  if (/missing|not found|no such file/.test(s)) return 'Codex executable or dependency missing';
+  return null;
+}
+
+
 function bounded(value, max = MAX_OUTPUT) {
   const text = String(value ?? '');
   return text.length > max ? text.slice(-max) : text;
@@ -26,10 +39,14 @@ class RpcProcess {
     this.nextId = 1;
     this.buffer = '';
     this.closed = false;
+    this.closeReason = null;
+    this.stderrTail = '';
     this.onNotification = onNotification;
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', part => this.consume(part));
-    child.stderr?.on('data', () => {}); // Never expose potentially sensitive stderr.
+    child.stderr?.on('data', part => {
+      this.stderrTail = (this.stderrTail + String(part)).slice(-2048);
+    }); // Never expose potentially sensitive raw stderr.
     child.once('error', err => this.fail(err));
     child.once('exit', (code, signal) => this.fail(new Error('Codex exited (' + (code ?? signal ?? 'unknown') + ')')));
   }
@@ -57,7 +74,7 @@ class RpcProcess {
     }
   }
   send(payload) {
-    if (this.closed || !this.child.stdin.writable) throw new Error('Codex connection closed');
+    if (this.closed || !this.child.stdin.writable) throw new Error(this.closeReason?.message || 'Codex connection closed before sending a request');
     this.child.stdin.write(JSON.stringify(payload) + '\n');
   }
   notify(method, params = {}) { this.send({ jsonrpc: '2.0', method, params }); }
@@ -76,7 +93,9 @@ class RpcProcess {
   fail(err) {
     if (this.closed) return;
     this.closed = true;
-    for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(err); }
+    const category = classifyCodexStderr(this.stderrTail);
+    this.closeReason = category ? new Error(err.message + ': ' + category) : err;
+    for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(this.closeReason); }
     this.pending.clear();
   }
   stop() {
@@ -128,6 +147,7 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       taskId: task.id, project: task.project, state: task.state,
       threadId: task.threadId || null, turnId: task.turnId || null,
       startedAt: task.startedAt, completedAt: task.completedAt || null,
+      phase: task.phase || null,
       output: bounded(task.output), error: task.error || null,
     };
   }
@@ -144,7 +164,9 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       rpc?.stop();
     }, RUN_LIMIT_MS);
     try {
-      const child = launch(binary(), args, {
+      job.phase = 'launch';
+      const executable = binary();
+      const child = launch(executable, args, {
         cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], shell: false,
         windowsHide: true, env: process.env,
       });
@@ -155,12 +177,19 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       });
       job.rpc = rpc;
       // An unexpected child exit must also settle the task, not leave it running.
-      child.once('error', err => { if (job.state !== 'running') return; job.error = bounded(err.message, 500); finish({ status: 'failed' }); });
+      child.once('error', err => {
+        if (job.state !== 'running') return;
+        job.error = err.code === 'ENOENT'
+          ? 'Codex executable not found by Magpie. Configure an absolute native codex.exe path in Codex settings.'
+          : 'Codex startup failed (' + bounded(err.code || err.message, 120) + ')';
+        finish({ status: 'failed' });
+      });
       child.once('exit', (code, signal) => {
         if (job.state !== 'running') return;
         if (!job.error) job.error = 'Codex terminated (' + (code ?? signal ?? 'unknown') + ')';
         finish({ status: 'failed' });
       });
+      job.phase = 'initialize';
       await rpc.request('initialize', {
         clientInfo: { name: 'magpie_codex_bridge', title: 'Magpie Local Agent', version: '0.4.0' },
         capabilities: { experimentalApi: false },
@@ -176,26 +205,32 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       // arguments cannot override provider, credentials, binary or sandbox.
       if (typeof options.codexModel === 'string' && options.codexModel.trim()) config.model = options.codexModel.trim();
       if (typeof options.codexModelProvider === 'string' && options.codexModelProvider.trim()) config.modelProvider = options.codexModelProvider.trim();
+      job.phase = 'thread/start';
       const response = resumeThreadId
         ? await rpc.request('thread/resume', { threadId: resumeThreadId, ...config })
         : await rpc.request('thread/start', config);
       job.threadId = response?.thread?.id;
       if (!job.threadId) throw new Error('Codex did not return a thread ID');
+      job.phase = 'turn/start';
       const started = await rpc.request('turn/start', {
         threadId: job.threadId,
         input: [{ type: 'text', text: job.prompt }],
       });
       job.turnId = started?.turn?.id || null;
+      job.phase = 'running';
       const turn = await completed;
       job.state = turn?.status === 'completed' ? 'completed' : turn?.status === 'interrupted' ? 'cancelled' : 'failed';
       if (job.state === 'completed') lastThreads.set(job.project, job.threadId);
       if (job.state === 'failed' && !job.error) job.error = bounded(turn?.error?.message || 'Codex turn failed', 500);
     } catch (error) {
       job.state = job.cancelRequested ? 'cancelled' : 'failed';
-      job.error = bounded(error?.message || error, 500);
+      const diagnosis = classifyCodexStderr(rpc?.stderrTail);
+      job.error = bounded('Codex failed during ' + (job.phase || 'startup') + ': ' +
+        (diagnosis || job.error || error?.message || error), 500);
     } finally {
       clearTimeout(timeout);
       if (job.cancelRequested) job.state = 'cancelled';
+      if (job.state === 'completed') job.phase = 'completed';
       job.completedAt = new Date().toISOString();
       rpc?.stop();
       job.rpc = null;
@@ -208,7 +243,7 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       if (Array.from(jobs.values()).some(t => t.state === 'running')) throw new Error('A Codex task is already running');
       const id = randomUUID();
       const task = { id, project, prompt: prompt.trim(), state: 'running',
-        startedAt: new Date().toISOString(), output: '', threadId: null,
+        startedAt: new Date().toISOString(), phase: 'queued', output: '', threadId: null,
         turnId: null, error: null, rpc: null, cancelRequested: false };
       jobs.set(id, task);
       if (jobs.size > MAX_JOBS) {

@@ -10,7 +10,7 @@ import { createPublicKey, verify as verifySignature } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const PORT = 48765;
 const MCP_PATH = '/mcp';

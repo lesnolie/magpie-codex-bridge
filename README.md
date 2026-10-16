@@ -1,4 +1,4 @@
-# Magpie Local Project Review (v0.3 alpha)
+# Magpie Local Project Review (v0.3.2 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
@@ -29,27 +29,33 @@ Local Codex (budget model) ── edits/tests ──> allowed project directory 
 
 No arbitrary shell, code write, git push or Codex session tools. The Magpie tools endpoint exposes **all enabled plugins' tools**, not just this one. Turn off unrelated sensitive tool plugins before granting remote access.
 
-## Select folders with a Windows dialog (v0.3.1 alpha)
+## Manage project permissions directly in Magpie (v0.3.2 alpha)
 
-**No editing `plugins.json` is required.** On a native Windows Magpie installation, download/extract this repository (or the standalone configuration-helper ZIP) and double-click `scripts/manage-projects.cmd`. The helper opens a native **Choose folder** dialog with **Add folder**, **Remove selected** and **Done**. You may manage multiple approved projects at any time. Changes take effect on the **next MCP tool call**, without restarting Magpie. The helper runs locally only, does not start a network service, and is not callable through MCP.
+**No second download and no manual JSON editing.** Update this plugin in Magpie and open the new **Project Review** entry in Magpie's sidebar under **Plugins**. Paste the full folder path from Windows Explorer (open the folder, Alt+D then Ctrl+C), then click **添加项目**. Remove permissions from the same page. All changes are stored in the plugin's own Magpie `options` and automatically reload the plugin host.
 
-The helper stores its small allowlist at `%APPDATA%\magpie-local-review\projects.json`, not inside Magpie's own `plugins.json`. Project names are derived from directory names (Latin letters/numbers; others transliterated to `-` or given a `project` name). This is intentionally separate from Codex's working-folder list. Removing a folder immediately blocks **new** MCP reads but does not retract data already returned in the conversation.
+Magpie's [embedded plugin page API](https://usemagpie.ai/docs/plugins#pages-in-the-window) permits reading and saving only this plugin's options, **not obtaining local absolute paths from an OS folder dialog**. Thus the embedded page asks for a folder path rather than pretending to offer a native chooser. Magpie validates project roots when its tools are called; never select a whole drive/home directory.
 
-If you previously configured `options.roots`, the local picker file, once created, **takes precedence** over those inline options. Deleting the picker file restores the old inline options. This design keeps older plugin installations working and makes the picker authoritative when used.
+## Optional legacy native Windows folder picker (v0.3.1)
+
+**No editing `plugins.json` is required.** If you specifically want the native Windows system folder dialog, locate the bundled plugin files in Magpie’s plugin cache and double-click `scripts/manage-projects.cmd`. The helper opens a native **Choose folder** dialog with **Add folder**, **Remove selected** and **Done**. You may manage multiple approved projects at any time. Native helper changes take effect on the **next MCP tool call**, without restarting Magpie; page changes reload the tool host automatically. The helper runs locally only, does not start a network service, and is not callable through MCP.
+
+The optional helper stores its small allowlist at `%APPDATA%\magpie-local-review\projects.json`, not inside Magpie's own `plugins.json`. Project names are derived from directory names (Latin letters/numbers; others transliterated to `-` or given a `project` name). This is intentionally separate from Codex's working-folder list. Removing a folder immediately blocks **new** MCP reads but does not retract data already returned in the conversation.
+
+The local picker file takes precedence over legacy `options.roots`, but **not** over roots explicitly saved from the new Magpie embedded page. Deleting the picker file restores the old inline options. This design keeps older plugin installations working until the embedded page is used.
 
 **Windows/WSL distinction:** The picker writes the Windows `%APPDATA%` file. If Magpie itself runs inside WSL/Linux, it cannot automatically see that Windows file. Use the original explicit Linux `roots` option (or point `MAGPIE_REVIEW_CONFIG_PATH` in Magpie's environment to a shared, accessible JSON file) until a WSL-specific helper is provided. On macOS/Linux, the original manual options remain available.
 
-**Magpie UI limitation:** Magpie does not expose a supported arbitrary native UI panel/command hook for this OpenCode-style *tool plugin*. The chooser is a small separate local desktop helper, not a new button in Magpie's Plugins screen.
+**Magpie UI:** The plugin now registers an embedded page under Plugins. Page-managed roots (once saved) take priority over the legacy Windows chooser file. A native folder picker cannot be invoked directly by this sandboxed page; the Windows helper remains optional.
 
 ## Configure allowed folders (alternative / non-Windows)
 
-Do **not** make the root of a drive or your whole home directory available. Add only projects you intend to review. If the Windows folder picker cannot be used, edit `~/.config/magpie/plugins.json` in **the Magpie host's own environment**:
+Do **not** make the root of a drive or your whole home directory available. Add only projects you intend to review. If Magpie does not yet support embedded plugin pages and the Windows folder picker cannot be used, edit `~/.config/magpie/plugins.json` in **the Magpie host's own environment**:
 
 ```json
 {
   "plugins": [
     {
-      "spec": "github:lesnolie/magpie-codex-bridge#feat/local-project-review",
+      "spec": "github:lesnolie/magpie-codex-bridge",
       "options": {
         "roots": [
           { "name": "TMN", "path": "C:/work/TMN" }
@@ -60,11 +66,11 @@ Do **not** make the root of a drive or your whole home directory available. Add 
 }
 ```
 
-**Merge this entry into your existing plugins list; do not replace the whole file.** If Magpie runs in WSL instead of Windows, use an accessible Linux path (e.g. `/mnt/c/work/TMN`), not a Windows drive path. The plugin must run on a machine/environment that can read the desired project. Paths are resolved at plugin load; a changed options setting requires restarting/reloading the tool plugin host.
+**Merge this entry into your existing plugins list; do not replace the whole file.** If Magpie runs in WSL instead of Windows, use an accessible Linux path (e.g. `/mnt/c/work/TMN`), not a Windows drive path. The plugin must run on a machine/environment that can read the desired project. Settings changed from the embedded page trigger Magpie to reload the plugin host; the separate Windows picker updates on the next call.
 
-Local source install: `magpie plugin add ./magpie-local-review`. Git branch install: `magpie plugin add github:lesnolie/magpie-codex-bridge#feat/local-project-review` (test installation; do not replace your production plugin automatically). Magpie's installed tools list will include six new tools. Run `npm test` to validate the plugin itself.
+Existing users: click **Update** in Magpie after the new version is merged to `main`. The Magpie sidebar shows a new **Project Review** page when Magpie supports community plugin pages. The plugin's MCP tool list remains the same six read-only tools.
 
-> The picker has passed local automated tests but has not yet been exercised on your Windows Magpie installation. Use a test branch until verified.
+> The embedded page is tested with local mocks but has not yet been tested in the installed Windows Magpie application. If no page appears after updating the plugin, verify the Magpie application itself supports the community `magpie.page` API.
 
 ## Connect ChatGPT Web
 

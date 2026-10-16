@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createProjectTools } from '../src/projects.mjs';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import { MagpieProjectReview } from '../index.mjs';
 
 const base = mkdtempSync(path.join(tmpdir(), 'review-'));
@@ -95,3 +97,31 @@ test('old inline options remain compatible before the picker is used', async () 
 });
 
 test.after(()=>rmSync(base,{recursive:true,force:true}));
+
+
+test('embedded Magpie page overrides a previously authorized Windows picker, including revoke all', async () => {
+  const cfg = path.join(base, 'embedded-override.json');
+  writeFileSync(cfg, JSON.stringify({ roots: [{ name: 'FromPicker', path: root }] }));
+  const page = createProjectTools({ configPath: cfg, rootsSource: 'magpie-page', roots: [{ name: 'FromPage', path: root }] });
+  assert.equal(JSON.parse(await page.projects()).projects[0].name, 'FromPage');
+  await assert.rejects(page.read_file({ project: 'FromPicker', file: 'src/app.lua' }), /Unknown project/);
+  const cleared = createProjectTools({ configPath: cfg, rootsSource: 'magpie-page', roots: [] });
+  assert.deepEqual(JSON.parse(await cleared.projects()).projects, []);
+  await assert.rejects(cleared.read_file({ project: 'FromPicker', file: 'src/app.lua' }), /Unknown project/);
+});
+
+test('embedded UI is bundled with the Magpie page bridge and options-only permissions', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const root = path.resolve(here, '..');
+  const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+  assert.equal(pkg.magpie.page.file, 'page/index.html');
+  assert.equal(pkg.magpie.permissions, undefined);
+  const html = readFileSync(path.join(root, 'page/index.html'), 'utf8');
+  assert.match(html, /_magpie\/bridge\.js/);
+  assert.match(html, /app\.js/);
+  const js = readFileSync(path.join(root, 'page/app.js'), 'utf8');
+  assert.match(js, /magpie\.options\.get/);
+  assert.match(js, /magpie\.options\.set/);
+  assert.doesNotMatch(js, /fetch\(|XMLHttpRequest|shell|execFile\(/);
+  assert.ok(existsSync(path.join(root, 'scripts/manage-projects.cmd')));
+});

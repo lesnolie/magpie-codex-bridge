@@ -34,18 +34,30 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     codex_submit_task: { description: 'Submit a task to local Codex for a project from the selected local project source. Only Codex may modify files, and only if separately enabled in Magpie.', args: { project: arg('Allowed project name'), prompt: arg('Task instruction'), continueThread: { type: 'boolean', description: 'Continue the last successful Codex thread for this project, default false' } }, execute: wrap(codex.submit) },
     codex_task_status: { description: 'Read state and progress of a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.status) },
     codex_task_result: { description: 'Read local Codex output and completion status for a task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.result) },
+    codex_wait_task: { description: 'Wait up to 15 seconds for a local Codex task to finish; return its result so ChatGPT can immediately review it in this active conversation. Cannot initiate a new chat or send unsolicited notifications.', args: { project: arg('Approved project name'), taskId: arg('Task ID'), waitMs: { type: 'integer', minimum: 0, maximum: 15000, description: 'Maximum wait in milliseconds (up to 15000)' } }, execute: wrap(codex.wait) },
+    codex_review_inbox: { description: 'List local completed Codex tasks awaiting ChatGPT review, including tasks from an earlier chat or plugin reload. Local receipt files are not project modifications.', args: { project: { type: 'string', description: 'Optional approved project name' } }, execute: wrap(codex.inbox) },
+    codex_review_changes: { description: 'Read Codex task completion output and a bounded, filtered Git diff from its submission baseline for ChatGPT code review. Source files only, no execution or edits.', args: { project: arg('Approved project name'), taskId: arg('Task ID'), file: { type: 'string', description: 'Optional project-relative changed source file for focused review' } }, execute: wrap(codex.changes) },
+    codex_ack_review: { description: 'After ChatGPT has ACTUALLY reviewed a completed Codex task, record approved / changes_requested / no_changes verdict in the local review receipt. Does not edit source code or notify a chat.', args: { project: arg('Approved project'), taskId: arg('Completed task ID'), decision: { type: 'string', enum: ['approved', 'changes_requested', 'no_changes'] }, summary: arg('Brief evidence-based review conclusion, 1-1500 characters') }, execute: wrap(codex.acknowledge) },
     codex_cancel_task: { description: 'Cancel a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.cancel) },
   };
   const projectsWithStatus = async () => {
     const data = JSON.parse(await tools.projects());
     const configured = options.codexEnabled === true;
     const remoteOn = options.remoteAutoStart === true;
+    // On a fresh ChatGPT conversation, projects() also signals whether
+    // older Codex tasks await review, without returning their code/output.
+    let pendingReviewCount = null;
+    if (configured) {
+      try { pendingReviewCount = JSON.parse(await codex.inbox({})).total; }
+      catch { /* Project source may be temporarily unavailable. */ }
+    }
     return JSON.stringify({
       ...data,
       codex: {
-        integrationVersion: '0.4.4-alpha.1',
+        integrationVersion: '0.4.5-alpha.1',
         toolsRegistered: true,
-        toolCount: 10,
+        toolCount: 14,
+        pendingReviewCount,
         localEnabled: configured,
         allowWrites: configured && options.codexAllowWrites === true,
         remoteAutoStart: remoteOn,
@@ -56,7 +68,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   return {
     tool: {
       ...codexTools,
-      projects: { description: 'List projects from the configured local project source and Codex diagnostics; never modify files.', args: {}, execute: wrap(projectsWithStatus) },
+      projects: { description: 'List projects from the configured local source and report pending Codex reviews. When pendingReviewCount is positive call codex_review_inbox and codex_review_changes to audit; never modify project files.', args: {}, execute: wrap(projectsWithStatus) },
       list_files: { description: 'List non-secret files within an allowed project directory. Paths are project-relative.', args: { project: arg('Project name'), directory: arg('Relative directory, default .') }, execute: wrap(tools.list_files) },
       read_file: { description: 'Read a limited range of an allowed source code or text file; no secrets, symlinks or files outside project roots.', args: { project: arg('Project name'), file: arg('Relative source path'), startLine: { type: 'integer', minimum: 1 }, maxLines: { type: 'integer', minimum: 1, maximum: 200 } }, execute: wrap(tools.read_file) },
       search_text: { description: 'Search exact text within allowed source files, bounded to 300 files and 50 matches.', args: { project: arg('Project name'), query: arg('Literal search text'), directory: arg('Relative directory, default .'), maxMatches: { type: 'integer', minimum: 1, maximum: 50 } }, execute: wrap(tools.search_text) },

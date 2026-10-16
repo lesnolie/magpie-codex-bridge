@@ -56,7 +56,8 @@ test('cannot configure filesystem root', async () => {
 test('Magpie registers stable Codex tool schemas without enabling execution', async () => {
   const p = await MagpieProjectReview({}, {roots:[{name:'TMN',path:root}], codexExecutable:'invalid-program'});
   assert.deepEqual(Object.keys(p.tool).sort(), [
-    'codex_cancel_task','codex_submit_task','codex_task_result','codex_task_status',
+    'codex_ack_review','codex_cancel_task','codex_review_changes','codex_review_inbox','codex_submit_task',
+    'codex_task_result','codex_task_status','codex_wait_task',
     'git_diff','git_status','list_files','projects','read_file','search_text',
   ]);
   const response = JSON.parse(await p.tool.codex_submit_task.execute({project:'TMN',prompt:'read only'}));
@@ -64,9 +65,9 @@ test('Magpie registers stable Codex tool schemas without enabling execution', as
   assert.match(response.error, /Codex is disabled/);
   const projects = JSON.parse(await p.tool.projects.execute({}));
   assert.equal(projects.projects[0].name, 'TMN');
-  assert.equal(projects.codex.integrationVersion, '0.4.4-alpha.1');
+  assert.equal(projects.codex.integrationVersion, '0.4.5-alpha.1');
   assert.equal(projects.codex.toolsRegistered, true);
-  assert.equal(projects.codex.toolCount, 10);
+  assert.equal(projects.codex.toolCount, 14);
   assert.equal(projects.codex.localEnabled, false);
   assert.equal(projects.codex.allowWrites, false);
   assert.equal(projects.codex.remoteAutoStart, false);

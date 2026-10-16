@@ -15,7 +15,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 const PORT = 48765;
 const MCP_PATH = '/mcp';
 const MODERN_MCP_VERSION = '2026-07-28';
-const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.4.1-alpha.1' });
+const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.4.5-alpha.1' });
 const SERVER_META = Object.freeze({ 'io.modelcontextprotocol/serverInfo': SERVER_INFO });
 const UPSTREAM = 'http://127.0.0.1:3425/mcp/magpie/tools';
 const TOOL_NAMES = Object.freeze([
@@ -30,6 +30,10 @@ const CODEX_NAMES = Object.freeze([
   'magpie-codex-bridge_codex_submit_task',
   'magpie-codex-bridge_codex_task_status',
   'magpie-codex-bridge_codex_task_result',
+  'magpie-codex-bridge_codex_wait_task',
+  'magpie-codex-bridge_codex_review_inbox',
+  'magpie-codex-bridge_codex_review_changes',
+  'magpie-codex-bridge_codex_ack_review',
   'magpie-codex-bridge_codex_cancel_task',
 ]);
 const READ_ONLY = new Set(TOOL_NAMES);
@@ -113,7 +117,7 @@ function discoveryResult(id) {
       supportedVersions: [MODERN_MCP_VERSION],
       capabilities: { tools: {} },
       _meta: SERVER_META,
-      instructions: 'Six read-only review tools are always available. Four local Codex task tools are exposed only with local permission. Codex execution remains subject to local Magpie approval and client workspace policy.',
+      instructions: 'Six read-only review tools are always available. Eight Codex task and review tools are exposed only with local permission. Completion can be polled by ChatGPT while its turn is active; the server cannot initiate a new ChatGPT turn. Codex execution remains subject to local Magpie approval and client workspace policy.',
       ttlMs: 0,
       cacheScope: 'private',
     },
@@ -146,12 +150,14 @@ function inspectMessage(m, allowed) {
   return allowed.has(m.params.name);
 }
 function filteredReply(reply, allowed) {
+  const codexReadNames = ['_codex_task_status', '_codex_task_result', '_codex_wait_task', '_codex_review_inbox', '_codex_review_changes'];
+  const codexRead = name => codexReadNames.some(suffix => name.endsWith(suffix));
   const filter = m => {
     if (m && m.result && Array.isArray(m.result.tools)) {
       m.result.tools = m.result.tools.filter(t => t && allowed.has(t.name)).map(t => ({
         ...t,
         annotations: { ...t.annotations,
-          readOnlyHint: READ_ONLY.has(t.name) || t.name.endsWith('_codex_task_status') || t.name.endsWith('_codex_task_result'),
+          readOnlyHint: READ_ONLY.has(t.name) || codexRead(t.name),
           destructiveHint: t.name.endsWith('_codex_submit_task') || t.name.endsWith('_codex_cancel_task'),
           openWorldHint: false,
           idempotentHint: READ_ONLY.has(t.name) || t.name.endsWith('_codex_task_status') || t.name.endsWith('_codex_task_result'),

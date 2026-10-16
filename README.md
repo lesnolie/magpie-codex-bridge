@@ -1,8 +1,44 @@
-# Magpie Local Project Review (v0.4.4 alpha)
+# Magpie Local Project Review (v0.4.5 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.5 alpha: Codex completion handoff and ChatGPT review
+
+The plugin now supports a **review handoff** without giving ChatGPT project
+write access. Once Codex has been asked to work, ChatGPT can call
+`codex_wait_task` (up to 15 seconds per call) to receive completion **while
+the same assistant turn is active**, then call `codex_review_changes` to
+inspect the task output and a bounded Git diff against the commit recorded
+when the task started. Diff paths use the same source-code/secret filters
+as the six existing read-only file tools. Newly untracked files are listed,
+not dumped, and can be examined using the existing secure file tools.
+
+Every terminal task also writes a bounded review receipt under the local
+current-user profile, outside the repository. A fresh Magpie plugin process
+can read receipts through `codex_review_inbox` and
+`codex_review_changes`; `projects` reports `pendingReviewCount`.
+After **actually** reviewing, ChatGPT may call `codex_ack_review` with
+the verdict (`approved`, `changes_requested`, or `no_changes`) and a
+brief explanation. Acknowledgement only updates the local receipt and does
+not write any project files.
+
+**Important limitation:** An MCP server cannot independently wake ChatGPT,
+send a new conversation message, or guarantee a turn stays active until
+arbitrarily long Codex tasks complete. Long polling is available only while
+the user has an active ChatGPT turn. After the turn ends, the task is
+available for review when ChatGPT is used again. There is no silent
+background review or unsolicited ChatGPT notification.
+
+**Recommended workflow:** submit → wait repeatedly as appropriate →
+review_changes → read_file / git_diff and tests → written review verdict →
+ack_review. A review verdict is not proof the code was correct: inspect
+actual evidence before approving. If Git was dirty at submission, review
+diffs may include unrelated changes; the tool labels attribution as
+uncertain. If the initial Git baseline is unavailable, it refuses to invent
+one. The new review tools follow the same project allowlist and Codex local
+permission switch as the task tools.
 
 ## v0.4.4 alpha: Select Magpie provider models without patching Magpie
 

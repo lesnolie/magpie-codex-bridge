@@ -44,12 +44,20 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     const data = JSON.parse(await tools.projects());
     const configured = options.codexEnabled === true;
     const remoteOn = options.remoteAutoStart === true;
+    // On a fresh ChatGPT conversation, projects() also signals whether
+    // older Codex tasks await review, without returning their code/output.
+    let pendingReviewCount = null;
+    if (configured) {
+      try { pendingReviewCount = JSON.parse(await codex.inbox({})).total; }
+      catch { /* Project source may be temporarily unavailable. */ }
+    }
     return JSON.stringify({
       ...data,
       codex: {
         integrationVersion: '0.4.5-alpha.1',
         toolsRegistered: true,
         toolCount: 14,
+        pendingReviewCount,
         localEnabled: configured,
         allowWrites: configured && options.codexAllowWrites === true,
         remoteAutoStart: remoteOn,
@@ -60,7 +68,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   return {
     tool: {
       ...codexTools,
-      projects: { description: 'List projects from the configured local project source and Codex diagnostics; never modify files.', args: {}, execute: wrap(projectsWithStatus) },
+      projects: { description: 'List projects from the configured local source and report pending Codex reviews. When pendingReviewCount is positive call codex_review_inbox and codex_review_changes to audit; never modify project files.', args: {}, execute: wrap(projectsWithStatus) },
       list_files: { description: 'List non-secret files within an allowed project directory. Paths are project-relative.', args: { project: arg('Project name'), directory: arg('Relative directory, default .') }, execute: wrap(tools.list_files) },
       read_file: { description: 'Read a limited range of an allowed source code or text file; no secrets, symlinks or files outside project roots.', args: { project: arg('Project name'), file: arg('Relative source path'), startLine: { type: 'integer', minimum: 1 }, maxLines: { type: 'integer', minimum: 1, maximum: 200 } }, execute: wrap(tools.read_file) },
       search_text: { description: 'Search exact text within allowed source files, bounded to 300 files and 50 matches.', args: { project: arg('Project name'), query: arg('Literal search text'), directory: arg('Relative directory, default .'), maxMatches: { type: 'integer', minimum: 1, maximum: 50 } }, execute: wrap(tools.search_text) },

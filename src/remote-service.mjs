@@ -2,20 +2,23 @@
  * Windows-only remote MCP lifecycle. Only enabled by a local Magpie page option.
  * This module does not expose any runtime control over the remote MCP tools.
  *
- * The Magpie page can only call options.set: when the plugin host is next loaded,
- * this hook registers one least-privilege Windows logon task. That task runs a
- * stable, self-contained supervisor outside Magpie's replaceable plugin cache.
+ * The Magpie page can only call options.set. The plugin writes an opt-in HKCU
+ * Windows logon autostart value (no administrator rights or task scheduler),
+ * then starts a supervisor from LocalAppData. The manager runs independently
+ * of Magpie's lazily loaded Bun plugin host.
  */
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFile, mkdir, writeFile, rename, unlink, stat } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
+import { readFile, mkdir, writeFile, rename, unlink } from 'node:fs/promises';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execute = promisify(execFile);
-export const TASK_NAME = 'Magpie Local Review MCP (Managed)';
-const MAX_DIAGNOSTIC_LENGTH = 240;
+export const STARTUP_NAME = 'Magpie Local Review MCP';
+export const STARTUP_KEY = 'Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+export const MANAGED_TASK_NAME = 'Magpie Local Review MCP (Managed)';
+const MAX_DIAGNOSTIC_LENGTH = 800;
 const BOOTSTRAP_FILENAME = 'service-bootstrap.json';
 export async function writeBootstrapStatus(stage, reason = null, env = process.env) {
   // Setup status is local-only and contains neither JWTs nor Cloudflare
@@ -45,7 +48,8 @@ export function remotePaths(env = process.env) {
   const base = path.join(local, 'MagpieLocalReview');
   return { base, config: path.join(roaming, 'magpie-local-review', CONFIG_BASENAME),
     adapter: path.join(base, 'cloudflare-mcp-adapter.mjs'),
-    manager: path.join(base, 'cloudflare-mcp-manager.mjs') };
+    manager: path.join(base, 'cloudflare-mcp-manager.mjs'),
+    enabledFile: path.join(base, 'service-enabled.flag') };
 }
 export function validAccessConfig(content) {
   let parsed;
@@ -54,14 +58,65 @@ export function validAccessConfig(content) {
   return /^[a-z0-9-]+\.cloudflareaccess\.com$/.test(team) &&
     typeof parsed?.audience === 'string' && /^[a-zA-Z0-9_-]{6,256}$/.test(parsed.audience);
 }
-export function taskCreateArguments(node, manager) {
-  if (!path.win32.isAbsolute(node) || !path.win32.isAbsolute(manager)) throw Error('Absolute Windows Node and manager paths are required');
-  // Arguments are supplied to schtasks.exe directly without a shell; quote
-  // each path inside the task action (spaces in user profiles are common).
-  if (node.includes('"') || manager.includes('"')) throw Error('Unsafe task action path');
-  return ['/create', '/tn', TASK_NAME, '/tr', '"' + node + '" "' + manager + '"',
-    '/sc', 'onlogon', '/it', '/rl', 'LIMITED', '/f'];
+/** Quote a command with fully qualified paths for HKCU Run, no shell involved. */
+export function startupCommand(node, manager) {
+  if (!path.win32.isAbsolute(node) || !path.win32.isAbsolute(manager)) {
+    throw Error('Absolute Windows Node and manager paths are required');
+  }
+  if ([node, manager].some(v => /["\r\n]/.test(v))) throw Error('Unsafe startup path');
+  return '"' + node + '" "' + manager + '"';
 }
+export function psLiteral(value) {
+  return "'" + String(value).replace(/'/g, "''") + "'";
+}
+export function startupRegistryScript(action, command) {
+  if (!['set', 'delete'].includes(action)) throw Error('Invalid autostart action');
+  const opening = "$ErrorActionPreference='Stop';" +
+    "$key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(" +
+    psLiteral(STARTUP_KEY) + ");if($null -eq $key){throw 'HKCU Run key unavailable'};" +
+    "try{";
+  const closing = "}finally{$key.Dispose()}";
+  if (action === 'delete') {
+    return opening + "$key.DeleteValue(" + psLiteral(STARTUP_NAME) + ",$false);" + closing;
+  }
+  return opening + "$key.SetValue(" + psLiteral(STARTUP_NAME) + "," + psLiteral(command) +
+    ",[Microsoft.Win32.RegistryValueKind]::String);" +
+    "if($key.GetValue(" + psLiteral(STARTUP_NAME) + ") -cne " +
+    psLiteral(command) + "){throw 'HKCU Run value verification failed'};" + closing;
+}
+async function writeStartup(action, command = '') {
+  // Base64 UTF-16LE avoids cmd.exe, argv quoting and schtasks /tr parsing.
+  // .NET Registry.CurrentUser writes only our own HKCU Run value.
+  const script = startupRegistryScript(action, command);
+  try {
+    await execute('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-EncodedCommand',
+      Buffer.from(script, 'utf16le').toString('base64'),
+    ], { timeout: 12000, windowsHide: true, maxBuffer: 64 * 1024 });
+  } catch (error) {
+    const detail = String(error.stderr || error.stdout || error.message || error.code || 'unknown')
+      .replace(/\s+/g, ' ').trim().slice(0, 500);
+    throw Error('Current-user Windows startup registration failed: ' + detail);
+  }
+}
+async function launchManager(node, manager) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(node, [manager], {
+      cwd: path.dirname(manager), detached: true,
+      stdio: 'ignore', windowsHide: true, shell: false,
+    });
+    child.once('error', reject);
+    child.once('spawn', () => { child.unref(); resolve(); });
+  });
+}
+/** Remove only the predecessor plugin-managed Task Scheduler entry, if any. */
+async function cleanupOldTask() {
+  try {
+    await execute('schtasks.exe', ['/delete', '/tn', MANAGED_TASK_NAME, '/f'],
+      { windowsHide: true, timeout: 4500 });
+  } catch { /* No old task or task cleanup denied: never touch other tasks. */ }
+}
+
 async function nodeBinary(env = process.env) {
   const candidate = [];
   if (env.MAGPIE_REVIEW_NODE_PATH) candidate.push(env.MAGPIE_REVIEW_NODE_PATH);
@@ -100,31 +155,25 @@ async function copyStable(source, target) {
   } finally { await unlink(tmp).catch(() => {}); }
   return true;
 }
-async function taskPresent() {
-  try { await execute('schtasks.exe', ['/query', '/tn', TASK_NAME], { windowsHide: true, timeout: 7000 }); return true; }
-  catch { return false; }
-}
-async function runTask(args, allowMissing = false) {
-  try { await execute('schtasks.exe', args, { windowsHide: true, timeout: 12000, maxBuffer: 128 * 1024 }); }
-  catch (err) { if (!allowMissing) throw Error('Windows Task Scheduler: ' + (err.message || 'failed')); }
-}
 export async function reconcileRemoteService(options = {}) {
   if (typeof options.remoteAutoStart !== 'boolean') return { state: 'unchanged' };
-  if (process.platform !== 'win32') {
-    await writeBootstrapStatus('unsupported-platform', 'Windows is required');
-    return { state: 'unsupported-platform' };
-  }
+  if (process.platform !== 'win32') return { state: 'unsupported-platform' };
   await writeBootstrapStatus('initializing');
-  // A web request can NEVER toggle this: only local Magpie options.set does.
+  // This is only called from the locally configured Magpie plugin hook,
+  // never via the six remote MCP tools.
+  const p = remotePaths();
   if (!options.remoteAutoStart) {
-    if (await taskPresent()) {
-      await runTask(['/end', '/tn', TASK_NAME], true);
-      await runTask(['/delete', '/tn', TASK_NAME, '/f']);
-    }
+    // Drop the enabled marker first: the manager closes its listener on
+    // its next tick, then exits. This does not kill unrelated Node processes.
+    await unlink(p.enabledFile).catch(error => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+    await writeBootstrapStatus('disabling-startup');
+    await writeStartup('delete');
+    await cleanupOldTask();
     await writeBootstrapStatus('disabled');
     return { state: 'disabled' };
   }
-  const p = remotePaths();
   let config;
   try { config = await readFile(p.config, 'utf8'); }
   catch { throw Error('Cloudflare Access settings are missing; keep the existing cloudflare-mcp.json configuration.'); }
@@ -133,23 +182,21 @@ export async function reconcileRemoteService(options = {}) {
   const node = await nodeBinary();
   await mkdir(p.base, { recursive: true });
   let changed = false;
-  for (const [source, filename] of COPIES) changed = (await copyStable(source, path.join(p.base, filename))) || changed;
-  await writeBootstrapStatus('registering-windows-task');
-  const present = await taskPresent();
-  if (!present || changed) {
-    // Only touch the task with this plugin's unique managed name. No admin,
-    // system, remote account or password; must run in the logged-on session.
-    if (present) await runTask(['/end', '/tn', TASK_NAME], true);
-    await runTask(taskCreateArguments(node, p.manager));
+  for (const [source, filename] of COPIES) {
+    changed = (await copyStable(source, path.join(p.base, filename))) || changed;
   }
-  // Start right away if enabled, not only on the next Windows login.
-  // If it is already running, Task Scheduler may reject /run; that is okay.
+  await writeBootstrapStatus('registering-user-startup');
+  await writeStartup('set', startupCommand(node, p.manager));
+  await writeFile(p.enabledFile, 'enabled\n');
+  await cleanupOldTask();
+  // Registry Run starts at next Windows sign-in; spawn detached now.
+  // The supervisor owns its process singleton, not the Magpie plugin host.
+  await writeBootstrapStatus('starting-manager');
   try {
-    await runTask(['/run', '/tn', TASK_NAME]);
+    await launchManager(node, p.manager);
   } catch (error) {
-    await writeBootstrapStatus('task-start-failed', 'Task installed but could not be started');
-    throw error;
+    throw Error('Could not start local background manager: ' + (error.code || error.message));
   }
-  await writeBootstrapStatus('task-start-requested');
+  await writeBootstrapStatus('manager-launch-requested');
   return { state: 'installed', changed };
 }

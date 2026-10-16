@@ -2,7 +2,7 @@
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
-## Automatically managed Windows remote MCP (v0.3.4 alpha)
+## Automatically managed Windows remote MCP (v0.3.4-alpha.3)
 
 For an **already configured Cloudflare Access MCP** connection, Magpie now
 provides an opt-in **Project Review → ChatGPT 远程连接 → 自动启动** switch.
@@ -12,27 +12,22 @@ When enabled, the plugin host:
 - checks for valid existing `%APPDATA%\magpie-local-review\cloudflare-mcp.json`;
 - locates Node.js **20+**, installs versioned bundled adapter/manager scripts under
   `%LOCALAPPDATA%\MagpieLocalReview` (outside Magpie's updateable cache);
-- registers the current user's **non-elevated, interactive-logon** Windows
-  task **Magpie Local Review MCP (Managed)** and launches it immediately.
+- registers a **current-user HKCU Run** login-start entry `Magpie Local Review MCP` instead of a Windows Scheduled Task (which failed to create on some user accounts), and launches the manager immediately without an administrator prompt.
 - uses a supervisor to wait for Magpie's local gateway (`127.0.0.1:3425`),
   bind the JWT-protected six-tool adapter (`127.0.0.1:48765`) only while
   Magpie is available, avoid interrupting an existing listener, and release
   the bridge when Magpie quits. It does *not* restart Magpie or cloudflared.
 
 One-time opt-in is done through the Magpie plugin UI, **not a PowerShell
-command**. Turning the switch off tells the plugin host to end/delete only
-its own named task. It never touches unrelated tasks, Cloudflare Access,
-project permissions or the previous C2C task. Service status is written to
+command**. Turning the switch off removes only its own HKCU Run entry and an opt-in marker; the supervisor detects the marker change, closes its listener and exits. The supervisor uses a local named-pipe singleton to prevent duplicate managers on plugin reload. No other startup programs, Cloudflare Access settings, project permissions or unrelated tasks are changed. Service status is written to
 `%LOCALAPPDATA%\MagpieLocalReview\service-status.json` (local only).
 
 **Lifecycle limitation:** Magpie's community iframe can only save options,
-not spawn processes; its Bun/Node plugin host may load lazily. The settings
-change requests a host reload, but if no host is active, actual task
-registration is deferred until Magpie next loads the plugin tools. The
+not spawn processes; its Bun/Node plugin host may load lazily. The settings change requests a host reload, but if no host is active, actual HKCU startup registration is deferred until Magpie next loads the plugin tools. The
 page therefore shows the *requested preference*, not a verified running
 status. For your first real Windows acceptance test, keep the previously
 running adapter alive while enabling the toggle and refreshing ChatGPT's
-tools. Thereafter the manager should start automatically at logon.
+tools. Thereafter the manager should start automatically at the next Windows sign-in.
 A successful CI run is not proof that Windows Task Scheduler accepted it.
 
 **Important:** The custom ChatGPT Web MCP endpoint itself cannot remotely

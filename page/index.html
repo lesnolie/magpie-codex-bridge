@@ -33,6 +33,18 @@
         <p class="hint">当前 Magpie 页面无法获取 Windows 的完整文件夹路径，因此不提供无效的系统目录选择按钮。</p>
       </div>
     </section>
+    <section class="card remote-section">
+      <div class="section-heading">
+        <div><h2>ChatGPT 远程连接</h2><p class="remote-sub">本机管理 Cloudflare MCP 适配器 · 仅六个只读工具</p></div>
+        <label class="remote-switch" for="remoteAutoStart">
+          <input id="remoteAutoStart" type="checkbox" aria-label="自动启动远程连接">
+          <span>自动启动</span>
+        </label>
+      </div>
+      <p class="hint">开启一次后，插件将尝试安装当前 Windows 用户的登录启动任务。Magpie 运行时自动启用 48765，退出后关闭监听；无需每次运行 PowerShell。</p>
+      <p class="hint">需要事先配置 Cloudflare Access、安装 Node.js 20+，且 Magpie 与 Cloudflare Tunnel 正在运行。不修改你的 Cloudflare 设置，也不会开放额外工具。</p>
+      <p class="remote-status" id="remoteStatus" role="status" aria-live="polite"></p>
+    </section>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <div class="note" id="legacy" hidden>旧版授权提醒：曾通过 Windows 辅助选择器或插件 Options 添加的项目可能仍有效，但无法在此页面完整列出。请在本页重新添加所需项目，或点击「撤销全部授权」停用所有旧授权。</div>
     <footer>读取源码 / Git 差异 · 不执行命令、不修改文件 · 取消授权不撤回已经返回的历史内容</footer>

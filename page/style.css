@@ -11,3 +11,9 @@
 .remote-switch input:disabled{opacity:.5}
 .remote-status{min-height:18px;font-size:12px;color:var(--magpie-muted,#777);margin:14px 0 0}
 .remote-status.error{color:#db473b}
+
+.codex-config{display:grid;gap:8px;margin-top:16px;max-width:100%}
+.codex-config label{margin:2px 0 0;font-size:12px}
+.codex-config input{min-width:0;width:100%;padding:11px 12px;border-radius:9px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--magpie-bg,#fff);color:var(--magpie-fg,#111);border:1px solid color-mix(in srgb,var(--magpie-fg,#111) 22%,transparent)}
+.codex-config input:focus{outline:1px solid var(--magpie-accent,#007aff)}
+.codex-config button{justify-self:start;margin-top:3px}

@@ -86,6 +86,12 @@ async function locate(p, relative, kind = 'file') {
   // the explicit .. / absolute rejection still blocks directory escapes.
   const canonicalRelative = path.relative(p.root, actual);
   if (canonicalRelative === '..' || canonicalRelative.startsWith('..' + path.sep) || path.isAbsolute(canonicalRelative)) {
+    if (process.env.GITHUB_ACTIONS === 'true' && process.platform === 'win32') {
+      console.error('[Windows CI path diagnostics]', JSON.stringify({
+        root: p.root, actual, canonicalRelative, sep: path.sep,
+        rooted: path.isAbsolute(canonicalRelative),
+      }));
+    }
     throw new Error('Path leaves project');
   }
   const info = await lstat(actual);

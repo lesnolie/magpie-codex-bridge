@@ -65,12 +65,16 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const codexEnabled = document.getElementById('codexEnabled');
   const codexAllowWrites = document.getElementById('codexAllowWrites');
   const codexStatus = document.getElementById('codexStatus');
+  const codexWriteConfirmation = document.getElementById('codexWriteConfirmation');
+  const confirmCodexWrite = document.getElementById('confirmCodexWrite');
+  const cancelCodexWrite = document.getElementById('cancelCodexWrite');
   const codexExecutable = document.getElementById('codexExecutable');
   const codexModel = document.getElementById('codexModel');
   const codexModelProvider = document.getElementById('codexModelProvider');
   const saveCodexConfig = document.getElementById('saveCodexConfig');
   let rows = Array.isArray(options.roots) ? options.roots.filter((r) => r && typeof r.name === 'string' && typeof r.path === 'string') : [];
   let busy = false;
+  let pendingCodexWrite = false;
 
   function updateStatus(message, error = false) {
     status.textContent = message;
@@ -127,11 +131,14 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     remoteAutoStart.disabled = busy;
     codexEnabled.checked = options.codexEnabled === true;
     codexEnabled.disabled = busy;
-    codexAllowWrites.checked = options.codexAllowWrites === true;
+    codexAllowWrites.checked = pendingCodexWrite || options.codexAllowWrites === true;
     // Local write consent can be set independently of Codex activation.
     // A disabled Codex runner remains unable to execute tasks even if write
     // consent was granted earlier. Do not lock the switch based on order.
     codexAllowWrites.disabled = busy;
+    codexWriteConfirmation.hidden = !pendingCodexWrite;
+    confirmCodexWrite.disabled = busy;
+    cancelCodexWrite.disabled = busy;
     saveCodexConfig.disabled = busy;
   }
   async function save(next) {
@@ -177,11 +184,6 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
 
   async function saveCodexOption(name, requested) {
     if (busy) return;
-    if (name === 'codexAllowWrites' && requested &&
-        !confirm('确认授权 Codex 修改已授权项目中的文件？此权限仅在“启用 Codex”开启后生效，可能更改或删除代码。建议先备份。')) {
-      render();
-      return;
-    }
     busy = true;
     render();
     try {
@@ -199,8 +201,36 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       render();
     }
   }
-  codexEnabled.addEventListener('change', () => void saveCodexOption('codexEnabled', codexEnabled.checked));
-  codexAllowWrites.addEventListener('change', () => void saveCodexOption('codexAllowWrites', codexAllowWrites.checked));
+  codexEnabled.addEventListener('change', () => {
+    pendingCodexWrite = false;
+    void saveCodexOption('codexEnabled', codexEnabled.checked);
+  });
+  codexAllowWrites.addEventListener('change', () => {
+    if (busy) return;
+    if (codexAllowWrites.checked && options.codexAllowWrites !== true) {
+      // Native confirm() is blocked in Magpie's sandboxed iframe.
+      // Show a second, explicit in-page authorization action instead.
+      pendingCodexWrite = true;
+      codexStatus.textContent = '请在下方点击“确认授权”，写入权限才会保存。';
+      codexStatus.classList.remove('error');
+      render();
+      return;
+    }
+    pendingCodexWrite = false;
+    void saveCodexOption('codexAllowWrites', codexAllowWrites.checked);
+  });
+  confirmCodexWrite.addEventListener('click', () => {
+    if (busy || !pendingCodexWrite) return;
+    pendingCodexWrite = false;
+    void saveCodexOption('codexAllowWrites', true);
+  });
+  cancelCodexWrite.addEventListener('click', () => {
+    if (busy || !pendingCodexWrite) return;
+    pendingCodexWrite = false;
+    codexStatus.textContent = '已取消写入授权，权限没有变更。';
+    codexStatus.classList.remove('error');
+    render();
+  });
   codexExecutable.value = options.codexExecutable || '';
   codexModel.value = options.codexModel || '';
   codexModelProvider.value = options.codexModelProvider || '';

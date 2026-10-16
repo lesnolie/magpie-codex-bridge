@@ -60,6 +60,8 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const add = document.getElementById('add');
   const legacy = document.getElementById('legacy');
   const revoke = document.getElementById('revoke');
+  const useCodexProjects = document.getElementById('useCodexProjects');
+  const projectSourceStatus = document.getElementById('projectSourceStatus');
   const remoteAutoStart = document.getElementById('remoteAutoStart');
   const remoteStatus = document.getElementById('remoteStatus');
   const codexEnabled = document.getElementById('codexEnabled');
@@ -127,6 +129,8 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     pathInput.disabled = busy;
     revoke.disabled = busy;
     legacy.hidden = options.rootsSource === 'magpie-page';
+    useCodexProjects.checked = options.projectSource === 'codex';
+    useCodexProjects.disabled = busy;
     remoteAutoStart.checked = options.remoteAutoStart === true;
     remoteAutoStart.disabled = busy;
     codexEnabled.checked = options.codexEnabled === true;
@@ -160,6 +164,27 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       render();
     }
   }
+  useCodexProjects.addEventListener('change', async () => {
+    if (busy) return;
+    const source = useCodexProjects.checked ? 'codex' : 'manual';
+    busy = true;
+    render();
+    try {
+      const next = { ...options, projectSource: source };
+      const saved = await magpie.options.set(next);
+      options = saved || next;
+      projectSourceStatus.textContent = source === 'codex'
+        ? '已切换到 Codex Desktop 项目。现有手动添加记录保留，但不会参与项目读取或 Codex 任务提交。'
+        : '已切换回 Magpie 手动项目。';
+      projectSourceStatus.classList.remove('error');
+    } catch (error) {
+      projectSourceStatus.textContent = '切换失败：' + (error?.message || error);
+      projectSourceStatus.classList.add('error');
+    } finally {
+      busy = false;
+      render();
+    }
+  });
   remoteAutoStart.addEventListener('change', async () => {
     if (busy) return;
     const requested = remoteAutoStart.checked;
@@ -256,6 +281,9 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       codexStatus.classList.add('error');
     } finally { busy = false; render(); }
   });
+  projectSourceStatus.textContent = options.projectSource === 'codex'
+    ? '当前项目来源：Codex Desktop 已登记的项目（自动同步）。'
+    : '当前项目来源：Magpie 手动项目；开启上方开关即可切换到 Codex 项目。';
   codexStatus.textContent = options.codexEnabled === true
     ? 'Codex 接口已在本机配置为启用（不代表 ChatGPT Web 已获得执行权限）。'
     : 'Codex 接口默认关闭。';

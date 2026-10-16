@@ -61,6 +61,16 @@
       <p class="hint">默认关闭。只有本机在此启用后，才允许 MCP 下发 Codex 任务；默认只读沙盒。开启写入后使用 Codex workspace-write 沙盒。绝不自动授权提权或批准外部操作。</p>
       <p class="hint">需要在 Windows 上安装可执行的 Codex CLI（codex.exe 应可被插件宿主找到），并预先在本地完成模型与提供商配置。ChatGPT 账户自身的 MCP 执行权限仍可能阻止远程调用。</p>
       <p class="hint">任务只在 Magpie 插件宿主存活期间维护，当前版本不保证跨重启恢复进行中的任务。请勿用作无人值守生产部署。</p>
+      <div class="codex-config">
+        <label for="codexExecutable">Codex 本地可执行程序路径（可选）</label>
+        <input id="codexExecutable" type="text" spellcheck="false" placeholder="C:\\...\\codex.exe">
+        <label for="codexModel">模型 ID（可选，留空继承本地 Codex 配置）</label>
+        <input id="codexModel" type="text" spellcheck="false" placeholder="本地 Codex 模型 ID">
+        <label for="codexModelProvider">Model Provider ID（可选）</label>
+        <input id="codexModelProvider" type="text" spellcheck="false" placeholder="config.toml 中的模型提供商 ID">
+        <button type="button" id="saveCodexConfig">保存 Codex 设置</button>
+      </div>
+      <p class="hint">这里不要填写 API Key。模型和 provider 必须事先在本地 Codex 正确配置。</p>
       <p class="remote-status" id="codexStatus" role="status" aria-live="polite"></p>
     </section>
     <p id="status" class="status" role="status" aria-live="polite"></p>

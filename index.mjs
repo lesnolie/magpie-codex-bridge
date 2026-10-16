@@ -1,4 +1,5 @@
 import { createProjectTools } from './src/projects.mjs';
+import { reconcileRemoteService } from './src/remote-service.mjs';
 
 const arg = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const wrap = (fn) => async (args) => {
@@ -6,7 +7,12 @@ const wrap = (fn) => async (args) => {
   catch (error) { return JSON.stringify({ ok: false, error: error.message }); }
 };
 
-export const MagpieProjectReview = async (_input, options) => {
+export const MagpieProjectReview = async (_input, options = {}) => {
+  // A local Magpie settings toggle is the only way to enable persistence.
+  // Never make tool discovery fail merely because Windows Task Scheduler or
+  // Node.js is unavailable; the existing six read-only tools must still work.
+  try { await reconcileRemoteService(options); }
+  catch (error) { console.warn('[magpie-local-review] Remote autostart:', error?.message || String(error)); }
   const tools = createProjectTools(options);
   return {
     tool: {

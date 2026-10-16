@@ -65,6 +65,10 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const codexEnabled = document.getElementById('codexEnabled');
   const codexAllowWrites = document.getElementById('codexAllowWrites');
   const codexStatus = document.getElementById('codexStatus');
+  const codexExecutable = document.getElementById('codexExecutable');
+  const codexModel = document.getElementById('codexModel');
+  const codexModelProvider = document.getElementById('codexModelProvider');
+  const saveCodexConfig = document.getElementById('saveCodexConfig');
   let rows = Array.isArray(options.roots) ? options.roots.filter((r) => r && typeof r.name === 'string' && typeof r.path === 'string') : [];
   let busy = false;
 
@@ -125,6 +129,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     codexEnabled.disabled = busy;
     codexAllowWrites.checked = options.codexAllowWrites === true;
     codexAllowWrites.disabled = busy || options.codexEnabled !== true;
+    saveCodexConfig.disabled = busy;
   }
   async function save(next) {
     if (busy) return;
@@ -193,6 +198,31 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   }
   codexEnabled.addEventListener('change', () => void saveCodexOption('codexEnabled', codexEnabled.checked));
   codexAllowWrites.addEventListener('change', () => void saveCodexOption('codexAllowWrites', codexAllowWrites.checked));
+  codexExecutable.value = options.codexExecutable || '';
+  codexModel.value = options.codexModel || '';
+  codexModelProvider.value = options.codexModelProvider || '';
+  saveCodexConfig.addEventListener('click', async () => {
+    if (busy) return;
+    const exe = codexExecutable.value.trim().replace(/^\"|\"$/g, '');
+    if (exe && !/^[a-zA-Z]:[\\\\/]/.test(exe)) {
+      codexStatus.textContent = '请填写 codex.exe 的完整 Windows 路径，或留空自动检测。';
+      codexStatus.classList.add('error');
+      return;
+    }
+    busy = true;
+    render();
+    try {
+      const next = { ...options, codexExecutable: exe,
+        codexModel: codexModel.value.trim(), codexModelProvider: codexModelProvider.value.trim() };
+      const saved = await magpie.options.set(next);
+      options = saved || next;
+      codexStatus.textContent = 'Codex 本地配置已保存。';
+      codexStatus.classList.remove('error');
+    } catch (error) {
+      codexStatus.textContent = '保存失败：' + (error?.message || error);
+      codexStatus.classList.add('error');
+    } finally { busy = false; render(); }
+  });
   codexStatus.textContent = options.codexEnabled === true
     ? 'Codex 接口已在本机配置为启用（不代表 ChatGPT Web 已获得执行权限）。'
     : 'Codex 接口默认关闭。';

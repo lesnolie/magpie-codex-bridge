@@ -218,7 +218,7 @@ test('old Magpie host leaves existing model setting intact', async () => {
   const app=runPage({codexModel:'gpt-existing',codexModelProvider:'openai'},{modelReadError:true});
   await wait();
   await wait();
-  assert.match(app.element('modelPickerStatus').textContent,/尚未开放模型目录/);
+  assert.match(app.element('modelPickerStatus').textContent,/模型目录不可用/);
   assert.equal(app.element('codexLegacyModel').open,true);
   assert.equal(app.element('codexModelFallback').value,'gpt-existing');
   await app.element('saveCodexConfig').fire('click');

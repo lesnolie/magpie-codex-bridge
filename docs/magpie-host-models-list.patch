@@ -1,13 +1,13 @@
 diff --git a/internal/plugin/page.go b/internal/plugin/page.go
 --- a/internal/plugin/page.go
 +++ b/internal/plugin/page.go
-@@
+@@ -26,1 +26,1 @@
 -var PageReads = []string{"usage:summary", "providers:list"}
 +var PageReads = []string{"usage:summary", "providers:list", "models:list"}
 diff --git a/internal/gui/pluginpage.go b/internal/gui/pluginpage.go
 --- a/internal/gui/pluginpage.go
 +++ b/internal/gui/pluginpage.go
-@@
+@@ -342,3 +342,40 @@
  func pageRead(read string, params map[string]any) (any, error) {
  	switch read {
 +	case "models:list":

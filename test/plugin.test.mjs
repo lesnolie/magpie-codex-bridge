@@ -48,8 +48,8 @@ test('checks Git status read-only', async () => {
   const r = JSON.parse(await tools.git_status({project:'TMN'}));
   assert.equal(r.changes.some(x=>x.includes('.env') || x.includes('key')), false);
 });
-test('cannot configure filesystem root', () => {
-  assert.throws(()=>createProjectTools({roots:[path.parse(root).root]}));
+test('cannot configure filesystem root', async () => {
+  await assert.rejects(createProjectTools({roots:[path.parse(root).root]}).projects(), /filesystem root/);
 });
 test('Magpie plugin exposes six read-only tools, no provider', async () => {
   const p = await MagpieProjectReview({}, {roots:[{name:'TMN',path:root}]});
@@ -63,6 +63,35 @@ test('single file git diff of committed change', async () => {
   writeFileSync(path.join(root, 'src', 'app.lua'), 'local hello = "there"\n');
   const r=JSON.parse(await tools.git_diff({project:'TMN',file:'src/app.lua'}));
   assert.match(r.text, /there/);
+});
+
+
+
+test('native-picker config is applied live without restarting the plugin', async () => {
+  const cfg = path.join(base, 'picker-projects.json');
+  const dynamic = createProjectTools({ configPath: cfg });
+  assert.deepEqual(JSON.parse(await dynamic.projects()).projects, []);
+  writeFileSync(cfg, JSON.stringify({ roots: [{ name: 'Local', path: root }] }));
+  assert.equal(JSON.parse(await dynamic.projects()).projects[0].name, 'Local');
+  assert.equal(JSON.parse(await dynamic.read_file({ project: 'Local', file: 'src/app.lua' })).file, 'src/app.lua');
+  writeFileSync(cfg, JSON.stringify({ roots: [] }));
+  assert.deepEqual(JSON.parse(await dynamic.projects()).projects, []);
+  await assert.rejects(dynamic.read_file({ project: 'Local', file: 'src/app.lua' }), /Unknown project/);
+});
+
+test('picker allowlist rejects arbitrary filesystem roots and invalid file content', async () => {
+  const cfg = path.join(base, 'invalid-picker.json');
+  const dynamic = createProjectTools({ configPath: cfg, roots: [{ name: 'Old', path: root }] });
+  writeFileSync(cfg, JSON.stringify({ roots: [path.parse(root).root] }));
+  await assert.rejects(dynamic.projects(), /filesystem root/);
+  writeFileSync(cfg, JSON.stringify({ dangerous: true }));
+  await assert.rejects(dynamic.projects(), /expected roots array/);
+});
+
+test('old inline options remain compatible before the picker is used', async () => {
+  const cfg = path.join(base, 'not-created.json');
+  const compat = createProjectTools({configPath: cfg, roots: [{ name: 'Old', path: root }]});
+  assert.equal(JSON.parse(await compat.projects()).projects[0].name, 'Old');
 });
 
 test.after(()=>rmSync(base,{recursive:true,force:true}));

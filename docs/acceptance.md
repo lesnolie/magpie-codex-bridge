@@ -9,6 +9,7 @@
 | Git status/diff read-only | Local unit test |
 | Magpie plugin loaded on user's Windows machine | Pending |
 | Correct project path from Windows or WSL | Pending |
+| Native picker writes Windows allowlist and hot-reloads new project selection | Node unit tests pass; Windows GUI acceptance pending |
 | OpenAI Secure MCP Tunnel with authenticated access | Pending (account permissions) |
 | ChatGPT Web actual tool invocation | Pending (account permissions) |
 | GitHub-only advisor/reviewer | Available via connected GitHub, separately validated in chat |

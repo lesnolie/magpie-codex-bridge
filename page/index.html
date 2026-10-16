@@ -22,15 +22,16 @@
     </section>
     <section class="card">
       <div class="section-heading"><h2>添加项目</h2><span class="tag">本地只读</span></div>
-      <form id="addForm" novalidate>
+      <div id="addForm">
         <label for="folder">项目文件夹路径</label>
         <div class="path-row">
           <input id="folder" name="folder" type="text" required spellcheck="false" placeholder="C:\work\TMN" autocomplete="off">
-          <button type="submit" id="add">添加项目</button>
+          <button type="button" id="add">添加项目</button>
         </div>
+        <p id="fieldStatus" class="field-status" role="status" aria-live="polite" hidden></p>
         <p class="hint">在 Windows 文件资源管理器中打开项目文件夹，按 <kbd>Alt+D</kbd>、<kbd>Ctrl+C</kbd>，然后粘贴到这里。</p>
         <p class="hint">当前 Magpie 页面无法获取 Windows 的完整文件夹路径，因此不提供无效的系统目录选择按钮。</p>
-      </form>
+      </div>
     </section>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <div class="note" id="legacy" hidden>旧版授权提醒：曾通过 Windows 辅助选择器或插件 Options 添加的项目可能仍有效，但无法在此页面完整列出。请在本页重新添加所需项目，或点击「撤销全部授权」停用所有旧授权。</div>

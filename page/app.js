@@ -208,7 +208,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   codexAllowWrites.addEventListener('change', () => {
     if (busy) return;
     if (codexAllowWrites.checked && options.codexAllowWrites !== true) {
-      // Native confirm() is blocked in Magpie's sandboxed iframe.
+      // Native modal dialogs are blocked in Magpie's sandboxed iframe.
       // Show a second, explicit in-page authorization action instead.
       pendingCodexWrite = true;
       codexStatus.textContent = '请在下方点击“确认授权”，写入权限才会保存。';

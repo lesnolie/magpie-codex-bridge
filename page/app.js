@@ -62,6 +62,13 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const revoke = document.getElementById('revoke');
   const remoteAutoStart = document.getElementById('remoteAutoStart');
   const remoteStatus = document.getElementById('remoteStatus');
+  const codexEnabled = document.getElementById('codexEnabled');
+  const codexAllowWrites = document.getElementById('codexAllowWrites');
+  const codexStatus = document.getElementById('codexStatus');
+  const codexExecutable = document.getElementById('codexExecutable');
+  const codexModel = document.getElementById('codexModel');
+  const codexModelProvider = document.getElementById('codexModelProvider');
+  const saveCodexConfig = document.getElementById('saveCodexConfig');
   let rows = Array.isArray(options.roots) ? options.roots.filter((r) => r && typeof r.name === 'string' && typeof r.path === 'string') : [];
   let busy = false;
 
@@ -118,6 +125,11 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     legacy.hidden = options.rootsSource === 'magpie-page';
     remoteAutoStart.checked = options.remoteAutoStart === true;
     remoteAutoStart.disabled = busy;
+    codexEnabled.checked = options.codexEnabled === true;
+    codexEnabled.disabled = busy;
+    codexAllowWrites.checked = options.codexAllowWrites === true;
+    codexAllowWrites.disabled = busy || options.codexEnabled !== true;
+    saveCodexConfig.disabled = busy;
   }
   async function save(next) {
     if (busy) return;
@@ -159,6 +171,61 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       render();
     }
   });
+
+  async function saveCodexOption(name, requested) {
+    if (busy) return;
+    if (name === 'codexAllowWrites' && requested &&
+        !confirm('确认允许远程提交的 Codex 任务修改已授权项目？此操作可能更改或删除代码，务必先备份。')) {
+      render();
+      return;
+    }
+    busy = true;
+    render();
+    try {
+      const next = { ...options, [name]: requested };
+      if (name === 'codexEnabled' && !requested) next.codexAllowWrites = false;
+      const saved = await magpie.options.set(next);
+      options = saved || next;
+      codexStatus.textContent = '已保存。需等待 Magpie 插件宿主加载/重载后生效；此提示并不证明远程可执行权限已经生效。';
+      codexStatus.classList.remove('error');
+    } catch (error) {
+      codexStatus.textContent = '保存失败：' + (error?.message || error);
+      codexStatus.classList.add('error');
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+  codexEnabled.addEventListener('change', () => void saveCodexOption('codexEnabled', codexEnabled.checked));
+  codexAllowWrites.addEventListener('change', () => void saveCodexOption('codexAllowWrites', codexAllowWrites.checked));
+  codexExecutable.value = options.codexExecutable || '';
+  codexModel.value = options.codexModel || '';
+  codexModelProvider.value = options.codexModelProvider || '';
+  saveCodexConfig.addEventListener('click', async () => {
+    if (busy) return;
+    const exe = codexExecutable.value.trim().replace(/^\"|\"$/g, '');
+    if (exe && !/^[a-zA-Z]:[\\\\/]/.test(exe)) {
+      codexStatus.textContent = '请填写 codex.exe 的完整 Windows 路径，或留空自动检测。';
+      codexStatus.classList.add('error');
+      return;
+    }
+    busy = true;
+    render();
+    try {
+      const next = { ...options, codexExecutable: exe,
+        codexModel: codexModel.value.trim(), codexModelProvider: codexModelProvider.value.trim() };
+      const saved = await magpie.options.set(next);
+      options = saved || next;
+      codexStatus.textContent = 'Codex 本地配置已保存。';
+      codexStatus.classList.remove('error');
+    } catch (error) {
+      codexStatus.textContent = '保存失败：' + (error?.message || error);
+      codexStatus.classList.add('error');
+    } finally { busy = false; render(); }
+  });
+  codexStatus.textContent = options.codexEnabled === true
+    ? 'Codex 接口已在本机配置为启用（不代表 ChatGPT Web 已获得执行权限）。'
+    : 'Codex 接口默认关闭。';
   remoteStatus.textContent = options.remoteAutoStart === true
     ? '自动启动已启用（仅设置状态，非实际连接检测）。'
     : '自动启动未启用。';

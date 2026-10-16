@@ -13,7 +13,7 @@
     <header>
       <div class="eyebrow">MAGPIE · LOCAL ACCESS</div>
       <h1>项目访问</h1>
-      <p class="intro">授权 ChatGPT Reviewer 通过 MCP 只读访问指定项目。添加或移除目录只能在本机完成。</p>
+      <p class="intro">授权 ChatGPT 通过 MCP 访问指定项目。默认只读；Codex 执行和修改文件必须在本机另外授权。</p>
     </header>
     <section class="card">
       <div class="section-heading"><h2>已授权项目</h2><div class="controls"><span class="tag" id="count">0 个项目</span><button class="remove" type="button" id="revoke">撤销全部授权</button></div></div>
@@ -35,19 +35,47 @@
     </section>
     <section class="card remote-section">
       <div class="section-heading">
-        <div><h2>ChatGPT 远程连接</h2><p class="remote-sub">本机管理 Cloudflare MCP 适配器 · 仅六个只读工具</p></div>
+        <div><h2>ChatGPT 远程连接</h2><p class="remote-sub">本机管理 Cloudflare MCP 适配器 · 默认仅六个只读工具</p></div>
         <label class="remote-switch" for="remoteAutoStart">
           <input id="remoteAutoStart" type="checkbox" aria-label="自动启动远程连接">
           <span>自动启动</span>
         </label>
       </div>
       <p class="hint">开启一次后，插件将尝试注册当前 Windows 用户的登录自启项（无需管理员权限）。Magpie 运行时自动启用 48765，退出后关闭监听；无需每次运行 PowerShell。</p>
-      <p class="hint">需要事先配置 Cloudflare Access、安装 Node.js 20+，且 Magpie 与 Cloudflare Tunnel 正在运行。不修改你的 Cloudflare 设置，也不会开放额外工具。</p>
+      <p class="hint">需要事先配置 Cloudflare Access、安装 Node.js 20+，且 Magpie 与 Cloudflare Tunnel 正在运行。不修改你的 Cloudflare 设置，Codex 工具需在本机单独开启。</p>
       <p class="remote-status" id="remoteStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="card remote-section">
+      <div class="section-heading">
+        <div><h2>本地 Codex 集成（实验性）</h2><p class="remote-sub">通过本机 app-server 创建任务、查询结果和取消任务</p></div>
+        <label class="remote-switch" for="codexEnabled">
+          <input id="codexEnabled" type="checkbox" aria-label="启用 Codex 任务接口">
+          <span>启用 Codex</span>
+        </label>
+      </div>
+      <label class="remote-switch" for="codexAllowWrites">
+        <input id="codexAllowWrites" type="checkbox" aria-label="允许 Codex 写入已授权项目">
+        <span>允许修改已授权项目文件</span>
+      </label>
+      <p class="hint">默认关闭。只有本机在此启用后，才允许 MCP 下发 Codex 任务；默认只读沙盒。开启写入后使用 Codex workspace-write 沙盒。绝不自动授权提权或批准外部操作。</p>
+      <p class="hint">需要在 Windows 上安装可执行的 Codex CLI（codex.exe 应可被插件宿主找到），并预先在本地完成模型与提供商配置。ChatGPT 账户自身的 MCP 执行权限仍可能阻止远程调用。</p>
+      <p class="hint">任务只在 Magpie 插件宿主存活期间维护，当前版本不保证跨重启恢复进行中的任务。请勿用作无人值守生产部署。</p>
+      <div class="codex-config">
+        <label for="codexExecutable">Codex 本地可执行程序路径（可选）</label>
+        <input id="codexExecutable" type="text" spellcheck="false" placeholder="C:\\...\\codex.exe">
+        <label for="codexModel">模型 ID（可选，留空继承本地 Codex 配置）</label>
+        <input id="codexModel" type="text" spellcheck="false" placeholder="本地 Codex 模型 ID">
+        <label for="codexModelProvider">Model Provider ID（可选）</label>
+        <input id="codexModelProvider" type="text" spellcheck="false" placeholder="config.toml 中的模型提供商 ID">
+        <button type="button" id="saveCodexConfig">保存 Codex 设置</button>
+      </div>
+      <p class="hint">这里不要填写 API Key。模型和 provider 必须事先在本地 Codex 正确配置。</p>
+      <p class="remote-status" id="codexStatus" role="status" aria-live="polite"></p>
     </section>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <div class="note" id="legacy" hidden>旧版授权提醒：曾通过 Windows 辅助选择器或插件 Options 添加的项目可能仍有效，但无法在此页面完整列出。请在本页重新添加所需项目，或点击「撤销全部授权」停用所有旧授权。</div>
-    <footer>读取源码 / Git 差异 · 不执行命令、不修改文件 · 取消授权不撤回已经返回的历史内容</footer>
+    <footer>默认只读 · Codex 执行须本机明确启用 · 取消授权不撤回已经返回的历史内容</footer>
   </main>
 </body>
 </html>

@@ -49,7 +49,8 @@ export function remotePaths(env = process.env) {
   return { base, config: path.join(roaming, 'magpie-local-review', CONFIG_BASENAME),
     adapter: path.join(base, 'cloudflare-mcp-adapter.mjs'),
     manager: path.join(base, 'cloudflare-mcp-manager.mjs'),
-    enabledFile: path.join(base, 'service-enabled.flag') };
+    enabledFile: path.join(base, 'service-enabled.flag'),
+    codexEnabledFile: path.join(base, 'codex-remote-enabled.flag') };
 }
 export function validAccessConfig(content) {
   let parsed;
@@ -156,8 +157,18 @@ async function copyStable(source, target) {
   return true;
 }
 export async function reconcileRemoteService(options = {}) {
-  if (typeof options.remoteAutoStart !== 'boolean') return { state: 'unchanged' };
+  if (typeof options.remoteAutoStart !== 'boolean' && typeof options.codexEnabled !== 'boolean') return { state: 'unchanged' };
   if (process.platform !== 'win32') return { state: 'unsupported-platform' };
+  // The remote adapter checks this local-only flag for EVERY request. Never let
+  // remote calls grant themselves Codex access; local Magpie options are authoritative.
+  const grant = remotePaths();
+  await mkdir(grant.base, { recursive: true });
+  if (options.remoteAutoStart === true && options.codexEnabled === true) {
+    await writeFile(grant.codexEnabledFile, 'enabled\n');
+  } else {
+    await unlink(grant.codexEnabledFile).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  }
+  if (typeof options.remoteAutoStart !== 'boolean') return { state: 'codex-permission-synced' };
   await writeBootstrapStatus('initializing');
   // This is only called from the locally configured Magpie plugin hook,
   // never via the six remote MCP tools.

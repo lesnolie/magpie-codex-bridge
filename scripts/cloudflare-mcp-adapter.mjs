@@ -7,10 +7,10 @@
  */
 import http from 'node:http';
 import { createPublicKey, verify as verifySignature } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const PORT = 48765;
 const MCP_PATH = '/mcp';
@@ -26,7 +26,16 @@ const TOOL_NAMES = Object.freeze([
   'magpie-codex-bridge_git_status',
   'magpie-codex-bridge_git_diff',
 ]);
-const ALLOWED = new Set(TOOL_NAMES);
+const CODEX_NAMES = Object.freeze([
+  'magpie-codex-bridge_codex_submit_task',
+  'magpie-codex-bridge_codex_task_status',
+  'magpie-codex-bridge_codex_task_result',
+  'magpie-codex-bridge_codex_cancel_task',
+]);
+const READ_ONLY = new Set(TOOL_NAMES);
+const CODEX_PERMISSION_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-remote-enabled.flag');
+const remoteCodexEnabled = () => existsSync(CODEX_PERMISSION_FILE);
+const allowedTools = (enabled) => new Set(enabled ? [...TOOL_NAMES, ...CODEX_NAMES] : TOOL_NAMES);
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
@@ -129,19 +138,24 @@ function modernizeReply(reply, messages, headers) {
   };
   return Array.isArray(reply) ? reply.map(convert) : convert(reply, 0);
 }
-function inspectMessage(m) {
+function inspectMessage(m, allowed) {
   if (!m || typeof m !== 'object' || Array.isArray(m) || m.jsonrpc !== '2.0') return false;
   if (['server/discover', 'initialize', 'ping', 'notifications/initialized', 'tools/list'].includes(m.method)) return true;
   if (m.method !== 'tools/call') return false;
   if (!m.params || typeof m.params !== 'object' || Array.isArray(m.params)) return false;
-  return ALLOWED.has(m.params.name);
+  return allowed.has(m.params.name);
 }
-function filteredReply(reply) {
+function filteredReply(reply, allowed) {
   const filter = m => {
     if (m && m.result && Array.isArray(m.result.tools)) {
-      m.result.tools = m.result.tools.filter(t => t && ALLOWED.has(t.name)).map(t => ({
+      m.result.tools = m.result.tools.filter(t => t && allowed.has(t.name)).map(t => ({
         ...t,
-        annotations: { ...t.annotations, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+        annotations: { ...t.annotations,
+          readOnlyHint: READ_ONLY.has(t.name) || t.name.endsWith('_codex_task_status') || t.name.endsWith('_codex_task_result'),
+          destructiveHint: t.name.endsWith('_codex_submit_task') || t.name.endsWith('_codex_cancel_task'),
+          openWorldHint: false,
+          idempotentHint: READ_ONLY.has(t.name) || t.name.endsWith('_codex_task_status') || t.name.endsWith('_codex_task_result'),
+        },
       }));
     }
     return m;
@@ -158,7 +172,7 @@ async function readBody(stream, limit) {
   }
   return Buffer.concat(data);
 }
-export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
+export function createBridge({ verifyJWT, upstream = UPSTREAM, isCodexEnabled = remoteCodexEnabled }) {
   if (typeof verifyJWT !== 'function') fail('JWT verifier required');
   return http.createServer(async (req, res) => {
     const started = Date.now();
@@ -185,7 +199,8 @@ export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
       let parsed;
       try { parsed = JSON.parse(body.toString('utf8')); } catch { return jsonResponse(res, 400, { error: 'Invalid JSON' }); }
       const messages = Array.isArray(parsed) ? parsed : [parsed];
-      const rejected = messages.find(m => !inspectMessage(m));
+      const allowed = allowedTools(isCodexEnabled());
+      const rejected = messages.find(m => !inspectMessage(m, allowed));
       if (!messages.length || messages.length > 20 || rejected) {
         // Report only MCP method names, never arguments, tool names, project paths, or tokens.
         const method = rejected?.method;
@@ -197,7 +212,7 @@ export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
           : methodLabel === 'invalid-jsonrpc' ? 'invalid-jsonrpc'
           : 'unsupported-method:' + methodLabel;
         console.warn('[mcp bridge] BLOCKED 403: ' + reason);
-        return jsonResponse(res, 403, { error: 'Only the six allowed read-only project tools are available', reason });
+        return jsonResponse(res, 403, { error: 'Tool not allowed by the local Magpie permission policy', reason });
       }
       // MCP 2026-07-28 discovery isn't supported by the upstream Magpie's 2025-era API.
       if (messages.some(m => m.method === 'server/discover')) {
@@ -220,11 +235,11 @@ export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
       const responseBody = await readBody(response.body, MAX_RESPONSE_BYTES);
       let reply;
       try { reply = JSON.parse(responseBody.toString('utf8')); } catch { return jsonResponse(res, 502, { error: 'Unexpected Magpie MCP response' }); }
-      const filtered = modernizeReply(filteredReply(reply), messages, req.headers);
+      const filtered = modernizeReply(filteredReply(reply, allowed), messages, req.headers);
       if (messages.some(m => m.method === 'tools/list')) {
         const entries = Array.isArray(filtered) ? filtered : [filtered];
         const count = entries.reduce((total, entry) => total + (entry?.result?.tools?.length || 0), 0);
-        console.log(`[mcp bridge] tools/list returned ${count} read-only tools`);
+        console.log('[mcp bridge] tools/list returned ' + count + ' permission-filtered tools');
       }
       return jsonResponse(res, 200, filtered);
     } catch (error) {
@@ -247,7 +262,7 @@ export function start() {
   const server = createBridge({ verifyJWT });
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`Cloudflare-protected read-only MCP proxy listening at http://127.0.0.1:${PORT}${MCP_PATH}`);
-    console.log('Cloudflare Access JWT verification ENABLED. Six project review tools only.');
+    console.log('Cloudflare Access JWT verification ENABLED. Codex tools require local opt-in.');
   });
   server.on('error', error => { console.error('[mcp bridge]', error.message); process.exitCode = 1; });
   return server;

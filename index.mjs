@@ -1,4 +1,5 @@
 import { createProjectTools } from './src/projects.mjs';
+import { createCodexTasks } from './src/codex-tasks.mjs';
 import { reconcileRemoteService, writeBootstrapStatus } from './src/remote-service.mjs';
 
 const arg = (description, extra = {}) => ({ type: 'string', description, ...extra });
@@ -17,8 +18,17 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     console.warn('[magpie-local-review] Remote autostart:', error?.message || String(error));
   }
   const tools = createProjectTools(options);
+  // Tasks are never registered by default. Only the local Magpie page can opt in.
+  const codex = options.codexEnabled === true ? createCodexTasks(options) : null;
+  const codexTools = codex ? {
+    codex_submit_task: { description: 'Start a local Codex app-server task in an explicitly allowed project. Can change project files only if separately enabled in Magpie.', args: { project: arg('Allowed project name'), prompt: arg('Task instruction'), continueThread: { type: 'boolean', description: 'Continue the last successful Codex thread for this project, default false' } }, execute: wrap(codex.submit) },
+    codex_task_status: { description: 'Read state and progress of a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.status) },
+    codex_task_result: { description: 'Read local Codex output and completion status for a task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.result) },
+    codex_cancel_task: { description: 'Cancel a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.cancel) },
+  } : {};
   return {
     tool: {
+      ...codexTools,
       projects: { description: 'List only explicitly allowed project names (read-only).', args: {}, execute: wrap(tools.projects) },
       list_files: { description: 'List non-secret files within an allowed project directory. Paths are project-relative.', args: { project: arg('Project name'), directory: arg('Relative directory, default .') }, execute: wrap(tools.list_files) },
       read_file: { description: 'Read a limited range of an allowed source code or text file; no secrets, symlinks or files outside project roots.', args: { project: arg('Project name'), file: arg('Relative source path'), startLine: { type: 'integer', minimum: 1 }, maxLines: { type: 'integer', minimum: 1, maximum: 200 } }, execute: wrap(tools.read_file) },

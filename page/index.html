@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Local Project Review</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="_magpie/bridge.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div class="eyebrow">MAGPIE · LOCAL ACCESS</div>
+      <h1>项目访问</h1>
+      <p class="intro">授权 ChatGPT Reviewer 通过 MCP 只读访问指定项目。添加或移除目录只能在本机完成。</p>
+    </header>
+    <section class="card">
+      <div class="section-heading"><h2>已授权项目</h2><div class="controls"><span class="tag" id="count">0 个项目</span><button class="remove" type="button" id="revoke">撤销全部授权</button></div></div>
+      <div class="empty" id="empty">此页面还没有添加项目。</div>
+      <ul id="projects" class="projects" aria-label="已授权项目列表"></ul>
+    </section>
+    <section class="card">
+      <div class="section-heading"><h2>添加项目</h2><span class="tag">本地只读</span></div>
+      <form id="addForm" novalidate>
+        <label for="folder">项目文件夹路径</label>
+        <div class="path-row">
+          <input id="folder" name="folder" type="text" required spellcheck="false" placeholder="C:\work\TMN" autocomplete="off">
+          <button type="submit" id="add">添加项目</button>
+        </div>
+        <p class="hint">在 Windows 文件资源管理器中打开项目文件夹，按 <kbd>Alt+D</kbd>、<kbd>Ctrl+C</kbd>，然后粘贴到这里。</p>
+        <p class="hint">当前 Magpie 页面无法获取 Windows 的完整文件夹路径，因此不提供无效的系统目录选择按钮。</p>
+      </form>
+    </section>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div class="note" id="legacy" hidden>旧版授权提醒：曾通过 Windows 辅助选择器或插件 Options 添加的项目可能仍有效，但无法在此页面完整列出。请在本页重新添加所需项目，或点击「撤销全部授权」停用所有旧授权。</div>
+    <footer>读取源码 / Git 差异 · 不执行命令、不修改文件 · 取消授权不撤回已经返回的历史内容</footer>
+  </main>
+</body>
+</html>

@@ -31,7 +31,13 @@ export function projectsConfigPath(config = {}) {
 export function projectRoots(config = {}) {
   const file = projectsConfigPath(config);
   let input;
-  if (existsSync(file)) {
+  // Explicitly saved in Magpie's embedded page: the page-owned allowlist wins,
+  // including an empty list (revocation). Legacy native-picker files still work
+  // until the user chooses to manage projects inside Magpie.
+  if (config.rootsSource === 'magpie-page') {
+    if (!Array.isArray(config.roots)) throw new Error('Invalid embedded project configuration: expected roots array');
+    input = config.roots;
+  } else if (existsSync(file)) {
     const parsed = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
     if (!parsed || !Array.isArray(parsed.roots)) throw new Error('Invalid project manager configuration: expected roots array');
     input = parsed.roots;

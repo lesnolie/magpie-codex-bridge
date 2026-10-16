@@ -1,16 +1,22 @@
 {
   "name": "magpie-codex-bridge",
-  "version": "0.3.1-alpha.1",
-  "description": "Read-only local project review tools with a native Windows folder picker",
+  "version": "0.3.2-alpha.1",
+  "description": "Read-only local project review MCP tools with an embedded Magpie project management page",
   "type": "module",
   "main": "./index.mjs",
   "exports": "./index.mjs",
   "scripts": {
-    "check": "node --check index.mjs && node --check src/projects.mjs",
+    "check": "node --check index.mjs && node --check src/projects.mjs && node --check page/app.js",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "magpie": {
+    "page": {
+      "title": "Project Review",
+      "file": "page/index.html"
+    }
+  }
 }

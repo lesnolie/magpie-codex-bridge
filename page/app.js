@@ -270,7 +270,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     // Dynamic catalog comes only from the Magpie-host-approved read.
     // Filtering never sends a search string to a remote provider.
     const query = search.toLowerCase().trim();
-    const chosen = codexModel.value || selectedCatalogID || '';
+    const chosen = selectedCatalogID || codexModel.value || '';
     codexModel.replaceChildren();
     const inherit = document.createElement('option');
     inherit.value = '';
@@ -278,7 +278,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     codexModel.append(inherit);
     const groups = new Map();
     for (const entry of modelCatalog) {
-      if (query && !(entry.name + ' ' + entry.group + ' ' + entry.id).toLowerCase().includes(query)) continue;
+      if (query && entry.id !== chosen && !(entry.name + ' ' + entry.group + ' ' + entry.id).toLowerCase().includes(query)) continue;
       const groupName = entry.group || '其他';
       let group = groups.get(groupName);
       if (!group) {

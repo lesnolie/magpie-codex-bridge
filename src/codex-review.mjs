@@ -79,6 +79,23 @@ export async function readReviewReceipt(folder, id) {
   return record;
 }
 
+export async function acknowledgeReview(folder, id, decision, summary) {
+  if (!['approved', 'changes_requested', 'no_changes'].includes(decision)) throw Error('Invalid review decision');
+  if (typeof summary !== 'string' || !summary.trim() || summary.length > 1500) throw Error('Review summary must be 1-1500 characters');
+  const record = await readReviewReceipt(folder, id);
+  const next = { ...record, needsReview: false, review: {
+    decision, summary: summary.trim(), reviewedAt: new Date().toISOString(),
+  } };
+  const tmp = path.join(folder, randomUUID() + '.tmp');
+  await writeFile(tmp, JSON.stringify(next), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+  try { await rename(tmp, path.join(folder, id + '.json')); }
+  catch (error) {
+    await import('node:fs/promises').then(x => x.unlink(tmp).catch(() => {}));
+    throw error;
+  }
+  return { taskId: id, project: record.project, ...next.review, needsReview: false };
+}
+
 export async function reviewInbox(folder, projects, currentJobs = []) {
   const permitted = new Set(projects);
   const records = [];
@@ -98,11 +115,12 @@ export async function reviewInbox(folder, projects, currentJobs = []) {
       phase: task.phase, startedAt: task.startedAt, completedAt: task.completedAt, needsReview: true,
       threadId: task.threadId || null, error: trim(task.error, 500) || null });
   }
-  records.sort((a, b) => String(b.completedAt || '').localeCompare(String(a.completedAt || '')));
-  return { tasks: records.slice(0, MAX_INBOX).map(x => ({
+  const pending = records.filter(x => x.needsReview !== false);
+  pending.sort((a, b) => String(b.completedAt || '').localeCompare(String(a.completedAt || '')));
+  return { tasks: pending.slice(0, MAX_INBOX).map(x => ({
     taskId: x.taskId, project: x.project, state: x.state,
     phase: x.phase, completedAt: x.completedAt, needsReview: true,
-  })), total: records.length, truncated: records.length > MAX_INBOX };
+  })), total: pending.length, truncated: pending.length > MAX_INBOX };
 }
 
 async function safeExisting(root, file) {

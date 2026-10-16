@@ -140,6 +140,7 @@ export function createProjectTools(config = {}) {
       if (typeof query !== 'string' || !query.trim() || query.length > 200) throw new Error('query must contain 1-200 characters');
       const p = get(roots(), project);
       const { actual } = await locate(p, directory, 'directory');
+      const canonicalRoot = await realpath(p.root);
       const matches = [];
       let scanned = 0;
       const limit = Math.min(50, Math.max(1, Math.floor(Number(maxMatches) || 30)));
@@ -158,7 +159,7 @@ export function createProjectTools(config = {}) {
             try { txt = await readSafe(next, maxBytes); } catch { continue; }
             const lines = txt.split(/\r?\n/);
             for (let i = 0; i < lines.length && matches.length < limit; i++) {
-              if (lines[i].toLowerCase().includes(target)) matches.push({ file: path.relative(p.root, next).split(path.sep).join('/'), line: i + 1, preview: lines[i].slice(0, 220) });
+              if (lines[i].toLowerCase().includes(target)) matches.push({ file: path.relative(canonicalRoot, next).split(path.sep).join('/'), line: i + 1, preview: lines[i].slice(0, 220) });
             }
           }
         }

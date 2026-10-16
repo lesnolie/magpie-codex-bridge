@@ -26,6 +26,7 @@ test('Codex is opt-in and restricted to approved projects', async () => {
   assert.ok(plugin.tool.codex_wait_task);
   assert.ok(plugin.tool.codex_review_inbox);
   assert.ok(plugin.tool.codex_review_changes);
+  assert.ok(plugin.tool.codex_ack_review);
   assert.ok(plugin.tool.codex_cancel_task);
   assert.ok(plugin.tool.projects);
 });

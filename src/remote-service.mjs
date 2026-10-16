@@ -15,6 +15,24 @@ import { promisify } from 'node:util';
 
 const execute = promisify(execFile);
 export const TASK_NAME = 'Magpie Local Review MCP (Managed)';
+const MAX_DIAGNOSTIC_LENGTH = 240;
+const BOOTSTRAP_FILENAME = 'service-bootstrap.json';
+export async function writeBootstrapStatus(stage, reason = null, env = process.env) {
+  // Setup status is local-only and contains neither JWTs nor Cloudflare
+  // configuration values. The iframe cannot access files, so users can
+  // inspect this file in Explorer if task installation fails.
+  try {
+    const { base } = remotePaths(env);
+    await mkdir(base, { recursive: true });
+    const payload = {
+      stage,
+      at: new Date().toISOString(),
+      ...(reason ? { reason: String(reason).slice(0, MAX_DIAGNOSTIC_LENGTH) } : {}),
+    };
+    await writeFile(path.join(base, BOOTSTRAP_FILENAME), JSON.stringify(payload, null, 2));
+  } catch { /* Preserve review-tool availability even if diagnostics cannot be written. */ }
+}
+
 const CONFIG_BASENAME = 'cloudflare-mcp.json';
 const COPIES = Object.freeze([
   ['../scripts/cloudflare-mcp-adapter.mjs', 'cloudflare-mcp-adapter.mjs'],
@@ -91,13 +109,19 @@ async function runTask(args, allowMissing = false) {
   catch (err) { if (!allowMissing) throw Error('Windows Task Scheduler: ' + (err.message || 'failed')); }
 }
 export async function reconcileRemoteService(options = {}) {
-  if (process.platform !== 'win32' || typeof options.remoteAutoStart !== 'boolean') return { state: 'unchanged' };
+  if (typeof options.remoteAutoStart !== 'boolean') return { state: 'unchanged' };
+  if (process.platform !== 'win32') {
+    await writeBootstrapStatus('unsupported-platform', 'Windows is required');
+    return { state: 'unsupported-platform' };
+  }
+  await writeBootstrapStatus('initializing');
   // A web request can NEVER toggle this: only local Magpie options.set does.
   if (!options.remoteAutoStart) {
     if (await taskPresent()) {
       await runTask(['/end', '/tn', TASK_NAME], true);
       await runTask(['/delete', '/tn', TASK_NAME, '/f']);
     }
+    await writeBootstrapStatus('disabled');
     return { state: 'disabled' };
   }
   const p = remotePaths();
@@ -105,10 +129,12 @@ export async function reconcileRemoteService(options = {}) {
   try { config = await readFile(p.config, 'utf8'); }
   catch { throw Error('Cloudflare Access settings are missing; keep the existing cloudflare-mcp.json configuration.'); }
   if (!validAccessConfig(config)) throw Error('Cloudflare Access settings are invalid; auto start was not installed.');
+  await writeBootstrapStatus('checking-node');
   const node = await nodeBinary();
   await mkdir(p.base, { recursive: true });
   let changed = false;
   for (const [source, filename] of COPIES) changed = (await copyStable(source, path.join(p.base, filename))) || changed;
+  await writeBootstrapStatus('registering-windows-task');
   const present = await taskPresent();
   if (!present || changed) {
     // Only touch the task with this plugin's unique managed name. No admin,
@@ -118,6 +144,12 @@ export async function reconcileRemoteService(options = {}) {
   }
   // Start right away if enabled, not only on the next Windows login.
   // If it is already running, Task Scheduler may reject /run; that is okay.
-  await runTask(['/run', '/tn', TASK_NAME], true);
+  try {
+    await runTask(['/run', '/tn', TASK_NAME]);
+  } catch (error) {
+    await writeBootstrapStatus('task-start-failed', 'Task installed but could not be started');
+    throw error;
+  }
+  await writeBootstrapStatus('task-start-requested');
   return { state: 'installed', changed };
 }

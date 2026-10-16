@@ -21,7 +21,7 @@ class Element {
 }
 const wait = () => new Promise((r) => setImmediate(r));
 
-function runPage(initial = {}) {
+function runPage(initial = {}, { modalResult = true } = {}) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new Element());
@@ -38,7 +38,7 @@ function runPage(initial = {}) {
       },
     },
     document: { getElementById: element, createElement: () => new Element() },
-    confirm: () => true,
+    confirm: () => modalResult,
   };
   const src = readFileSync(new URL('../page/app.js', import.meta.url), 'utf8');
   runInNewContext(src, sandbox);
@@ -180,18 +180,46 @@ test('remote service card has no iframe-side process execution', () => {
 });
 
 
-test('Codex write permission switch is clickable before Codex is enabled', async () => {
-  const app = runPage({ codexEnabled: false, codexAllowWrites: false });
+test('Codex write permission works even when native modal dialogs are blocked', async () => {
+  const app = runPage({ codexEnabled: false, codexAllowWrites: false }, {modalResult: false});
   await wait();
   assert.equal(app.element('codexEnabled').checked, false);
   assert.equal(app.element('codexAllowWrites').disabled, false);
   app.element('codexAllowWrites').checked = true;
   await app.element('codexAllowWrites').fire('change');
+  assert.equal(app.element('codexWriteConfirmation').hidden, false);
+  assert.equal(app.options.codexAllowWrites, false, 'toggle alone cannot grant write access');
+  assert.equal(app.saved.length, 0, 'do not save write consent before inline confirmation');
+  await app.element('confirmCodexWrite').fire('click');
   await wait();
   assert.equal(app.options.codexAllowWrites, true);
   assert.equal(app.options.codexEnabled, false, 'write consent never activates Codex');
-  assert.equal(app.element('codexAllowWrites').disabled, false);
+  assert.equal(app.element('codexWriteConfirmation').hidden, true);
   assert.equal(app.element('codexAllowWrites').checked, true);
+  assert.equal(app.element('codexAllowWrites').disabled, false);
+});
+
+test('cancelling inline Codex write authorization does not change options', async () => {
+  const app = runPage({ codexEnabled: true, codexAllowWrites: false }, {modalResult: false});
+  await wait();
+  app.element('codexAllowWrites').checked = true;
+  await app.element('codexAllowWrites').fire('change');
+  assert.equal(app.element('codexWriteConfirmation').hidden, false);
+  await app.element('cancelCodexWrite').fire('click');
+  assert.equal(app.element('codexWriteConfirmation').hidden, true);
+  assert.equal(app.options.codexAllowWrites, false);
+  assert.equal(app.element('codexAllowWrites').checked, false);
+  assert.equal(app.saved.length, 0);
+});
+
+test('inline write confirmation has explicit buttons and does not call confirm()', () => {
+  const html = readFileSync(new URL('../page/index.html', import.meta.url), 'utf8');
+  const js = readFileSync(new URL('../page/app.js', import.meta.url), 'utf8');
+  assert.match(html, /id="codexWriteConfirmation"/);
+  assert.match(html, /id="confirmCodexWrite"/);
+  assert.match(html, /id="cancelCodexWrite"/);
+  const code = js.slice(js.indexOf('async function saveCodexOption('), js.indexOf('codexExecutable.value ='));
+  assert.doesNotMatch(code, /\bconfirm\s*\(/);
 });
 
 test('disabling Codex revokes previously granted write consent', async () => {

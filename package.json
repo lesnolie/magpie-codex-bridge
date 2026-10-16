@@ -1,6 +1,6 @@
 {
   "name": "magpie-codex-bridge",
-  "version": "0.3.3-alpha.3",
+  "version": "0.3.3-alpha.4",
   "description": "Read-only Magpie project review MCP with Cloudflare Access protected adapter",
   "type": "module",
   "main": "./index.mjs",

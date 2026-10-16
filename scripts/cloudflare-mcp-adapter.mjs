@@ -14,6 +14,9 @@ import { pathToFileURL } from 'node:url';
 
 const PORT = 48765;
 const MCP_PATH = '/mcp';
+const MODERN_MCP_VERSION = '2026-07-28';
+const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.3.3-alpha.4' });
+const SERVER_META = Object.freeze({ 'io.modelcontextprotocol/serverInfo': SERVER_INFO });
 const UPSTREAM = 'http://127.0.0.1:3425/mcp/magpie/tools';
 const TOOL_NAMES = Object.freeze([
   'magpie-codex-bridge_projects',
@@ -91,9 +94,44 @@ export function makeVerifier({ teamDomain, audience, getKeys = loadJWKS }) {
   };
 }
 
+/** Answer ChatGPT's 2026-07-28 capabilities probe here, not at legacy Magpie. */
+function discoveryResult(id) {
+  return {
+    jsonrpc: '2.0',
+    id,
+    result: {
+      resultType: 'complete',
+      supportedVersions: [MODERN_MCP_VERSION],
+      capabilities: { tools: {} },
+      _meta: SERVER_META,
+      instructions: 'Read-only source and Git review of explicitly allowed projects. Only six audit tools. No writes or command execution.',
+      ttlMs: 0,
+      cacheScope: 'private',
+    },
+  };
+}
+function modernRequest(m, headers) {
+  return headers['mcp-protocol-version'] === MODERN_MCP_VERSION ||
+    m?.params?._meta?.['io.modelcontextprotocol/protocolVersion'] === MODERN_MCP_VERSION;
+}
+function modernizeReply(reply, messages, headers) {
+  const convert = (item, index) => {
+    if (!item || !item.result || typeof item.result !== 'object') return item;
+    const request = messages.find(m => m.id === item.id) || messages[index];
+    if (!modernRequest(request, headers)) return item;
+    const result = { ...item.result, resultType: 'complete',
+      _meta: { ...item.result._meta, ...SERVER_META } };
+    if (request?.method === 'tools/list') {
+      result.ttlMs = 0;
+      result.cacheScope = 'private';
+    }
+    return { ...item, result };
+  };
+  return Array.isArray(reply) ? reply.map(convert) : convert(reply, 0);
+}
 function inspectMessage(m) {
   if (!m || typeof m !== 'object' || Array.isArray(m) || m.jsonrpc !== '2.0') return false;
-  if (['initialize', 'ping', 'notifications/initialized', 'tools/list'].includes(m.method)) return true;
+  if (['server/discover', 'initialize', 'ping', 'notifications/initialized', 'tools/list'].includes(m.method)) return true;
   if (m.method !== 'tools/call') return false;
   if (!m.params || typeof m.params !== 'object' || Array.isArray(m.params)) return false;
   return ALLOWED.has(m.params.name);
@@ -161,6 +199,14 @@ export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
         console.warn('[mcp bridge] BLOCKED 403: ' + reason);
         return jsonResponse(res, 403, { error: 'Only the six allowed read-only project tools are available', reason });
       }
+      // MCP 2026-07-28 discovery isn't supported by the upstream Magpie's 2025-era API.
+      if (messages.some(m => m.method === 'server/discover')) {
+        if (messages.length !== 1 || messages[0].id === undefined || messages[0].id === null) {
+          return jsonResponse(res, 400, { error: 'A single discovery request with an id is required' });
+        }
+        console.log('[mcp bridge] server/discover -> MCP 2026-07-28, tools only');
+        return jsonResponse(res, 200, discoveryResult(messages[0].id));
+      }
       const response = await fetch(upstream, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'accept': 'application/json, text/event-stream' },
@@ -174,7 +220,7 @@ export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
       const responseBody = await readBody(response.body, MAX_RESPONSE_BYTES);
       let reply;
       try { reply = JSON.parse(responseBody.toString('utf8')); } catch { return jsonResponse(res, 502, { error: 'Unexpected Magpie MCP response' }); }
-      const filtered = filteredReply(reply);
+      const filtered = modernizeReply(filteredReply(reply), messages, req.headers);
       if (messages.some(m => m.method === 'tools/list')) {
         const entries = Array.isArray(filtered) ? filtered : [filtered];
         const count = entries.reduce((total, entry) => total + (entry?.result?.tools?.length || 0), 0);

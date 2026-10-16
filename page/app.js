@@ -318,7 +318,8 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       modelsAvailable = true;
       // Match by Codex thread model and provider, not by friendly display name.
       const current = modelCatalog.find(m => m.threadModel === options.codexModel &&
-        m.modelProvider === (options.codexModelProvider || ''));
+        m.modelProvider === (options.codexModelProvider || '')) ||
+        modelCatalog.find(m => m.threadModel === options.codexModel);
       selectedCatalogID = current?.id || options.codexModel || '';
       modelOptions(codexModelSearch.value);
       codexLegacyModel.open = false;

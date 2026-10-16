@@ -33,6 +33,7 @@ const CODEX_NAMES = Object.freeze([
   'magpie-codex-bridge_codex_wait_task',
   'magpie-codex-bridge_codex_review_inbox',
   'magpie-codex-bridge_codex_review_changes',
+  'magpie-codex-bridge_codex_ack_review',
   'magpie-codex-bridge_codex_cancel_task',
 ]);
 const READ_ONLY = new Set(TOOL_NAMES);
@@ -116,7 +117,7 @@ function discoveryResult(id) {
       supportedVersions: [MODERN_MCP_VERSION],
       capabilities: { tools: {} },
       _meta: SERVER_META,
-      instructions: 'Six read-only review tools are always available. Seven Codex task and review tools are exposed only with local permission. Completion can be polled by ChatGPT while its turn is active; the server cannot initiate a new ChatGPT turn. Codex execution remains subject to local Magpie approval and client workspace policy.',
+      instructions: 'Six read-only review tools are always available. Eight Codex task and review tools are exposed only with local permission. Completion can be polled by ChatGPT while its turn is active; the server cannot initiate a new ChatGPT turn. Codex execution remains subject to local Magpie approval and client workspace policy.',
       ttlMs: 0,
       cacheScope: 'private',
     },

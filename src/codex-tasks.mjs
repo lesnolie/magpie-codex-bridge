@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { projectRoots } from './projects.mjs';
-import { gitBaseline, reviewFolder, saveReviewReceipt, readReviewReceipt, reviewInbox, reviewChanges } from './codex-review.mjs';
+import { gitBaseline, reviewFolder, saveReviewReceipt, readReviewReceipt, reviewInbox, reviewChanges, acknowledgeReview } from './codex-review.mjs';
 
 const MAX_PROMPT = 12000;
 const MAX_OUTPUT = 12000;
@@ -313,6 +313,14 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       const report = await reviewChanges(root, task, file);
       return JSON.stringify({ taskId, project, state: task.state, output: bounded(task.output || ''),
         error: task.error || null, ...report });
+    },
+    async acknowledge({ project, taskId, decision, summary } = {}) {
+      allowed(project);
+      if (!receiptDir) throw Error('Persistent review receipts are disabled');
+      // Only local receipt metadata is changed; project files remain untouched.
+      const record = await readReviewReceipt(receiptDir, taskId).catch(() => null);
+      if (!record || record.project !== project) throw Error('Unknown task in this project');
+      return JSON.stringify(await acknowledgeReview(receiptDir, taskId, decision, summary));
     },
     async cancel({ project, taskId } = {}) {
       const task = lookup(project, taskId);

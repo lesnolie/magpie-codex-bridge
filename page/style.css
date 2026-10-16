@@ -22,3 +22,12 @@
 .permission-confirmation[hidden]{display:none}
 .permission-confirmation p{margin:0 0 12px;font-size:13px;line-height:1.65}
 .permission-confirmation .controls{gap:8px}
+
+.codex-config select{min-width:0;width:100%;padding:11px 12px;border-radius:9px;font:inherit;font-size:13px;color:var(--magpie-fg,#111);background:var(--magpie-bg,#fff);border:1px solid color-mix(in srgb,var(--magpie-fg,#111) 22%,transparent)}
+.codex-config select:focus-visible{outline:2px solid var(--magpie-accent,#007aff);outline-offset:2px}
+.codex-config optgroup{font-weight:650}
+.codex-config details{margin:8px 0;padding:12px;border:1px solid color-mix(in srgb,var(--magpie-fg,#111) 13%,transparent);border-radius:9px}
+.codex-config summary{font-size:12px;cursor:pointer;color:var(--magpie-muted,#777);font-weight:600}
+.codex-config details[open] label{margin-top:12px}
+.codex-config .section-heading{margin:8px 0 0}
+.codex-config .section-heading label{margin:0}

@@ -1,12 +1,13 @@
 {
-  "name": "magpie-codex-bridge",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Experimental Magpie MCP tool plugin for resuming and compacting local Codex app-server threads.",
+  "name": "magpie-chatgpt-web-provider",
+  "version": "0.2.0-alpha.1",
+  "private": false,
   "type": "module",
   "main": "./index.mjs",
-  "exports": { ".": "./index.mjs" },
-  "scripts": { "test": "node --test test/*.test.mjs", "check": "node --check index.mjs && node --check src/app-server.mjs" },
+  "exports": "./index.mjs",
+  "files": ["index.mjs", "src/", "README.md", "docs/", "LICENSE"],
+  "scripts": { "test": "node --test test/*.test.mjs", "check": "node --check index.mjs && node --check src/relay.mjs" },
   "engines": { "node": ">=20" },
-  "license": "MIT"
+  "license": "MIT",
+  "magpie": { "maxConcurrency": 1 }
 }

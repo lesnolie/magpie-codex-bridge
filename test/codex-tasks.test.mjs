@@ -70,6 +70,6 @@ test('missing native executable yields helpful error and launch phase', async ()
     await pause(20);
   }
   assert.equal(report.state,'failed');
-  assert.equal(report.phase,'launch');
+  assert.equal(report.phase,'initialize');
   assert.match(report.error,/executable not found|ENOENT|Codex startup failed/i);
 });

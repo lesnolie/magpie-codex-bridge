@@ -100,17 +100,12 @@ test('enter inside the input adds the folder without submitting a form', async (
   assert.equal(app.options.roots[0].name, 'Demo');
 });
 
-test('Magpie bridge URL resolves to the token root served by Magpie, not /page/_magpie', () => {
-  // Real Magpie: /_magpie/plugin/<token>/page/index.html.  The service only
-  // recognizes the bridge at /_magpie/plugin/<token>/_magpie/bridge.js.
-  // A JS DOM mock cannot detect this regression; URL resolution does.
+test('self-contained page never references the missing external Magpie bridge', () => {
   const html = readFileSync(new URL('../page/index.html', import.meta.url), 'utf8');
-  const match = html.match(/src="([^"]+_magpie\/bridge\.js)"/);
-  assert.ok(match, 'the Magpie message bridge must be loaded');
-  const pageUrl = 'http://127.0.0.1:3437/_magpie/plugin/' + 'a'.repeat(32) + '/page/index.html';
-  const requestPath = new URL(match[1], pageUrl).pathname;
-  assert.equal(requestPath, '/_magpie/plugin/' + 'a'.repeat(32) + '/_magpie/bridge.js');
-  assert.notEqual(requestPath, '/_magpie/plugin/' + 'a'.repeat(32) + '/page/_magpie/bridge.js');
+  const js = readFileSync(new URL('../page/app.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /<script[^>]+bridge\\.js/);
+  assert.match(js, /parentWindow\\.postMessage/);
+  assert.match(js, /request\\('hello'\\)/);
 });
 
 test('UI presents an explicit ready state after Magpie options handshake', async () => {
@@ -118,4 +113,46 @@ test('UI presents an explicit ready state after Magpie options handshake', async
   await wait();
   assert.match(app.element('fieldStatus').textContent, /已连接 Magpie/);
   assert.equal(app.element('fieldStatus').hidden, false);
+});
+
+test('real Magpie message handshake initializes page without predefined global magpie', async () => {
+  const elements = new Map();
+  const element = (id) => {
+    if (!elements.has(id)) elements.set(id, new Element());
+    return elements.get(id);
+  };
+  const received = [];
+  const handlers = new Map();
+  let savedOptions = {};
+  const parent = {
+    postMessage(message) {
+      received.push(message);
+      queueMicrotask(() => {
+        let result = null;
+        if (message.method === 'hello') result = { dark: false, lang: 'zh-CN', tokens: {} };
+        if (message.method === 'options.get') result = structuredClone(savedOptions);
+        if (message.method === 'options.set') {
+          savedOptions = structuredClone(message.params.options);
+          result = structuredClone(savedOptions);
+        }
+        handlers.get('message')?.({ source: parent, data: { magpie: 1, id: message.id, result } });
+      });
+    },
+  };
+  const window = { parent, addEventListener: (event, handler) => handlers.set(event, handler) };
+  const sandbox = {
+    window, document: { getElementById: element, createElement: () => new Element() },
+    setTimeout, clearTimeout, confirm: () => true,
+  };
+  const source = readFileSync(new URL('../page/app.js', import.meta.url), 'utf8');
+  runInNewContext(source, sandbox);
+  await wait();
+  await wait();
+  assert.deepEqual(received.map(m => m.method), ['hello', 'options.get']);
+  assert.match(element('fieldStatus').textContent, /已连接 Magpie/);
+  element('folder').value = 'C:/work/TMN';
+  await element('add').fire('click');
+  assert.equal(savedOptions.rootsSource, 'magpie-page');
+  assert.equal(savedOptions.roots[0].path, 'C:/work/TMN');
+  assert.equal(received[2].method, 'options.set');
 });

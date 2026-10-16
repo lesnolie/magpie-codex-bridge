@@ -15,7 +15,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 const PORT = 48765;
 const MCP_PATH = '/mcp';
 const MODERN_MCP_VERSION = '2026-07-28';
-const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.3.3-alpha.4' });
+const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.4.1-alpha.1' });
 const SERVER_META = Object.freeze({ 'io.modelcontextprotocol/serverInfo': SERVER_INFO });
 const UPSTREAM = 'http://127.0.0.1:3425/mcp/magpie/tools';
 const TOOL_NAMES = Object.freeze([
@@ -113,7 +113,7 @@ function discoveryResult(id) {
       supportedVersions: [MODERN_MCP_VERSION],
       capabilities: { tools: {} },
       _meta: SERVER_META,
-      instructions: 'Read-only source and Git review of explicitly allowed projects. Only six audit tools. No writes or command execution.',
+      instructions: 'Six read-only review tools are always available. Four local Codex task tools are exposed only with local permission. Codex execution remains subject to local Magpie approval and client workspace policy.',
       ttlMs: 0,
       cacheScope: 'private',
     },
@@ -261,7 +261,7 @@ export function start() {
   const verifyJWT = makeVerifier(config);
   const server = createBridge({ verifyJWT });
   server.listen(PORT, '127.0.0.1', () => {
-    console.log(`Cloudflare-protected read-only MCP proxy listening at http://127.0.0.1:${PORT}${MCP_PATH}`);
+    console.log(`Cloudflare-protected Magpie MCP proxy listening at http://127.0.0.1:${PORT}${MCP_PATH}`);
     console.log('Cloudflare Access JWT verification ENABLED. Codex tools require local opt-in.');
   });
   server.on('error', error => { console.error('[mcp bridge]', error.message); process.exitCode = 1; });

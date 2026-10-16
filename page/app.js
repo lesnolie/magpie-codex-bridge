@@ -7,7 +7,7 @@
   const empty = document.getElementById('empty');
   const count = document.getElementById('count');
   const status = document.getElementById('status');
-  const form = document.getElementById('addForm');
+  const fieldStatus = document.getElementById('fieldStatus');
   const pathInput = document.getElementById('folder');
   const add = document.getElementById('add');
   const legacy = document.getElementById('legacy');
@@ -18,6 +18,9 @@
   function updateStatus(message, error = false) {
     status.textContent = message;
     status.classList.toggle('error', error);
+    fieldStatus.textContent = message;
+    fieldStatus.hidden = !message;
+    fieldStatus.classList.toggle('error', error);
   }
   function parsedFolder(value) {
     const folder = value.trim().replace(/^["']|["']$/g, '').trim().replace(/\\/g, '/');
@@ -74,8 +77,10 @@
       options = saved || { ...options, rootsSource: 'magpie-page', roots: next };
       rows = next;
       updateStatus('已保存。Magpie 将重新加载插件授权目录。');
+      return true;
     } catch (err) {
       updateStatus(`保存失败：${err?.message || err}`, true);
+      return false;
     } finally {
       busy = false;
       render();
@@ -85,15 +90,26 @@
     if (!confirm('撤销所有项目目录授权？此操作不会删除任何文件。')) return;
     await save([]);
   });
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
+  // Magpie's iframe has sandbox="allow-scripts" and CSP form-action 'none':
+  // browsers suppress form submit events. Use an explicit button click instead.
+  async function addProject() {
+    if (busy) return;
     try {
       const folder = parsedFolder(pathInput.value);
       if (rows.some((r) => r.path.replace(/\\/g, '/').toLowerCase() === folder.toLowerCase())) throw Error('这个文件夹已经添加。');
       const entry = { name: suggestName(folder), path: folder };
-      await save([...rows, entry]);
-      if (!status.classList.contains('error')) pathInput.value = '';
-    } catch (err) { updateStatus(err.message, true); }
+      if (await save([...rows, entry])) pathInput.value = '';
+    } catch (err) {
+      updateStatus(err.message, true);
+      pathInput.focus();
+    }
+  }
+  add.addEventListener('click', addProject);
+  pathInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void addProject();
+    }
   });
   render();
 })().catch((error) => {

@@ -11,11 +11,13 @@ class Element {
     this.hidden = false;
     this.textContent = '';
     this.value = '';
+    this.focused = false;
   }
   addEventListener(event, callback) { this.events[event] = callback; }
   replaceChildren() { this.children = []; }
   append(...items) { this.children.push(...items); }
-  async fire(event) { await this.events[event]?.({ preventDefault() {} }); }
+  focus() { this.focused = true; }
+  async fire(event, extra = {}) { await this.events[event]?.({ preventDefault() {}, ...extra }); }
 }
 const wait = () => new Promise((r) => setImmediate(r));
 
@@ -47,7 +49,7 @@ test('embedded Magpie page adds a Windows project through options.set', async ()
   const app = runPage();
   await wait();
   app.element('folder').value = '"C:\\work\\TMN"';
-  await app.element('addForm').fire('submit');
+  await app.element('add').fire('click');
   assert.equal(app.options.rootsSource, 'magpie-page');
   assert.deepEqual(app.options.roots, [{ name: 'TMN', path: 'C:/work/TMN' }]);
   assert.equal(app.element('folder').value, '');
@@ -66,7 +68,34 @@ test('embedded page refuses to grant entire drive', async () => {
   const app = runPage();
   await wait();
   app.element('folder').value = 'C:\\';
-  await app.element('addForm').fire('submit');
+  await app.element('add').fire('click');
   assert.equal(app.saved.length, 0);
   assert.match(app.element('status').textContent, /不能授权整个磁盘/);
+});
+
+test('Magpie sandbox buttons never rely on forbidden form submission', async () => {
+  const html = readFileSync(new URL('../page/index.html', import.meta.url), 'utf8');
+  const script = readFileSync(new URL('../page/app.js', import.meta.url), 'utf8');
+  assert.match(html, /<button type="button" id="add">/);
+  assert.doesNotMatch(html, /<form\b|type="submit"/);
+  assert.match(script, /add\.addEventListener\('click', addProject\)/);
+  assert.doesNotMatch(script, /addEventListener\('submit'/);
+});
+
+test('missing folder path shows a visible inline error and focuses the field', async () => {
+  const app = runPage();
+  await wait();
+  await app.element('add').fire('click');
+  assert.equal(app.saved.length, 0);
+  assert.match(app.element('fieldStatus').textContent, /请填写文件夹/);
+  assert.equal(app.element('fieldStatus').hidden, false);
+  assert.equal(app.element('folder').focused, true);
+});
+
+test('enter inside the input adds the folder without submitting a form', async () => {
+  const app = runPage();
+  await wait();
+  app.element('folder').value = 'C:\\\\projects\\\\Demo';
+  await app.element('folder').fire('keydown', { key: 'Enter' });
+  assert.equal(app.options.roots[0].name, 'Demo');
 });

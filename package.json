@@ -1,6 +1,6 @@
 {
   "name": "magpie-codex-bridge",
-  "version": "0.3.2-alpha.1",
+  "version": "0.3.2-alpha.2",
   "description": "Read-only local project review MCP tools with an embedded Magpie project management page",
   "type": "module",
   "main": "./index.mjs",

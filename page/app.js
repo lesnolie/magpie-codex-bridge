@@ -128,7 +128,10 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     codexEnabled.checked = options.codexEnabled === true;
     codexEnabled.disabled = busy;
     codexAllowWrites.checked = options.codexAllowWrites === true;
-    codexAllowWrites.disabled = busy || options.codexEnabled !== true;
+    // Local write consent can be set independently of Codex activation.
+    // A disabled Codex runner remains unable to execute tasks even if write
+    // consent was granted earlier. Do not lock the switch based on order.
+    codexAllowWrites.disabled = busy;
     saveCodexConfig.disabled = busy;
   }
   async function save(next) {
@@ -175,7 +178,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   async function saveCodexOption(name, requested) {
     if (busy) return;
     if (name === 'codexAllowWrites' && requested &&
-        !confirm('确认允许远程提交的 Codex 任务修改已授权项目？此操作可能更改或删除代码，务必先备份。')) {
+        !confirm('确认授权 Codex 修改已授权项目中的文件？此权限仅在“启用 Codex”开启后生效，可能更改或删除代码。建议先备份。')) {
       render();
       return;
     }

@@ -17,3 +17,8 @@
 .codex-config input{min-width:0;width:100%;padding:11px 12px;border-radius:9px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--magpie-bg,#fff);color:var(--magpie-fg,#111);border:1px solid color-mix(in srgb,var(--magpie-fg,#111) 22%,transparent)}
 .codex-config input:focus{outline:1px solid var(--magpie-accent,#007aff)}
 .codex-config button{justify-self:start;margin-top:3px}
+
+.permission-confirmation{padding:14px 15px;margin:12px 0 15px;border:1px solid color-mix(in srgb,var(--magpie-accent,#007aff) 38%,transparent);background:color-mix(in srgb,var(--magpie-accent,#007aff) 5%,var(--magpie-bg,#fff));border-radius:10px}
+.permission-confirmation[hidden]{display:none}
+.permission-confirmation p{margin:0 0 12px;font-size:13px;line-height:1.65}
+.permission-confirmation .controls{gap:8px}

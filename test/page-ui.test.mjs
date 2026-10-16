@@ -186,7 +186,7 @@ test('picker uses Magpie model catalog and persists thread model and provider', 
   await wait();
   await wait();
   assert.match(app.element('modelPickerStatus').textContent,/同步 2 个模型/);
-  assert.equal(app.element('codexModel').value,'gpt-n');
+  assert.equal(app.element('codexModel').value,'codex/gpt-n');
   app.element('codexModel').value='deepseek/v4';
   await app.element('codexModel').fire('change');
   await app.element('saveCodexConfig').fire('click');

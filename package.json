@@ -1,12 +1,12 @@
 {
   "name": "magpie-codex-bridge",
-  "version": "0.3.2-alpha.4",
-  "description": "Read-only local project review MCP tools with an embedded Magpie project management page",
+  "version": "0.3.3-alpha.1",
+  "description": "Read-only Magpie project review MCP with Cloudflare Access protected adapter",
   "type": "module",
   "main": "./index.mjs",
   "exports": "./index.mjs",
   "scripts": {
-    "check": "node --check index.mjs && node --check src/projects.mjs && node --check page/app.js",
+    "check": "node --check index.mjs && node --check src/projects.mjs && node --check page/app.js && node --check scripts/cloudflare-mcp-adapter.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {

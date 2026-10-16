@@ -7,7 +7,7 @@ class Element {
   constructor() {
     this.events = {};
     this.children = [];
-    this.classList = { toggle() {}, add() {}, contains() { return false; } };
+    this.classList = { toggle() {}, add() {}, remove() {}, contains() { return false; } };
     this.hidden = false;
     this.textContent = '';
     this.value = '';

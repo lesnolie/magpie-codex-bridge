@@ -72,6 +72,11 @@ test('review inbox survives task runner restart, only lists approved project and
   await assert.rejects(restarted.changes({ project: 'Safe', taskId: task.taskId, file: '.env' }), /not a reviewable changed source file/);
   await assert.rejects(restarted.inbox({ project: 'Other' }), /allowlist/);
   await assert.rejects(restarted.wait({ project: 'Other', taskId: task.taskId }), /allowlist/);
+  const decided = JSON.parse(await restarted.acknowledge({project:'Safe',taskId:task.taskId,decision:'approved',summary:'Mock fixture reviewed and verified.'}));
+  assert.equal(decided.needsReview, false);
+  assert.equal(decided.decision, 'approved');
+  assert.equal(JSON.parse(await restarted.inbox({project:'Safe'})).total, 0);
+  assert.equal((await readReviewReceipt(reviewDir, task.taskId)).review.decision, 'approved');
 });
 
 test('review detects an initially dirty repository and warns about attribution', async t => {

@@ -101,7 +101,10 @@ function inspectMessage(m) {
 function filteredReply(reply) {
   const filter = m => {
     if (m && m.result && Array.isArray(m.result.tools)) {
-      m.result.tools = m.result.tools.filter(t => t && ALLOWED.has(t.name));
+      m.result.tools = m.result.tools.filter(t => t && ALLOWED.has(t.name)).map(t => ({
+        ...t,
+        annotations: { ...t.annotations, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+      }));
     }
     return m;
   };
@@ -120,13 +123,21 @@ async function readBody(stream, limit) {
 export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
   if (typeof verifyJWT !== 'function') fail('JWT verifier required');
   return http.createServer(async (req, res) => {
+    const started = Date.now();
+    // Status-only logs: never emit JWTs, request bodies, source paths, or file contents.
+    res.once('finish', () => console.log(
+      `[mcp bridge] ${req.method} /mcp -> HTTP ${res.statusCode} (${Date.now() - started} ms)`
+    ));
     try {
       const pathname = new URL(req.url || '/', 'http://localhost').pathname;
       if (pathname !== MCP_PATH || req.url !== MCP_PATH) return jsonResponse(res, 404, { error: 'Not found' });
       if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'POST MCP only' });
       if (req.headers.origin) return jsonResponse(res, 403, { error: 'Browser origins not allowed' });
       const jwt = req.headers['cf-access-jwt-assertion'];
-      try { await verifyJWT(jwt); } catch { return jsonResponse(res, 401, { error: 'Cloudflare Access authorization required' }); }
+      try { await verifyJWT(jwt); } catch (error) {
+        console.warn(`[mcp bridge] Cloudflare Access JWT rejected: ${error?.message || 'authentication failed'}`);
+        return jsonResponse(res, 401, { error: 'Cloudflare Access authorization required' });
+      }
       if (Number(req.headers['content-length'] || 0) > MAX_REQUEST_BYTES) return jsonResponse(res, 413, { error: 'Request too large' });
       const body = await readBody(req, MAX_REQUEST_BYTES);
       let parsed;
@@ -141,11 +152,20 @@ export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
         body, signal: AbortSignal.timeout(30000), redirect: 'error',
       });
       if (response.status === 202) { res.writeHead(202, { 'cache-control': 'no-store' }); return res.end(); }
-      if (!response.ok) return jsonResponse(res, 502, { error: 'Magpie MCP request failed', upstreamStatus: response.status });
+      if (!response.ok) {
+        console.warn(`[mcp bridge] Magpie upstream responded HTTP ${response.status}`);
+        return jsonResponse(res, 502, { error: 'Magpie MCP request failed', upstreamStatus: response.status });
+      }
       const responseBody = await readBody(response.body, MAX_RESPONSE_BYTES);
       let reply;
       try { reply = JSON.parse(responseBody.toString('utf8')); } catch { return jsonResponse(res, 502, { error: 'Unexpected Magpie MCP response' }); }
-      return jsonResponse(res, 200, filteredReply(reply));
+      const filtered = filteredReply(reply);
+      if (messages.some(m => m.method === 'tools/list')) {
+        const entries = Array.isArray(filtered) ? filtered : [filtered];
+        const count = entries.reduce((total, entry) => total + (entry?.result?.tools?.length || 0), 0);
+        console.log(`[mcp bridge] tools/list returned ${count} read-only tools`);
+      }
+      return jsonResponse(res, 200, filtered);
     } catch (error) {
       console.error('[mcp bridge]', error?.message || String(error));
       if (!res.headersSent) return jsonResponse(res, 502, { error: 'MCP bridge unavailable' });

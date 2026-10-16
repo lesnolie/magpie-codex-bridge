@@ -17,7 +17,7 @@ waits for Magpie's `3425` gateway, opens `48765` while available, and
 closes it again when Magpie stops. It leaves an already occupied `48765`
 alone. The local state file is
 `%LOCALAPPDATA%\MagpieLocalReview\service-status.json`.
-Switching the toggle off makes the host delete only this managed task.
+Switching the toggle off removes only this plugin's HKCU Run value, deletes the opt-in marker and closes the plugin-owned listener on the manager's next tick.
 
 **Installation diagnostics (v0.3.4-alpha.2):** The adapter's
 `service-status.json` is written only if the background manager has
@@ -64,3 +64,31 @@ Authoritative references:
 - https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/
 - https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
 - https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt
+
+
+### v0.3.4-alpha.3 Windows startup strategy
+
+The v0.3.4-alpha.2 Scheduled Tasks command failed on one Windows system.
+The replacement uses only the signed-in user's standard
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` registry key;
+it is installed using PowerShell's .NET registry APIs via EncodedCommand,
+which avoids schtasks argument quoting. It starts a detached, hidden Node
+manager immediately and at subsequent Windows sign-ins. No admin account,
+password, global service or Cloudflare changes are requested.
+
+`service-bootstrap.json` now reports `registering-user-startup`,
+`starting-manager`, or `manager-launch-requested`. Only
+`service-status.json` reporting `online` means the adapter actually
+listens. A missing runtime file with an installed startup registry entry
+still requires Windows acceptance troubleshooting.
+
+When disabling, this version deletes only its own HKCU Run value and
+`service-enabled.flag`. Its manager detects that marker and exits; no
+unknown process is killed. The previous plugin-owned scheduled-task name
+(`Magpie Local Review MCP (Managed)`) is removed best-effort as an
+upgrade migration, but other tasks are not modified.
+
+The first real Windows login may briefly show a console window because
+Node.js is a console application. The plugin launch from Magpie uses
+`windowsHide` and starts without a console; future releases may add
+a native hidden launcher if needed.

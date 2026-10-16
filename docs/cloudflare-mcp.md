@@ -4,6 +4,29 @@ Existing route: `c2c.ilxyz.xyz` through Healthy `codex-ilxyz` Tunnel to `http://
 
 The bundled `scripts/cloudflare-mcp-adapter.mjs` runs a minimal HTTP MCP proxy on `127.0.0.1:48765/mcp` and forwards **only six whitelisted read-only tools** to `http://127.0.0.1:3425/mcp/magpie/tools`. It also checks a signed Cloudflare Access JWT, including its RSA signature, issuer, expiration and the **specific Access Application AUD**. It does not expose Magpie's other tools or endpoints, and does not need the Magpie Gateway Key because it calls the loopback endpoint with no proxy-forwarding headers.
 
+## Automatic lifecycle after first working connection (Windows)
+
+If the Cloudflare app, tunnel and local JWT config already work, **you no
+longer need to launch the Node adapter manually after each Windows login.**
+
+In Magpie's **Project Review** page, enable **ChatGPT 远程连接 → 自动启动**
+once. The next Magpie plugin host initialization registers an interactive,
+least-privilege **Magpie Local Review MCP (Managed)** scheduled task pointing
+to a stable copy under `%LOCALAPPDATA%\MagpieLocalReview`. A supervisor
+waits for Magpie's `3425` gateway, opens `48765` while available, and
+closes it again when Magpie stops. It leaves an already occupied `48765`
+alone. The local state file is
+`%LOCALAPPDATA%\MagpieLocalReview\service-status.json`.
+Switching the toggle off makes the host delete only this managed task.
+
+Magpie's embedded page can **only** modify plugin options; it cannot
+launch a process or inspect the Windows task state. The plugin host may be
+lazy: if it has not started since the settings update, installation waits
+for plugin-host activation. The toggle therefore does not prove the task
+is installed until checked on Windows. No credentials or secrets are
+placed in the scheduled task or status file; the adapter retains strict
+Cloudflare JWT checks and the same six-tool allowlist.
+
 ## Set up Cloudflare (required BEFORE starting public access)
 
 1. Cloudflare dashboard > **Zero Trust > Access controls > Applications**. Add a **self-hosted** Access application protecting the hostname `c2c.ilxyz.xyz` (the entire host, including `/mcp`), or edit its existing Access app. Set an **Allow** policy limited to your own login identity/email and configure the intended identity provider. **Never add a Bypass/Everyone policy.**
@@ -11,7 +34,7 @@ The bundled `scripts/cloudflare-mcp-adapter.mjs` runs a minimal HTTP MCP proxy o
 3. From Access Overview, copy the **Application AUD** and your Access **Team domain** (`<team>.cloudflareaccess.com`). They aren't secrets. No tunnel token or Cloudflare API token is required by this adapter. You MUST configure them for JWT validation.
 4. On the Windows computer actually running Magpie (`3425`) and `cloudflared` (Cloudflare Tunnel connector), open a PowerShell console in the installed plugin folder and run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-cloudflare-mcp.ps1`. Enter the Team domain and Application AUD. It writes `%APPDATA%\magpie-local-review\cloudflare-mcp.json` and starts Node on `127.0.0.1:48765`.
 5. Keep the console open and verify: `Get-NetTCPConnection -State Listen -LocalPort 3425,48765`. Use `https://c2c.ilxyz.xyz/mcp` in **ChatGPT Plugins > Add custom MCP server**, choose **HTTPS URL** (not OpenAI Tunnel) and OAuth. Complete Cloudflare login, then inspect exactly 6 read-only tools. If the Access screen does not offer Managed OAuth, don't switch the service to an anonymous/public mode.
-6. After interactive verification, schedule `scripts/start-cloudflare-mcp.ps1` with Windows Task Scheduler as the signed-in user at logon, using `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <full-plugin-path>\scripts\start-cloudflare-mcp.ps1`. **Do not edit** or reuse the broken `Codex with ChatGPT - TMN` task until the new service is tested, and keep this script's folder stable across plugin updates.
+6. After interactive verification, open Magpie **Project Review** and enable **自动启动** once. The plugin host will register the managed Windows task; you do **not** need to schedule `start-cloudflare-mcp.ps1` manually. The old `Codex with ChatGPT - TMN` task is not touched.
 
 ## Troubleshooting
 

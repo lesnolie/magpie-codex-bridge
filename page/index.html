@@ -13,15 +13,27 @@
     <header>
       <div class="eyebrow">MAGPIE · LOCAL ACCESS</div>
       <h1>项目访问</h1>
-      <p class="intro">授权 ChatGPT 通过 MCP 访问指定项目。默认只读；Codex 执行和修改文件必须在本机另外授权。</p>
+      <p class="intro">可直接选择 Codex Desktop 已有项目，不必在 Magpie 重复登记；ChatGPT 仅调用只读检查或提交任务，代码修改由本地 Codex 执行。</p>
     </header>
     <section class="card">
-      <div class="section-heading"><h2>已授权项目</h2><div class="controls"><span class="tag" id="count">0 个项目</span><button class="remove" type="button" id="revoke">撤销全部授权</button></div></div>
+      <div class="section-heading">
+        <div><h2>项目来源</h2><p class="remote-sub">直接读取本机 Codex Desktop 中已有的项目</p></div>
+        <label class="remote-switch" for="useCodexProjects">
+          <input id="useCodexProjects" type="checkbox" aria-label="使用 Codex Desktop 的项目">
+          <span>使用 Codex 项目</span>
+        </label>
+      </div>
+      <p class="hint">开启后，ChatGPT 的项目列表、文件读取和 Codex 任务提交都以 Codex Desktop 已登记的工作目录为准，不再要求在 Magpie 逐个添加项目。只读读取和代码分析仍由 ChatGPT 发起，实际修改由本地 Codex 执行。</p>
+      <p class="hint">Codex 项目来自本机用户的只读状态记录；不修改 Codex 项目配置，也不授予整个磁盘访问权限。写入仍须在下方开启 Codex 修改权限。</p>
+      <p class="remote-status" id="projectSourceStatus" role="status" aria-live="polite"></p>
+    </section>
+    <section class="card">
+      <div class="section-heading"><h2>Magpie 手动项目（备用）</h2><div class="controls"><span class="tag" id="count">0 个项目</span><button class="remove" type="button" id="revoke">撤销全部授权</button></div></div>
       <div class="empty" id="empty">此页面还没有添加项目。</div>
       <ul id="projects" class="projects" aria-label="已授权项目列表"></ul>
     </section>
     <section class="card">
-      <div class="section-heading"><h2>添加项目</h2><span class="tag">本地只读</span></div>
+      <div class="section-heading"><h2>手动添加项目（备用）</h2><span class="tag">本地只读</span></div>
       <div id="addForm">
         <label for="folder">项目文件夹路径</label>
         <div class="path-row">
@@ -56,10 +68,10 @@
       </div>
       <label class="remote-switch" for="codexAllowWrites">
         <input id="codexAllowWrites" type="checkbox" aria-label="允许 Codex 写入已授权项目">
-        <span>允许修改已授权项目文件</span>
+        <span>允许 Codex 修改项目文件</span>
       </label>
       <div id="codexWriteConfirmation" class="permission-confirmation" role="group" aria-label="确认 Codex 项目写入权限" hidden>
-        <p>确认授予 Codex 修改已授权项目文件的权限？Codex 可能更改或删除代码。此授权仅在启用 Codex 后生效，建议先备份项目。</p>
+        <p>确认允许本地 Codex 修改当前项目来源中的项目文件？Codex 可能更改或删除代码。此授权仅在启用 Codex 后生效，建议先备份项目。</p>
         <div class="controls">
           <button type="button" id="confirmCodexWrite">确认授权</button>
           <button type="button" class="remove" id="cancelCodexWrite">取消</button>
@@ -82,7 +94,7 @@
     </section>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <div class="note" id="legacy" hidden>旧版授权提醒：曾通过 Windows 辅助选择器或插件 Options 添加的项目可能仍有效，但无法在此页面完整列出。请在本页重新添加所需项目，或点击「撤销全部授权」停用所有旧授权。</div>
-    <footer>默认只读 · Codex 执行须本机明确启用 · 取消授权不撤回已经返回的历史内容</footer>
+    <footer>ChatGPT 文件工具只读 · 本地 Codex 执行修改 · 项目目录来源可选</footer>
   </main>
 </body>
 </html>

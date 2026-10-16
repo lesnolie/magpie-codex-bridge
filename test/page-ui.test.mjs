@@ -156,3 +156,25 @@ test('real Magpie message handshake initializes page without predefined global m
   assert.equal(savedOptions.roots[0].path, 'C:/work/TMN');
   assert.equal(received[2].method, 'options.set');
 });
+
+test('remote service switch only writes the local Magpie options and preserves roots', async () => {
+  const app = runPage({ rootsSource: 'magpie-page', roots: [{name:'TMN',path:'C:/work/TMN'}] });
+  await wait();
+  assert.equal(app.element('remoteAutoStart').checked, false);
+  app.element('remoteAutoStart').checked = true;
+  await app.element('remoteAutoStart').fire('change');
+  assert.equal(app.options.remoteAutoStart, true);
+  assert.equal(app.options.roots[0].name, 'TMN');
+  assert.match(app.element('remoteStatus').textContent, /加载后/);
+  app.element('remoteAutoStart').checked = false;
+  await app.element('remoteAutoStart').fire('change');
+  assert.equal(app.options.remoteAutoStart, false);
+  assert.equal(app.element('remoteAutoStart').checked, false);
+});
+
+test('remote service card has no iframe-side process execution', () => {
+  const html = readFileSync(new URL('../page/index.html', import.meta.url), 'utf8');
+  const js = readFileSync(new URL('../page/app.js', import.meta.url), 'utf8');
+  assert.match(html, /id="remoteAutoStart"/);
+  assert.doesNotMatch(js, /schtasks|child_process|powershell|XMLHttpRequest|fetch\(/);
+});

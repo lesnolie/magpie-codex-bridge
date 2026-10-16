@@ -5,7 +5,8 @@
  */
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { projectRoots } from './projects.mjs';
 
 const MAX_PROMPT = 12000;
@@ -84,12 +85,29 @@ class RpcProcess {
   }
 }
 
+export function resolveCodexBinary(options = {}) {
+  if (options.codexExecutable) {
+    const exe = String(options.codexExecutable).trim();
+    if (!isAbsolute(exe) || (process.platform === 'win32' && !/\.exe$/i.test(exe))) {
+      throw new Error('Codex executable must be an absolute path to codex.exe');
+    }
+    return exe;
+  }
+  if (process.platform === 'win32') {
+    const target = process.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc';
+    const npmBinary = join(process.env.APPDATA || '', 'npm', 'node_modules', '@openai', 'codex', 'vendor', target, 'codex', 'codex.exe');
+    if (existsSync(npmBinary)) return npmBinary;
+    return 'codex.exe'; // Prefer native binary; Node cannot spawn npm .cmd shims without a shell.
+  }
+  return 'codex';
+}
+
 export function createCodexTasks(options = {}, dependencies = {}) {
   const jobs = new Map();
   const lastThreads = new Map();
   const launch = dependencies.spawn || spawn;
   const roots = dependencies.projectRoots || (() => projectRoots(options));
-  const binary = dependencies.binary || 'codex';
+  const binary = dependencies.binary || resolveCodexBinary(options);
   const args = dependencies.args || ['app-server', '--listen', 'stdio://'];
   function allowed(project) {
     if (options.codexEnabled !== true) throw new Error('Codex is disabled in local Magpie settings');
@@ -151,8 +169,10 @@ export function createCodexTasks(options = {}, dependencies = {}) {
         sandbox: options.codexAllowWrites === true ? 'workspace-write' : 'read-only',
         developerInstructions: 'Work only in the approved project directory. Do not attempt privilege escalation, global configuration changes, secrets access, network publishing, or Git push.',
       };
-      // The locally installed Codex config determines model/modelProvider.
-      // Never accept model or executable overrides from remote tool arguments.
+      // Only local Magpie settings may pin a custom model/provider. Remote MCP
+      // arguments cannot override provider, credentials, binary or sandbox.
+      if (typeof options.codexModel === 'string' && options.codexModel.trim()) config.model = options.codexModel.trim();
+      if (typeof options.codexModelProvider === 'string' && options.codexModelProvider.trim()) config.modelProvider = options.codexModelProvider.trim();
       const response = resumeThreadId
         ? await rpc.request('thread/resume', { threadId: resumeThreadId, ...config })
         : await rpc.request('thread/start', config);

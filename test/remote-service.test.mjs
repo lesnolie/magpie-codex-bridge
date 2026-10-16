@@ -4,8 +4,9 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { readFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { validAccessConfig, taskCreateArguments, remotePaths, writeBootstrapStatus } from '../src/remote-service.mjs';
-import { createSupervisor } from '../scripts/cloudflare-mcp-manager.mjs';
+import { validAccessConfig, startupCommand, startupRegistryScript, psLiteral, remotePaths, writeBootstrapStatus } from '../src/remote-service.mjs';
+import { createSupervisor, acquireManagerSingleton } from '../scripts/cloudflare-mcp-manager.mjs';
+import { execFileSync } from 'node:child_process';
 
 test('only valid Cloudflare Access configs can enable the managed remote adapter', () => {
   assert.equal(validAccessConfig(JSON.stringify({
@@ -19,17 +20,40 @@ test('only valid Cloudflare Access configs can enable the managed remote adapter
   ]) assert.equal(validAccessConfig(bad), false);
 });
 
-test('Windows scheduler action is confined to explicitly qualified Node and manager paths', () => {
-  const args = taskCreateArguments('C:\\Program Files\\nodejs\\node.exe',
+test('current-user Run registry command quotes Windows paths safely', () => {
+  const command = startupCommand('C:\\Program Files\\nodejs\\node.exe',
     'C:\\Users\\Alice Smith\\AppData\\Local\\MagpieLocalReview\\cloudflare-mcp-manager.mjs');
-  assert.deepEqual(args.slice(0,4), ['/create','/tn','Magpie Local Review MCP (Managed)','/tr']);
-  assert.equal(args[4], '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\Alice Smith\\AppData\\Local\\MagpieLocalReview\\cloudflare-mcp-manager.mjs"');
-  assert.equal(args.includes('/it'), true);
-  assert.equal(args.includes('SYSTEM'), false);
-  assert.throws(() => taskCreateArguments('node.exe','C:\\Program Files\\manager.mjs'));
-  assert.throws(() => taskCreateArguments('C:\\node.exe" && echo bad', 'C:\\manager.mjs'));
+  assert.equal(command, '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\Alice Smith\\AppData\\Local\\MagpieLocalReview\\cloudflare-mcp-manager.mjs"');
+  assert.throws(() => startupCommand('node.exe','C:\\Program Files\\manager.mjs'));
+  assert.throws(() => startupCommand('C:\\node.exe" && echo bad', 'C:\\manager.mjs'));
+  assert.equal(psLiteral("a'b"), "'a''b'");
+  const ps = startupRegistryScript('set', command);
+  assert.match(ps, /Registry\.CurrentUser/);
+  assert.match(ps, /SetValue/);
+  assert.match(ps, /Run/);
+  assert.doesNotMatch(ps, /LocalMachine|SYSTEM|schtasks/);
+  assert.match(startupRegistryScript('delete', ''), /DeleteValue/);
+  assert.throws(() => startupRegistryScript('execute', 'x'));
 });
 
+test('Windows registry startup script registers and removes HKCU value without elevation', {
+  skip: process.platform !== 'win32' || process.env.GITHUB_ACTIONS !== 'true',
+}, () => {
+  const runPs = code => execFileSync('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(code, 'utf16le').toString('base64'),
+  ], { encoding: 'utf8', timeout: 12000, windowsHide: true }).trim();
+  const set = startupRegistryScript('set', '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\Alice Smith\\test.mjs"');
+  // This is the plugin's own test-only CI sandbox; clean up even on error.
+  try {
+    runPs(set);
+    const query = "$key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("+
+      psLiteral('Software\\Microsoft\\Windows\\CurrentVersion\\Run')+");"+
+      "$key.GetValue(" + psLiteral('Magpie Local Review MCP') + ")";
+    assert.equal(runPs(query), '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\Alice Smith\\test.mjs"');
+  } finally {
+    runPs(startupRegistryScript('delete', ''));
+  }
+});
 test('service copies live outside volatile Magpie plugin directories', () => {
   const p = remotePaths({LOCALAPPDATA:'C:\\Local',APPDATA:'C:\\Roaming'});
   assert.ok(p.manager.includes('MagpieLocalReview'));
@@ -55,6 +79,7 @@ test('supervisor starts only with Magpie and config, stops listener on quit', as
     isMagpieReady: async () => magpie,
     isBridgeInUse: async () => occupied,
     hasConfig: () => configured,
+    isEnabled: () => true,
     createBridge: fakeBridge,
     report: state => states.push(state),
   });
@@ -118,7 +143,51 @@ test('bootstrap diagnostics create an independent status file without running ma
     await writeBootstrapStatus('setup-failed', 'scheduler rejected'.repeat(100), env);
     data = JSON.parse(readFileSync(file, 'utf8'));
     assert.equal(data.stage, 'setup-failed');
-    assert.ok(data.reason.length <= 240);
+    assert.ok(data.reason.length <= 800);
     assert.equal(data.reason.startsWith('scheduler rejected'), true);
   } finally { rmSync(temp, {recursive:true, force:true}); }
+});
+
+test('disabled manager closes only its own listener and exits promptly', async () => {
+  let enabled = true;
+  let closes = 0;
+  let startCount = 0;
+  const states = [];
+  const bridgeFactory = () => {
+    const e = new EventEmitter();
+    e.listening = true;
+    e.close = (cb) => { e.listening = false; closes++; cb(); };
+    startCount++;
+    return e;
+  };
+  const manager = createSupervisor({
+    isEnabled: () => enabled,
+    isMagpieReady: async () => true,
+    hasConfig: () => true,
+    isBridgeInUse: async () => false,
+    createBridge: bridgeFactory,
+    report: state => states.push(state),
+  });
+  await manager.tick();
+  enabled = false;
+  await manager.tick();
+  assert.equal(closes, 1);
+  assert.equal(manager.stopped, true);
+  await manager.tick();
+  assert.equal(startCount, 1);
+  assert.equal(states.at(-1), 'stopped');
+});
+
+test('Windows local named-pipe singleton refuses duplicate supervisor', {
+  skip: process.platform !== 'win32',
+}, async () => {
+  const name = 'MagpieMCP-CI-' + process.pid;
+  const first = await acquireManagerSingleton(name);
+  assert.ok(first);
+  const second = await acquireManagerSingleton(name);
+  assert.equal(second, null);
+  await first.close();
+  const third = await acquireManagerSingleton(name);
+  assert.ok(third);
+  await third.close();
 });

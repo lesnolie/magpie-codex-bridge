@@ -79,7 +79,15 @@ async function locate(p, relative, kind = 'file') {
     if (i !== parts.length - 1 && !info.isDirectory()) throw new Error('Parent path is not a directory');
   }
   const actual = await realpath(cursor);
-  if (actual !== p.root && !actual.startsWith(p.root + path.sep)) throw new Error('Path leaves project');
+  // Canonical Windows realpath can differ in casing from the earlier sync
+  // realpath of the root (notably a drive letter). Use relative-path
+  // containment rather than case-sensitive string-prefix comparison.
+  // Node's win32 path.relative performs case-insensitive comparisons while
+  // the explicit .. / absolute rejection still blocks directory escapes.
+  const relative = path.relative(p.root, actual);
+  if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+    throw new Error('Path leaves project');
+  }
   const info = await lstat(actual);
   if (kind === 'file' && !parts.length) throw new Error('Specify a file');
   if (kind === 'file' && !info.isFile()) throw new Error('Not a regular file');

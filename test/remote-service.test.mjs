@@ -74,6 +74,16 @@ test('managed supervisor upgrade targets only exact approved manager script', ()
   assert.throws(() => managedManagerReloadScript('cloudflare-mcp-manager.mjs'));
 });
 
+test('Windows upgrade reload PowerShell script parses and runs without matched manager', {
+  skip: process.platform !== 'win32' || process.env.GITHUB_ACTIONS !== 'true',
+}, () => {
+  const missingManager = 'C:\\MagpieMissingCI-' + process.pid + '\\cloudflare-mcp-manager.mjs';
+  const ps = managedManagerReloadScript(missingManager);
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+    Buffer.from(ps, 'utf16le').toString('base64'),
+  ], { encoding: 'utf8', timeout: 15000, windowsHide: true });
+});
+
 test('service copies live outside volatile Magpie plugin directories', () => {
   const p = remotePaths({LOCALAPPDATA:'C:\\Local',APPDATA:'C:\\Roaming'});
   assert.ok(p.manager.includes('MagpieLocalReview'));

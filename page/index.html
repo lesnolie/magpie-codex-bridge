@@ -6,6 +6,7 @@
   <title>Local Project Review</title>
   <link rel="stylesheet" href="style.css">
   <!-- Self-contained app.js also implements Magpie's documented postMessage bridge. -->
+  <script src="model-catalog.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -84,7 +85,7 @@
         <label for="codexExecutable">Codex 本地可执行程序路径（可选）</label>
         <input id="codexExecutable" type="text" spellcheck="false" placeholder="C:\\...\\codex.exe">
         <div class="section-heading"><label for="codexModel">任务模型</label><button type="button" class="remove" id="refreshModels">刷新模型</button></div>
-        <p class="hint">与 Magpie Agent 使用同一份动态模型目录，不需要手动复制模型 ID。</p>
+        <p class="hint">由本地插件读取 Magpie 已向 Codex 开放的供应商模型目录，无需修改 Magpie 本体或复制 ID。</p>
         <input id="codexModelSearch" type="search" spellcheck="false" placeholder="搜索模型或供应商" aria-label="搜索 Magpie 模型">
         <select id="codexModel" aria-label="选择 Codex 任务模型">
           <option value="">跟随 Codex 当前配置</option>

@@ -1,6 +1,22 @@
-# Magpie Local Project Review (v0.3.4 alpha)
+# Magpie Local Project Review (v0.4.0 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
+
+
+## Phase 2: opt-in local Codex app-server tasks (v0.4.0-alpha.1)
+
+Magpie can now submit local Codex tasks, report progress/results and cancel
+tasks through the official Codex app-server stdio protocol. This feature is
+**OFF BY DEFAULT** and requires enabling Codex on the Magpie plugin page.
+Allowing Codex to write to approved projects is a separate local opt-in.
+The original six read-only review tools remain available unchanged.
+
+Remote execution also requires an authenticated Cloudflare Access connection
+and a ChatGPT account/workspace permitted to call execution-capable custom
+MCP tools. This repository cannot grant or bypass ChatGPT's tool permissions.
+The local task manager does not control an already-open Codex Desktop window.
+
+See [local Codex integration setup and limitations](docs/codex-integration.md).
 
 ## Automatically managed Windows remote MCP (v0.3.4-alpha.3)
 

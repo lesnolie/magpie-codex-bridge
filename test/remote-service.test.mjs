@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
-import { validAccessConfig, taskCreateArguments, remotePaths } from '../src/remote-service.mjs';
+import { readFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { validAccessConfig, taskCreateArguments, remotePaths, writeBootstrapStatus } from '../src/remote-service.mjs';
 import { createSupervisor } from '../scripts/cloudflare-mcp-manager.mjs';
 
 test('only valid Cloudflare Access configs can enable the managed remote adapter', () => {
@@ -101,4 +102,23 @@ test('Magpie page still offers exactly six audit tools and only options-backed l
   assert.match(html, /id="remoteAutoStart"/);
   assert.match(app, /magpie\.options\.set/);
   assert.doesNotMatch(app, /fetch\(|XMLHttpRequest|execFile\(|shell|node:child_process/);
+});
+
+test('bootstrap diagnostics create an independent status file without running manager', async () => {
+  const temp = mkdtempSync(path.join(tmpdir(), 'mcp-bootstrap-'));
+  try {
+    const env = { LOCALAPPDATA: temp, APPDATA: temp };
+    await writeBootstrapStatus('checking-node', null, env);
+    const file = path.join(temp, 'MagpieLocalReview', 'service-bootstrap.json');
+    assert.ok(existsSync(file));
+    let data = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(data.stage, 'checking-node');
+    assert.equal(data.reason, undefined);
+    assert.ok(data.at);
+    await writeBootstrapStatus('setup-failed', 'scheduler rejected'.repeat(100), env);
+    data = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(data.stage, 'setup-failed');
+    assert.ok(data.reason.length <= 240);
+    assert.equal(data.reason.startsWith('scheduler rejected'), true);
+  } finally { rmSync(temp, {recursive:true, force:true}); }
 });

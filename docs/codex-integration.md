@@ -28,6 +28,29 @@ implementation, not an unrestricted computer agent.
 7. Refresh ChatGPT's tool discovery if the account/workspace can call
    execution-capable MCP tools. Magpie cannot override ChatGPT's own policy.
 
+## Codex Desktop 项目作为目录来源
+
+在 **Magpie → Project Review → 项目来源** 开启「使用 Codex 项目」。
+此模式下，`projects`、`list_files`、`read_file`、`search_text`、
+`git_status`、`git_diff` 以及 `codex_submit_task` 都使用相同的
+Codex Desktop 已登记项目和目录，不要求在 Magpie 重复授权文件夹。
+
+项目名称、工作目录读取自当前 Windows 用户的 Codex Desktop 状态文件：
+`%USERPROFILE%\\.codex\\.codex-global-state.json`（若设置 `CODEX_HOME`
+则以该目录为准）。只读取 `local-projects` 和各项目的 `rootPaths`，
+不写入或修改 Codex 自身的状态文件；不存在、无效、移走的目录被拒绝或忽略。
+一个 Codex 项目可以有多个工作目录，这时列表分别显示各目录。
+
+这是 Codex Desktop 的内部状态格式，可能随其版本变化。目前用于
+无需启动 app-server 的项目发现；后续可迁移到支持的 `project/list`
+接口。若你的 Codex Desktop 项目记录丢失或格式不同，请切回
+「Magpie 手动项目」模式，不要擅自修改 Codex 内部状态。
+
+**权限分工：ChatGPT 不直接写文件。** 六个项目浏览工具始终只读。
+ChatGPT 可以提交 Codex 任务，本地 Codex 才能实际执行修改、测试
+或 Git 操作。只有在本地启用 Codex 并开启独立的写入权限后，
+Codex 才会使用 `workspace-write` 沙盒。项目来源切换不会自动开启写入权限。
+
 ## Remote tools (local opt-in required)
 
 - codex_submit_task(project, prompt, continueThread?): start a task and

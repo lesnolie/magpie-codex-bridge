@@ -157,6 +157,21 @@ test('real Magpie message handshake initializes page without predefined global m
   assert.equal(received[2].method, 'options.set');
 });
 
+test('Codex project source switch preserves manual roots', async () => {
+  const app = runPage({rootsSource:'magpie-page',roots:[{name:'TMN',path:'C:/work/TMN'}],codexEnabled:true});
+  await wait();
+  app.element('useCodexProjects').checked = true;
+  await app.element('useCodexProjects').fire('change');
+  await wait();
+  assert.equal(app.options.projectSource,'codex');
+  assert.equal(app.options.codexEnabled,true);
+  assert.equal(app.options.roots[0].name,'TMN');
+  assert.equal(app.element('useCodexProjects').checked,true);
+  app.element('useCodexProjects').checked = false;
+  await app.element('useCodexProjects').fire('change');
+  await wait();
+  assert.equal(app.options.projectSource,'manual');
+});
 test('remote service switch only writes the local Magpie options and preserves roots', async () => {
   const app = runPage({ rootsSource: 'magpie-page', roots: [{name:'TMN',path:'C:/work/TMN'}] });
   await wait();

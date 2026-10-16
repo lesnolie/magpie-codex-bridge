@@ -1,89 +1,90 @@
-# Magpie Codex Bridge (Phase 1 prototype)
+# Magpie Local Project Review (v0.3 alpha)
 
-Experimental **Magpie tool plugin → local Codex app-server → existing Codex thread** bridge. Use Codex's own working directory and persisted session history; no project picker, coding agent, or custom compaction algorithm.
+A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
-**Current status:** runnable prototype with mocked protocol integration tests. NOT yet validated with a real Windows Codex desktop session, Magpie installation, or the ChatGPT remote tunnel. It is not a production-ready remote execution service.
+## Architecture
 
-## What it does
-
-- `threads`: list existing Codex threads from the same Codex home.
-- `resume`: reattach by `threadId` without changing `cwd`, model, or permissions.
-- `compact`: trigger Codex's native `thread/compact/start` and return immediately.
-- `continue`: append a turn to that thread via `turn/start` (off by default).
-- `status`: see native thread status and last tracked operation.
-
-The Magpie MCP tool names will be prefixed with the plugin's short name (e.g. `magpie-codex-bridge_resume`). The names shown in Magpie are authoritative.
-
-## Requirements
-
-- Magpie release supporting OpenCode plugin `tool` hooks and `/mcp/magpie/tools`.
-- Local authenticated Codex CLI with `codex app-server` on `PATH`.
-- Both processes on the **same computer and user/CODEX_HOME** for shared threads.
-- A separately configured **authenticated MCP tunnel** for ChatGPT Web. **Never forward Magpie's loopback MCP endpoint to the public Internet without authentication and access restrictions.**
-
-## Install locally (Windows PowerShell)
-
-```powershell
-# Check prerequisite
-codex --version
-codex app-server --help
-# From the folder containing package.json
-magpie plugin add .
-# Confirm tools in Magpie Settings > Plugins
-npm test
+```text
+Local Codex (budget model) ── edits/tests ──> allowed project directory ── git push ──> GitHub
+                                              │                                  │
+                                       Magpie tool plugin                       │
+                                              │                                  │
+                                         Magpie MCP                            │
+                                              │                                  │
+                                       Secure MCP Tunnel*                      │
+                                              │                                  │
+                              ChatGPT Web (advisor/reviewer) <─────────────────┘
 ```
 
-If you cannot find the Codex CLI, install/update it using Codex's official instructions before attempting the test. The plugin does not install CoS. `CODEX_BRIDGE_COMMAND` can point to your existing Codex executable.
+*The ChatGPT account/workspace must support connecting custom MCP servers. If not, **use the already-connected GitHub integration** to review committed/pushed branches and PRs. No custom MCP tunnel is required for the GitHub fallback.
 
-## Manual acceptance test: local compact → remote resume
+## Features (read only)
 
-1. In **local Codex**, open an **expendable test project** and make a new thread. Use only a harmless short prompt, then note the thread ID.
-2. Use `threads` from Magpie to verify that the local thread appears with the expected working directory. If it does not, check `CODEX_HOME` and which Codex installation Magpie starts.
-3. Stop editing that test thread in the desktop UI. In Magpie call `resume` with that thread ID.
-4. Call `compact`. It returns before native compaction finishes; poll `status` until complete, including a `contextCompaction` event.
-5. Restart Magpie's plugin host. `resume` again; verify the **same ID and original working directory**.
-6. Explicitly set `CODEX_BRIDGE_ENABLE_CONTINUE=1` in the **trusted local Magpie process environment** and restart its plugin host. Call `continue` with a harmless test instruction. Poll `status` for completion. Verify the new turn appears in the original Codex thread and its context is preserved.
-7. Reopen the original Codex UI and inspect the test thread. Do not send concurrent turns from desktop and bridge.
+- `projects`: configured project names; does not expose arbitrary directories.
+- `list_files`: list source files and subdirectories.
+- `read_file`: read source lines, capped at 64 KiB per source file and 200 lines per call.
+- `search_text`: literal text search, bounded by 300 scanned files and 50 matches.
+- `git_status`: read uncommitted state (does not stage or commit).
+- `git_diff`: read **unstaged diff for a specific existing source file**. Staged changes are visible through GitHub after commit/push; use `git status` to identify them locally.
 
-**Pass criteria:** thread ID unchanged, native compaction completed, remote app-server resumed same persisted thread, next turn executed in original `cwd`, no approval bypass. Log any client-ownership conflict as a failure.
+No arbitrary shell, code write, git push or Codex session tools. The Magpie tools endpoint exposes **all enabled plugins' tools**, not just this one. Turn off unrelated sensitive tool plugins before granting remote access.
 
-## Known constraints / safety
+## Configure allowed folders
 
-- **No tunnel is set up by this repository.** Connecting ChatGPT Web requires your account's support for custom MCP tools plus a separate authenticated tunnel.
-- A local `codex app-server` process is spawned from Magpie; it is not guaranteed to attach to the exact *live* in-memory process used by Codex Desktop. The test checks on-disk continuity. Do not concurrently write the same thread using two clients until conflict behavior is verified.
-- Actions requiring interactive approval are **not auto-approved**: phase 1 replies with an error and may cause the affected turn to fail. Remote continue is off by default.
-- The bridge does **not** customize Codex's model, workdir, sandbox or approval policy. It deliberately has no workspace selector.
-- The plugin host may restart and lose in-memory progress events. Persisted Codex threads can be resumed, but an interrupted active turn is not guaranteed to survive a plugin-host restart.
-- Magpie allows 55 seconds per tool; compact and continue return after the RPC acknowledges, not after the work finishes. Use `status` to poll.
-- `status` only reports a short recent event list and bounded output preview, not full terminal logs.
-- No Loop, multi-agent coordinator, browser automation, Intelligent UI modifications, or desktop-control reproduction in this phase.
+Do **not** make the root of a drive or your whole home directory available. Add only projects you intend to review. Configure via the Magpie UI (Settings → Plugins → Installed → plugin Options), or edit `~/.config/magpie/plugins.json` in **the Magpie host's own environment**:
 
-## Technical design
+```json
+{
+  "plugins": [
+    {
+      "spec": "github:lesnolie/magpie-codex-bridge#feat/local-project-review",
+      "options": {
+        "roots": [
+          { "name": "TMN", "path": "C:/work/TMN" }
+        ]
+      }
+    }
+  ]
+}
+```
 
-`Magpie tool → Codex app-server stdio JSON-RPC → existing local Codex thread`. The bridge uses the official `initialize` / `initialized` handshake and `thread/list`, `thread/resume`, `thread/compact/start`, `thread/read`, `turn/start`, plus notification events. No file operations are implemented in the bridge: Codex itself owns them.
+**Merge this entry into your existing plugins list; do not replace the whole file.** If Magpie runs in WSL instead of Windows, use an accessible Linux path (e.g. `/mnt/c/work/TMN`), not a Windows drive path. The plugin must run on a machine/environment that can read the desired project. Paths are resolved at plugin load; a changed options setting requires restarting/reloading the tool plugin host.
 
-Reference documentation:
-- [Magpie plugin tools](https://usemagpie.ai/docs/plugins#tools-for-every-agent)
-- [Codex app-server](https://learn.chatgpt.com/docs/app-server)
+Local source install: `magpie plugin add ./magpie-local-review`. Git branch install: `magpie plugin add github:lesnolie/magpie-codex-bridge#feat/local-project-review` (test installation; do not replace your production plugin automatically). Magpie's installed tools list will include six new tools. Run `npm test` to validate the plugin itself.
 
-## Test and contribute
+> Until this branch is merged, treat it as a preview, not a production release. If Magpie already has the same GitHub plugin spec installed at another ref, use a local folder copy for isolated testing.
 
-```sh
-npm test
+## Connect ChatGPT Web
+
+1. Check ChatGPT **Plugins** → **Add custom MCP server**. Availability depends on the user's plan/workspace; OpenAI currently documents full custom MCP for Business/Enterprise/Edu and read/fetch custom MCP for Pro, and does not promise access for every Plus account.
+2. If this option is available, run Magpie with its tool plugin enabled. Magpie serves local **Streamable HTTP** MCP at `http://127.0.0.1:3425/mcp/magpie/tools` (or the configured Magpie port).
+3. Use OpenAI **Secure MCP Tunnel** to connect the local MCP server; do **not** simply expose Magpie's unauthenticated loopback gateway on the public internet. Configure the tunnel's authenticated connection and Magpie gateway key according to official docs. In ChatGPT Plugins, choose Tunnel and the provisioned tunnel ID, or an authenticated HTTPS MCP endpoint.
+4. Confirm ChatGPT can list the `magpie-codex-bridge_projects` tool (exact prefix shown in Magpie). First ask it to list projects, read a harmless test Lua file, then inspect an unstaged diff.
+
+Connecting Codex *to* Magpie via `codex mcp add` is **not necessary** for ChatGPT Web to review the local project.
+
+## GitHub fallback (recommended to start)
+
+Have local Codex work on a branch, run tests, and push commits or open a PR. ChatGPT Web can use the already connected GitHub integration to inspect diffs and provide actionable review comments. This works independently of whether custom MCP connectivity is enabled for your ChatGPT account. GitHub does not contain local uncommitted changes; those require an active local MCP connection.
+
+Sample reviewer prompt:
+
+> Review branch/PR against main. Focus on Lua logic, UI regression, performance, correctness and automated-test coverage. Explain each finding with file paths and changed code. Do not edit files unless I explicitly ask. Provide a focused task list for my local Codex to implement.
+
+## Safety and limitations
+
+- Only configured project directories can be referenced. No runtime tool can add or change roots.
+- File reads reject absolute and parent-traversal paths, symlinks, secret-looking filenames and binary or oversized files; source extensions only.
+- All tool calls are read-only. **This is defense in depth, not a DLP system**: credentials embedded in an ordinary `.lua` or `.js` source file could still be returned; audit folders before enabling remote access.
+- `git diff` is limited to unstaged changes of one existing file. No shell commands are accepted from the model.
+- A remote ChatGPT Web session is *not* connected just because a plugin loads successfully in Magpie. You must connect the MCP service separately, if your plan/workspace supports it.
+- No local Codex app-server integration in this branch. ChatGPT and Codex coordinate through files, Git commits, PRs and optional human-approved task handoffs. Optional web Loop is deferred until the read-only review path works.
+
+## Development
+
+```bash
 npm run check
+npm test
 ```
 
-Tests use a subprocess fake of Codex's documented JSON-RPC protocol. They prove bridge request/response, native-compaction event handling, restart/resume identity and basic concurrency rejection, **not compatibility with installed Codex Desktop**. See [`docs/acceptance.md`](docs/acceptance.md) for the real-system matrix.
-
-License: MIT. Not affiliated with Magpie, CoS, or OpenAI.
-
-## Publish as a new public GitHub repository
-
-The local archive contains source, **not a remotely created GitHub repository**. To create and push a new public repository from Windows after installing and authenticating [GitHub CLI](https://cli.github.com/):
-
-```powershell
-# Run in the unzipped source folder:
-.\scripts\publish.ps1
-```
-
-This script uses `gh repo create --public --source . --remote origin --push`, with no force push. It does not change any existing GitHub repository. If you prefer preserving the included development history, use the separately supplied `.git.bundle` to clone locally before pushing.
+Tests are local Node mocks with a temporary Git repository, and **do not** prove that ChatGPT Web or Magpie on your Windows computer can reach the tools. The `main` branch remains unchanged pending acceptance.

@@ -132,7 +132,11 @@ export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
       const pathname = new URL(req.url || '/', 'http://localhost').pathname;
       if (pathname !== MCP_PATH || req.url !== MCP_PATH) return jsonResponse(res, 404, { error: 'Not found' });
       if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'POST MCP only' });
-      if (req.headers.origin) return jsonResponse(res, 403, { error: 'Browser origins not allowed' });
+      if (req.headers.origin) {
+        // Log only that Origin was present, never its value.
+        console.warn('[mcp bridge] BLOCKED 403: Origin header present');
+        return jsonResponse(res, 403, { error: 'Browser origins not allowed', reason: 'origin-header-present' });
+      }
       const jwt = req.headers['cf-access-jwt-assertion'];
       try { await verifyJWT(jwt); } catch (error) {
         console.warn(`[mcp bridge] Cloudflare Access JWT rejected: ${error?.message || 'authentication failed'}`);
@@ -143,8 +147,19 @@ export function createBridge({ verifyJWT, upstream = UPSTREAM }) {
       let parsed;
       try { parsed = JSON.parse(body.toString('utf8')); } catch { return jsonResponse(res, 400, { error: 'Invalid JSON' }); }
       const messages = Array.isArray(parsed) ? parsed : [parsed];
-      if (!messages.length || messages.length > 20 || messages.some(m => !inspectMessage(m))) {
-        return jsonResponse(res, 403, { error: 'Only the six allowed read-only project tools are available' });
+      const rejected = messages.find(m => !inspectMessage(m));
+      if (!messages.length || messages.length > 20 || rejected) {
+        // Report only MCP method names, never arguments, tool names, project paths, or tokens.
+        const method = rejected?.method;
+        const methodLabel = typeof method === 'string' && /^[a-zA-Z][a-zA-Z0-9/_-]{0,63}$/.test(method)
+          ? method : 'invalid-jsonrpc';
+        const reason = messages.length > 20 ? 'oversized-batch'
+          : messages.length === 0 ? 'empty-batch'
+          : methodLabel === 'tools/call' ? 'tools-call-outside-allowlist'
+          : methodLabel === 'invalid-jsonrpc' ? 'invalid-jsonrpc'
+          : 'unsupported-method:' + methodLabel;
+        console.warn('[mcp bridge] BLOCKED 403: ' + reason);
+        return jsonResponse(res, 403, { error: 'Only the six allowed read-only project tools are available', reason });
       }
       const response = await fetch(upstream, {
         method: 'POST',

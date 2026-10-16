@@ -64,7 +64,7 @@ test('Magpie registers stable Codex tool schemas without enabling execution', as
   assert.match(response.error, /Codex is disabled/);
   const projects = JSON.parse(await p.tool.projects.execute({}));
   assert.equal(projects.projects[0].name, 'TMN');
-  assert.equal(projects.codex.integrationVersion, '0.4.2-alpha.1');
+  assert.equal(projects.codex.integrationVersion, '0.4.3-alpha.1');
   assert.equal(projects.codex.toolsRegistered, true);
   assert.equal(projects.codex.toolCount, 10);
   assert.equal(projects.codex.localEnabled, false);
@@ -190,7 +190,7 @@ test('embedded UI is bundled with the Magpie page bridge and options-only permis
   const root = path.resolve(here, '..');
   const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
   assert.equal(pkg.magpie.page.file, 'page/index.html');
-  assert.equal(pkg.magpie.permissions, undefined);
+  assert.deepEqual(pkg.magpie.permissions, ['models:list']);
   const html = readFileSync(path.join(root, 'page/index.html'), 'utf8');
   assert.doesNotMatch(html, /<script[^>]+bridge\\.js/);
   assert.ok(readFileSync(path.join(root, 'page/app.js'), 'utf8').includes("parentWindow.postMessage("));

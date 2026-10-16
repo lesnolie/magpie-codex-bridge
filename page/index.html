@@ -83,10 +83,20 @@
       <div class="codex-config">
         <label for="codexExecutable">Codex 本地可执行程序路径（可选）</label>
         <input id="codexExecutable" type="text" spellcheck="false" placeholder="C:\\...\\codex.exe">
-        <label for="codexModel">模型 ID（可选，留空继承本地 Codex 配置）</label>
-        <input id="codexModel" type="text" spellcheck="false" placeholder="本地 Codex 模型 ID">
-        <label for="codexModelProvider">Model Provider ID（可选）</label>
-        <input id="codexModelProvider" type="text" spellcheck="false" placeholder="config.toml 中的模型提供商 ID">
+        <div class="section-heading"><label for="codexModel">任务模型</label><button type="button" class="remove" id="refreshModels">刷新模型</button></div>
+        <p class="hint">与 Magpie Agent 使用同一份动态模型目录，不需要手动复制模型 ID。</p>
+        <input id="codexModelSearch" type="search" spellcheck="false" placeholder="搜索模型或供应商" aria-label="搜索 Magpie 模型">
+        <select id="codexModel" aria-label="选择 Codex 任务模型">
+          <option value="">跟随 Codex 当前配置</option>
+        </select>
+        <p id="modelPickerStatus" class="hint" role="status" aria-live="polite">正在读取 Magpie 模型列表…</p>
+        <details id="codexLegacyModel">
+          <summary>高级配置 / 旧版 Magpie 兼容</summary>
+          <label for="codexModelFallback">手动模型 ID（仅在宿主缺少模型目录接口时使用）</label>
+          <input id="codexModelFallback" type="text" spellcheck="false" placeholder="手动输入模型 ID">
+          <label for="codexModelProvider">Model Provider ID（留空继承 Codex 配置）</label>
+          <input id="codexModelProvider" type="text" spellcheck="false" placeholder="config.toml 中的提供商 ID">
+        </details>
         <button type="button" id="saveCodexConfig">保存 Codex 设置</button>
       </div>
       <p class="hint">这里不要填写 API Key。模型和 provider 必须事先在本地 Codex 正确配置。</p>

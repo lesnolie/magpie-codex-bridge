@@ -4,6 +4,30 @@ A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper 
 
 
 
+## v0.4.3 alpha: Native Magpie model picker (host compatibility required)
+
+The Magpie plugin page now uses a searchable, provider-grouped **task model**
+picker instead of requiring a pasted model ID. The list is read with
+`magpie.read('models:list', {agent:'codex'})` through the existing sandboxed
+`postMessage` bridge. The page never calls the network, reads keys or
+changes Codex global configuration. It stores the selected thread model and
+provider only in this plugin's own options, used for future Codex tasks.
+
+**Important compatibility requirement:** Current upstream Magpie does **not**
+yet grant a `models:list` plugin-page read. Its only supported reads are
+`providers:list` and `usage:summary`, neither of which carries model
+choices. `docs/magpie-host-models-list.patch` contains a minimal, permission-
+checked upstream host change to add the needed read. Until Magpie incorporates
+that host change, the picker shows a clear compatibility message and preserves
+the existing manual override inside **高级配置 / 旧版 Magpie 兼容**.
+Updating only this plugin does not make the models appear.
+
+The new read follows Codex's catalog visibility rather than exposing
+credentials or account details, and does not bypass the iframe sandbox.
+Magpie gateway models require the existing Codex `model_providers.magpie`
+configuration; the local Codex task reports an error rather than
+silently selecting another model when that provider is unavailable.
+
 ## v0.4.2: Use Codex Desktop projects directly
 
 In **Magpie → Project Review → 项目来源**, switch on **使用 Codex 项目**.

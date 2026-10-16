@@ -41,6 +41,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
           get: () => request('options.get'),
           set: (options) => request('options.set', { options }),
         },
+        read: (name, params = {}) => request('read', { name, params }),
       };
       api.ready = request('hello');
       return api;
@@ -72,11 +73,19 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const cancelCodexWrite = document.getElementById('cancelCodexWrite');
   const codexExecutable = document.getElementById('codexExecutable');
   const codexModel = document.getElementById('codexModel');
+  const codexModelSearch = document.getElementById('codexModelSearch');
+  const codexModelFallback = document.getElementById('codexModelFallback');
+  const modelPickerStatus = document.getElementById('modelPickerStatus');
+  const refreshModels = document.getElementById('refreshModels');
+  const codexLegacyModel = document.getElementById('codexLegacyModel');
   const codexModelProvider = document.getElementById('codexModelProvider');
   const saveCodexConfig = document.getElementById('saveCodexConfig');
   let rows = Array.isArray(options.roots) ? options.roots.filter((r) => r && typeof r.name === 'string' && typeof r.path === 'string') : [];
   let busy = false;
   let pendingCodexWrite = false;
+  let modelCatalog = [];
+  let modelsAvailable = false;
+  let selectedCatalogID = null;
 
   function updateStatus(message, error = false) {
     status.textContent = message;
@@ -144,6 +153,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     confirmCodexWrite.disabled = busy;
     cancelCodexWrite.disabled = busy;
     saveCodexConfig.disabled = busy;
+    refreshModels.disabled = busy;
   }
   async function save(next) {
     if (busy) return;
@@ -256,9 +266,83 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     codexStatus.classList.remove('error');
     render();
   });
+  function modelOptions(search = '') {
+    // Dynamic catalog comes only from the Magpie-host-approved read.
+    // Filtering never sends a search string to a remote provider.
+    const query = search.toLowerCase().trim();
+    const chosen = selectedCatalogID || codexModel.value || '';
+    codexModel.replaceChildren();
+    const inherit = document.createElement('option');
+    inherit.value = '';
+    inherit.textContent = '跟随 Codex 当前配置';
+    codexModel.append(inherit);
+    const groups = new Map();
+    for (const entry of modelCatalog) {
+      if (query && entry.id !== chosen && !(entry.name + ' ' + entry.group + ' ' + entry.id).toLowerCase().includes(query)) continue;
+      const groupName = entry.group || '其他';
+      let group = groups.get(groupName);
+      if (!group) {
+        group = document.createElement('optgroup');
+        group.label = groupName;
+        groups.set(groupName, group);
+        codexModel.append(group);
+      }
+      const option = document.createElement('option');
+      option.value = entry.id;
+      option.textContent = entry.name === entry.id ? entry.name : entry.name + ' · ' + entry.id;
+      group.append(option);
+    }
+    if (chosen && !modelCatalog.some(entry => entry.id === chosen)) {
+      const old = document.createElement('option');
+      old.value = chosen;
+      old.textContent = chosen + '（当前保存；目录外）';
+      codexModel.append(old);
+    }
+    codexModel.value = chosen;
+  }
+  async function loadModels() {
+    modelPickerStatus.textContent = '正在读取 Magpie 模型列表…';
+    try {
+      if (typeof magpie.read !== 'function') throw new Error('宿主未提供模型读取能力');
+      const response = await magpie.read('models:list', { agent: 'codex' });
+      const raw = Array.isArray(response) ? response : response?.models;
+      if (!Array.isArray(raw)) throw new Error('宿主返回的模型目录格式不正确');
+      modelCatalog = raw.filter(m =>
+        m && typeof m.id === 'string' && m.id.length > 0 && m.id.length <= 200 &&
+        typeof m.name === 'string' && m.hidden !== true
+      ).map(m => ({
+        id: m.id, name: m.name, group: typeof m.group === 'string' ? m.group : '',
+        threadModel: typeof m.threadModel === 'string' && m.threadModel ? m.threadModel : m.id,
+        modelProvider: typeof m.modelProvider === 'string' ? m.modelProvider : '',
+      }));
+      modelsAvailable = true;
+      // Match by Codex thread model and provider, not by friendly display name.
+      const current = modelCatalog.find(m => m.threadModel === options.codexModel &&
+        m.modelProvider === (options.codexModelProvider || '')) ||
+        modelCatalog.find(m => m.threadModel === options.codexModel);
+      selectedCatalogID = current?.id || options.codexModel || '';
+      modelOptions(codexModelSearch.value);
+      codexLegacyModel.open = false;
+      modelPickerStatus.textContent = modelCatalog.length
+        ? '已从 Magpie 同步 ' + modelCatalog.length + ' 个模型。修改后点击“保存 Codex 设置”。'
+        : 'Magpie 没有可用模型；可选“跟随 Codex 当前配置”。';
+    } catch (err) {
+      modelsAvailable = false;
+      modelCatalog = [];
+      selectedCatalogID = options.codexModel || '';
+      modelOptions();
+      codexLegacyModel.open = true;
+      modelPickerStatus.textContent = '当前 Magpie 宿主尚未开放模型目录读取权限；请更新支持 models:list 的宿主。仍可在高级配置中保留旧模型 ID。';
+    }
+  }
   codexExecutable.value = options.codexExecutable || '';
   codexModel.value = options.codexModel || '';
+  codexModelFallback.value = options.codexModel || '';
   codexModelProvider.value = options.codexModelProvider || '';
+  codexModel.addEventListener('change', () => { selectedCatalogID = codexModel.value; });
+  codexModelSearch.addEventListener('input', () => modelOptions(codexModelSearch.value));
+  refreshModels.addEventListener('click', () => { void loadModels(); });
+
   saveCodexConfig.addEventListener('click', async () => {
     if (busy) return;
     const exe = codexExecutable.value.trim().replace(/^\"|\"$/g, '');
@@ -270,10 +354,21 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     busy = true;
     render();
     try {
+      const selected = modelsAvailable ? modelCatalog.find(m => m.id === codexModel.value) : null;
+      const useCatalog = modelsAvailable && (codexModel.value === '' || Boolean(selected));
+      // Catalog IDs may differ from the actual Codex thread/start model.
+      // Never silently replace a selected entry with a different model.
+      const model = useCatalog ? (selected?.threadModel || '') : codexModelFallback.value.trim();
+      const provider = useCatalog ? (selected?.modelProvider || '') : codexModelProvider.value.trim();
+      if (modelsAvailable && codexModel.value && !selected) {
+        throw new Error('选中的模型已不在 Magpie 目录中；请刷新并重新选择。');
+      }
       const next = { ...options, codexExecutable: exe,
-        codexModel: codexModel.value.trim(), codexModelProvider: codexModelProvider.value.trim() };
+        codexModel: model, codexModelProvider: provider };
       const saved = await magpie.options.set(next);
       options = saved || next;
+      codexModelFallback.value = next.codexModel;
+      codexModelProvider.value = next.codexModelProvider;
       codexStatus.textContent = 'Codex 本地配置已保存。';
       codexStatus.classList.remove('error');
     } catch (error) {
@@ -317,6 +412,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   });
   render();
   updateStatus('已连接 Magpie。请输入完整文件夹路径，然后点击添加项目。');
+  void loadModels();
 })().catch((error) => {
   const s = document.getElementById('status');
   const message = `项目管理界面初始化失败：${error?.message || error}。请检查 Magpie 是否已加载插件通信脚本。`;

@@ -53,11 +53,39 @@ test('checks Git status read-only', async () => {
 test('cannot configure filesystem root', async () => {
   await assert.rejects(createProjectTools({roots:[path.parse(root).root]}).projects(), /filesystem root/);
 });
-test('Magpie plugin exposes six read-only tools, no provider', async () => {
-  const p = await MagpieProjectReview({}, {roots:[{name:'TMN',path:root}]});
-  assert.deepEqual(Object.keys(p.tool).sort(), ['git_diff','git_status','list_files','projects','read_file','search_text']);
+test('Magpie registers stable Codex tool schemas without enabling execution', async () => {
+  const p = await MagpieProjectReview({}, {roots:[{name:'TMN',path:root}], codexExecutable:'invalid-program'});
+  assert.deepEqual(Object.keys(p.tool).sort(), [
+    'codex_cancel_task','codex_submit_task','codex_task_result','codex_task_status',
+    'git_diff','git_status','list_files','projects','read_file','search_text',
+  ]);
+  const response = JSON.parse(await p.tool.codex_submit_task.execute({project:'TMN',prompt:'read only'}));
+  assert.equal(response.ok, false);
+  assert.match(response.error, /Codex is disabled/);
+  const projects = JSON.parse(await p.tool.projects.execute({}));
+  assert.equal(projects.projects[0].name, 'TMN');
+  assert.equal(projects.codex.integrationVersion, '0.4.1-alpha.1');
+  assert.equal(projects.codex.toolsRegistered, true);
+  assert.equal(projects.codex.toolCount, 10);
+  assert.equal(projects.codex.localEnabled, false);
+  assert.equal(projects.codex.allowWrites, false);
+  assert.equal(projects.codex.remoteAutoStart, false);
+  assert.equal(JSON.stringify(projects).includes(base), false);
   assert.equal('auth' in p, false);
   assert.equal('config' in p, false);
+});
+
+test('Codex diagnostic reports local opt-in without leaking paths', async () => {
+  const p = await MagpieProjectReview({}, {
+    roots: [{name:'TMN',path:root}],
+    codexEnabled:true, codexAllowWrites:true, remoteAutoStart:false,
+  });
+  const info=JSON.parse(await p.tool.projects.execute({}));
+  assert.equal(info.codex.localEnabled,true);
+  assert.equal(info.codex.allowWrites,true);
+  assert.equal(info.codex.remoteAutoStart,false);
+  assert.equal(typeof info.codex.remoteGateEnabled,'boolean');
+  assert.equal(JSON.stringify(info).includes(base),false);
 });
 test('single file git diff of committed change', async () => {
   execFileSync('git', ['-C',root,'-c','user.email=test@example.com','-c','user.name=Test','add','src/app.lua']);

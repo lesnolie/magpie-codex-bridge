@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { readFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { validAccessConfig, startupCommand, startupRegistryScript, psLiteral, remotePaths, writeBootstrapStatus } from '../src/remote-service.mjs';
+import { validAccessConfig, startupCommand, startupRegistryScript, psLiteral, remotePaths, writeBootstrapStatus, managedManagerReloadScript, shouldEnableCodexRemotePermission } from '../src/remote-service.mjs';
 import { createSupervisor, acquireManagerSingleton } from '../scripts/cloudflare-mcp-manager.mjs';
 import { execFileSync } from 'node:child_process';
 
@@ -54,6 +54,36 @@ test('Windows registry startup script registers and removes HKCU value without e
     runPs(startupRegistryScript('delete', ''));
   }
 });
+
+test('Codex remote permission depends on local Codex opt-in, not autostart', () => {
+  assert.equal(shouldEnableCodexRemotePermission({ codexEnabled: true, remoteAutoStart: false }), true);
+  assert.equal(shouldEnableCodexRemotePermission({ codexEnabled: true, remoteAutoStart: true }), true);
+  assert.equal(shouldEnableCodexRemotePermission({ codexEnabled: false, remoteAutoStart: true }), false);
+  assert.equal(shouldEnableCodexRemotePermission({ remoteAutoStart: true }), false);
+});
+
+test('managed supervisor upgrade targets only exact approved manager script', () => {
+  const manager = 'C:\\Users\\Alice Smith\\AppData\\Local\\MagpieLocalReview\\cloudflare-mcp-manager.mjs';
+  const ps = managedManagerReloadScript(manager);
+  assert.match(ps, /Get-CimInstance Win32_Process/);
+  assert.match(ps, /Stop-Process/);
+  assert.match(ps, /Multiple managed supervisors; refusing unsafe restart/);
+  assert.match(ps, /cloudflare-mcp-manager.mjs/);
+  assert.doesNotMatch(ps, /taskkill|killall|Get-NetTCPConnection|node_modules/);
+  assert.throws(() => managedManagerReloadScript('C:\\temp\\another-program.mjs'));
+  assert.throws(() => managedManagerReloadScript('cloudflare-mcp-manager.mjs'));
+});
+
+test('Windows upgrade reload PowerShell script parses and runs without matched manager', {
+  skip: process.platform !== 'win32' || process.env.GITHUB_ACTIONS !== 'true',
+}, () => {
+  const missingManager = 'C:\\MagpieMissingCI-' + process.pid + '\\cloudflare-mcp-manager.mjs';
+  const ps = managedManagerReloadScript(missingManager);
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+    Buffer.from(ps, 'utf16le').toString('base64'),
+  ], { encoding: 'utf8', timeout: 15000, windowsHide: true });
+});
+
 test('service copies live outside volatile Magpie plugin directories', () => {
   const p = remotePaths({LOCALAPPDATA:'C:\\Local',APPDATA:'C:\\Roaming'});
   assert.ok(p.manager.includes('MagpieLocalReview'));

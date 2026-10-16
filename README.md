@@ -1,7 +1,39 @@
-# Magpie Local Project Review (v0.4.0 alpha)
+# Magpie Local Project Review (v0.4.1 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
+
+
+## v0.4.1: Codex discovery and managed gateway refresh
+
+The plugin now **always registers the four Codex task tool schemas** in its
+local MCP catalog, even before Codex is enabled. This does **not** grant
+execution: invoking those tools while the local Codex toggle is off fails.
+The Cloudflare gateway independently filters the four task tools unless
+the local Codex permission marker exists. Its read-only project/Git tools
+remain functional without Codex.
+
+The existing **projects** read-only tool also reports a bounded
+`codex` diagnostic object containing `integrationVersion`,
+`toolsRegistered`, `localEnabled`, `allowWrites`,
+`remoteAutoStart` and `remoteGateEnabled`. No absolute paths,
+tokens or model credentials are included.
+
+When updating a plugin-managed Cloudflare adapter, the plugin now reloads
+only the known Windows Node manager using its exact script command-line
+argument (never all Node processes, nor an unknown listener). This prevents
+the old six-tool adapter from remaining in memory indefinitely after an
+update. The auto-start toggle is *not* a prerequisite to locally grant
+Codex permissions, although an active, authenticated remote listener is
+still required for ChatGPT Web to reach it.
+
+**Diagnose "six tools only":** Refresh the plugin and invoke `projects`.
+If `codex.localEnabled` is false, enable Codex on your Windows Magpie page;
+if `codex.remoteGateEnabled` is false, reload the plugin host to synchronize
+the local marker; if both are true but ChatGPT still lists only six tools,
+check whether the running gateway is an unmanaged/old instance and whether
+your ChatGPT plan/workspace permits non-read-only custom MCP actions.
+A GitHub update alone never overrides ChatGPT product permission limits.
 
 ## Phase 2: opt-in local Codex app-server tasks (v0.4.0-alpha.1)
 

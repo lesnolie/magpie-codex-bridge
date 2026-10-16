@@ -107,7 +107,9 @@ export function createCodexTasks(options = {}, dependencies = {}) {
   const lastThreads = new Map();
   const launch = dependencies.spawn || spawn;
   const roots = dependencies.projectRoots || (() => projectRoots(options));
-  const binary = dependencies.binary || resolveCodexBinary(options);
+  // Bad/missing Codex installation must not break the six review tools or
+  // MCP tool discovery. Resolve the executable only after local opt-in and submit.
+  const binary = () => dependencies.binary || resolveCodexBinary(options);
   const args = dependencies.args || ['app-server', '--listen', 'stdio://'];
   function allowed(project) {
     if (options.codexEnabled !== true) throw new Error('Codex is disabled in local Magpie settings');
@@ -142,7 +144,7 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       rpc?.stop();
     }, RUN_LIMIT_MS);
     try {
-      const child = launch(binary, args, {
+      const child = launch(binary(), args, {
         cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], shell: false,
         windowsHide: true, env: process.env,
       });

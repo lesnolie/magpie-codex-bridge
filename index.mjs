@@ -1,6 +1,7 @@
 import { createProjectTools } from './src/projects.mjs';
+import { existsSync } from 'node:fs';
 import { createCodexTasks } from './src/codex-tasks.mjs';
-import { reconcileRemoteService, writeBootstrapStatus } from './src/remote-service.mjs';
+import { reconcileRemoteService, writeBootstrapStatus, remotePaths } from './src/remote-service.mjs';
 
 const arg = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const wrap = (fn) => async (args) => {
@@ -18,18 +19,39 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     console.warn('[magpie-local-review] Remote autostart:', error?.message || String(error));
   }
   const tools = createProjectTools(options);
-  // Tasks are never registered by default. Only the local Magpie page can opt in.
-  const codex = options.codexEnabled === true ? createCodexTasks(options) : null;
-  const codexTools = codex ? {
+  // Always register the four Codex tool schemas so the upstream Magpie MCP
+  // discovery catalog is stable even when local options are changed later.
+  // Execution remains fail-closed inside createCodexTasks unless the local user
+  // explicitly enables Codex; Cloudflare also filters these tools by its
+  // locally managed permission flag.
+  const codex = createCodexTasks(options);
+  const codexTools = {
     codex_submit_task: { description: 'Start a local Codex app-server task in an explicitly allowed project. Can change project files only if separately enabled in Magpie.', args: { project: arg('Allowed project name'), prompt: arg('Task instruction'), continueThread: { type: 'boolean', description: 'Continue the last successful Codex thread for this project, default false' } }, execute: wrap(codex.submit) },
     codex_task_status: { description: 'Read state and progress of a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.status) },
     codex_task_result: { description: 'Read local Codex output and completion status for a task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.result) },
     codex_cancel_task: { description: 'Cancel a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.cancel) },
-  } : {};
+  };
+  const projectsWithStatus = async () => {
+    const data = JSON.parse(await tools.projects());
+    const configured = options.codexEnabled === true;
+    const remoteOn = options.remoteAutoStart === true;
+    return JSON.stringify({
+      ...data,
+      codex: {
+        integrationVersion: '0.4.1-alpha.1',
+        toolsRegistered: true,
+        toolCount: 10,
+        localEnabled: configured,
+        allowWrites: configured && options.codexAllowWrites === true,
+        remoteAutoStart: remoteOn,
+        remoteGateEnabled: process.platform === 'win32' && existsSync(remotePaths().codexEnabledFile),
+      },
+    });
+  };
   return {
     tool: {
       ...codexTools,
-      projects: { description: 'List only explicitly allowed project names (read-only).', args: {}, execute: wrap(tools.projects) },
+      projects: { description: 'List allowed projects and local Codex availability diagnostics; does not change files or permissions.', args: {}, execute: wrap(projectsWithStatus) },
       list_files: { description: 'List non-secret files within an allowed project directory. Paths are project-relative.', args: { project: arg('Project name'), directory: arg('Relative directory, default .') }, execute: wrap(tools.list_files) },
       read_file: { description: 'Read a limited range of an allowed source code or text file; no secrets, symlinks or files outside project roots.', args: { project: arg('Project name'), file: arg('Relative source path'), startLine: { type: 'integer', minimum: 1 }, maxLines: { type: 'integer', minimum: 1, maximum: 200 } }, execute: wrap(tools.read_file) },
       search_text: { description: 'Search exact text within allowed source files, bounded to 300 files and 50 matches.', args: { project: arg('Project name'), query: arg('Literal search text'), directory: arg('Relative directory, default .'), maxMatches: { type: 'integer', minimum: 1, maximum: 50 } }, execute: wrap(tools.search_text) },

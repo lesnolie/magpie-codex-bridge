@@ -178,3 +178,31 @@ test('remote service card has no iframe-side process execution', () => {
   assert.match(html, /id="remoteAutoStart"/);
   assert.doesNotMatch(js, /schtasks|child_process|powershell|XMLHttpRequest|fetch\(/);
 });
+
+
+test('Codex write permission switch is clickable before Codex is enabled', async () => {
+  const app = runPage({ codexEnabled: false, codexAllowWrites: false });
+  await wait();
+  assert.equal(app.element('codexEnabled').checked, false);
+  assert.equal(app.element('codexAllowWrites').disabled, false);
+  app.element('codexAllowWrites').checked = true;
+  await app.element('codexAllowWrites').fire('change');
+  await wait();
+  assert.equal(app.options.codexAllowWrites, true);
+  assert.equal(app.options.codexEnabled, false, 'write consent never activates Codex');
+  assert.equal(app.element('codexAllowWrites').disabled, false);
+  assert.equal(app.element('codexAllowWrites').checked, true);
+});
+
+test('disabling Codex revokes previously granted write consent', async () => {
+  const app = runPage({ codexEnabled: true, codexAllowWrites: true });
+  await wait();
+  assert.equal(app.element('codexAllowWrites').disabled, false);
+  app.element('codexEnabled').checked = false;
+  await app.element('codexEnabled').fire('change');
+  await wait();
+  assert.equal(app.options.codexEnabled, false);
+  assert.equal(app.options.codexAllowWrites, false);
+  assert.equal(app.element('codexAllowWrites').disabled, false,
+    'permission can be configured in either order');
+});

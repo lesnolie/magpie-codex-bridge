@@ -56,8 +56,8 @@ test('cannot configure filesystem root', async () => {
 test('Magpie registers stable Codex tool schemas without enabling execution', async () => {
   const p = await MagpieProjectReview({}, {roots:[{name:'TMN',path:root}], codexExecutable:'invalid-program'});
   assert.deepEqual(Object.keys(p.tool).sort(), [
-    'codex_cancel_task','codex_submit_task','codex_task_result','codex_task_status',
-    'codex_wait_task','codex_review_inbox','codex_review_changes',
+    'codex_cancel_task','codex_review_changes','codex_review_inbox','codex_submit_task',
+    'codex_task_result','codex_task_status','codex_wait_task',
     'git_diff','git_status','list_files','projects','read_file','search_text',
   ]);
   const response = JSON.parse(await p.tool.codex_submit_task.execute({project:'TMN',prompt:'read only'}));

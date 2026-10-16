@@ -1,8 +1,29 @@
-# Magpie Local Project Review (v0.4.1 alpha)
+# Magpie Local Project Review (v0.4.2 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.2: Use Codex Desktop projects directly
+
+In **Magpie → Project Review → 项目来源**, switch on **使用 Codex 项目**.
+Magpie then discovers your existing local Codex Desktop projects from the
+current user's `CODEX_HOME/.codex-global-state.json` (`~/.codex` by default)
+instead of requiring each project folder to be added to the Magpie allowlist.
+Multiple folders within one Codex project are exposed separately; missing
+folders, drive roots, and invalid/symlink paths are excluded.
+
+The existing six browsing and review tools remain **read-only**. ChatGPT
+can review files and issue tasks, but it has **no direct write-file tool**;
+**local Codex is the only agent that edits project files**, and only when
+you opt in to Codex task execution and project writes in the local Magpie UI.
+Switching project sources does not grant write access. Manual project entries
+remain stored as a fallback but do not supplement the Codex list when this
+mode is selected. Codex Desktop's project registry is read but never modified.
+
+Codex Desktop's JSON project state is not a stable public API. If it is
+missing or its schema changes, switch back to the manual project source.
+The supported app-server `project/list` endpoint is a future migration path.
 
 ## v0.4.1: Codex discovery and managed gateway refresh
 

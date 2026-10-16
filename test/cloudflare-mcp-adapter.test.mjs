@@ -169,6 +169,8 @@ test('MCP 2026 tool responses are adapted without granting extra tools', async t
 
 test('Codex MCP tools remain hidden until local permission is enabled', async t => {
   const codexName = 'magpie-codex-bridge_codex_submit_task';
+  const reviewRead = 'magpie-codex-bridge_codex_review_changes';
+  const reviewAck = 'magpie-codex-bridge_codex_ack_review';
   const upstream = http.createServer(async (req, res) => {
     let data = '';
     for await (const part of req) data += part;
@@ -177,6 +179,8 @@ test('Codex MCP tools remain hidden until local permission is enabled', async t 
       ? { tools: [
           { name: 'magpie-codex-bridge_projects', inputSchema: { type: 'object' } },
           { name: codexName, inputSchema: { type: 'object' } },
+          { name: reviewRead, inputSchema: { type: 'object' } },
+          { name: reviewAck, inputSchema: { type: 'object' } },
           { name: 'unrelated_plugin_shell', inputSchema: { type: 'object' } },
         ] }
       : { content: [{ type:'text', text:'{"taskId":"test"}' }] };
@@ -202,12 +206,17 @@ test('Codex MCP tools remain hidden until local permission is enabled', async t 
   let listing = await call('tools/list', {});
   assert.deepEqual(listing.json.result.tools.map(t=>t.name), ['magpie-codex-bridge_projects']);
   assert.equal((await call('tools/call', {name:codexName, arguments:{}})).code, 403);
+  assert.equal((await call('tools/call', {name:reviewRead, arguments:{}})).code, 403);
   enabled = true;
   listing = await call('tools/list', {});
   assert.deepEqual(listing.json.result.tools.map(t=>t.name),
-    ['magpie-codex-bridge_projects', codexName]);
+    ['magpie-codex-bridge_projects', codexName, reviewRead, reviewAck]);
   assert.equal(listing.json.result.tools[1].annotations.readOnlyHint, false);
   assert.equal(listing.json.result.tools[1].annotations.destructiveHint, true);
+  assert.equal(listing.json.result.tools[2].annotations.readOnlyHint, true);
+  assert.equal(listing.json.result.tools[2].annotations.destructiveHint, false);
+  assert.equal(listing.json.result.tools[3].annotations.readOnlyHint, false);
+  assert.equal((await call('tools/call', {name:reviewRead, arguments:{}})).code, 200);
   assert.equal((await call('tools/call', {name:codexName, arguments:{}})).code, 200);
   assert.equal((await call('tools/call', {name:'unrelated_plugin_shell', arguments:{}})).code, 403);
 });

@@ -9,7 +9,7 @@ const mock = fileURLToPath(new URL('./mock-codex-app-server.mjs', import.meta.ur
 const root = path.dirname(mock);
 const config = (opts = {}) => createCodexTasks({ codexEnabled: true, ...opts }, {
   projectRoots: () => [{ name: 'Safe', root }],
-  binary: process.execPath, args: [mock],
+  binary: process.execPath, args: [mock], reviewDir: false,
 });
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -23,6 +23,9 @@ test('Codex is opt-in and restricted to approved projects', async () => {
   assert.ok(plugin.tool.codex_submit_task);
   assert.ok(plugin.tool.codex_task_status);
   assert.ok(plugin.tool.codex_task_result);
+  assert.ok(plugin.tool.codex_wait_task);
+  assert.ok(plugin.tool.codex_review_inbox);
+  assert.ok(plugin.tool.codex_review_changes);
   assert.ok(plugin.tool.codex_cancel_task);
   assert.ok(plugin.tool.projects);
 });

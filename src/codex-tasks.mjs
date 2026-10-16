@@ -153,8 +153,9 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       });
       job.rpc = rpc;
       // An unexpected child exit must also settle the task, not leave it running.
-      child.once('error', err => { job.error = bounded(err.message, 500); finish({ status: 'failed' }); });
+      child.once('error', err => { if (job.state !== 'running') return; job.error = bounded(err.message, 500); finish({ status: 'failed' }); });
       child.once('exit', (code, signal) => {
+        if (job.state !== 'running') return;
         if (!job.error) job.error = 'Codex terminated (' + (code ?? signal ?? 'unknown') + ')';
         finish({ status: 'failed' });
       });

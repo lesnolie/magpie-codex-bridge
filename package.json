@@ -1,12 +1,12 @@
 {
   "name": "magpie-codex-bridge",
-  "version": "0.4.4-alpha.1",
+  "version": "0.4.5-alpha.1",
   "description": "Magpie local project review with optional Codex app-server tasks and Cloudflare Access",
   "type": "module",
   "main": "./index.mjs",
   "exports": "./index.mjs",
   "scripts": {
-    "check": "node --check index.mjs && node --check src/model-catalog.mjs && node --check page/model-catalog.js && node --check src/codex-tasks.mjs && node --check src/projects.mjs && node --check src/remote-service.mjs && node --check scripts/cloudflare-mcp-manager.mjs && node --check page/app.js && node --check scripts/cloudflare-mcp-adapter.mjs",
+    "check": "node --check index.mjs && node --check src/model-catalog.mjs && node --check page/model-catalog.js && node --check src/codex-review.mjs && node --check src/codex-tasks.mjs && node --check src/projects.mjs && node --check src/remote-service.mjs && node --check scripts/cloudflare-mcp-manager.mjs && node --check page/app.js && node --check scripts/cloudflare-mcp-adapter.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {

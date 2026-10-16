@@ -21,7 +21,7 @@ class Element {
 }
 const wait = () => new Promise((r) => setImmediate(r));
 
-function runPage(initial = {}, { modalResult = true } = {}) {
+function runPage(initial = {}, { modalResult = true, models = null, modelReadError = false } = {}) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new Element());
@@ -35,6 +35,10 @@ function runPage(initial = {}, { modalResult = true } = {}) {
       options: {
         get: async () => structuredClone(options),
         set: async (opts) => { options = structuredClone(opts); saved.push(options); return structuredClone(options); },
+      },
+      read: async (name) => {
+        if (name !== 'models:list' || modelReadError || models === null) throw Error('not authorized');
+        return {models: structuredClone(models)};
       },
     },
     document: { getElementById: element, createElement: () => new Element() },
@@ -148,13 +152,13 @@ test('real Magpie message handshake initializes page without predefined global m
   runInNewContext(source, sandbox);
   await wait();
   await wait();
-  assert.deepEqual(received.map(m => m.method), ['hello', 'options.get']);
+  assert.deepEqual(received.slice(0,2).map(m => m.method), ['hello', 'options.get']);
   assert.match(element('fieldStatus').textContent, /已连接 Magpie/);
   element('folder').value = 'C:/work/TMN';
   await element('add').fire('click');
   assert.equal(savedOptions.rootsSource, 'magpie-page');
   assert.equal(savedOptions.roots[0].path, 'C:/work/TMN');
-  assert.equal(received[2].method, 'options.set');
+  assert.equal(received.filter(m => m.method === 'options.set').length, 1);
 });
 
 test('Codex project source switch preserves manual roots', async () => {
@@ -172,6 +176,64 @@ test('Codex project source switch preserves manual roots', async () => {
   await wait();
   assert.equal(app.options.projectSource,'manual');
 });
+test('picker uses Magpie model catalog and persists thread model and provider', async () => {
+  const app=runPage({codexModel:'gpt-n',codexModelProvider:''},{
+    models:[
+      {id:'codex/gpt-n',name:'GPT Native',group:'Codex',threadModel:'gpt-n',modelProvider:'openai'},
+      {id:'deepseek/v4',name:'DeepSeek V4',group:'DeepSeek',threadModel:'deepseek/v4',modelProvider:'magpie'},
+    ],
+  });
+  await wait();
+  await wait();
+  assert.match(app.element('modelPickerStatus').textContent,/同步 2 个模型/);
+  assert.equal(app.element('codexModel').value,'gpt-n');
+  app.element('codexModel').value='deepseek/v4';
+  await app.element('codexModel').fire('change');
+  await app.element('saveCodexConfig').fire('click');
+  await wait();
+  assert.equal(app.options.codexModel,'deepseek/v4');
+  assert.equal(app.options.codexModelProvider,'magpie');
+  assert.equal(app.element('codexLegacyModel').open,false);
+  assert.equal(app.element('codexModel').children.length,3);
+});
+
+test('model search filters provider groups and keeps selection', async () => {
+  const app=runPage({}, {models:[
+    {id:'codex/a',name:'Alpha',group:'Codex'},
+    {id:'deepseek/b',name:'Beta',group:'DeepSeek'},
+  ]});
+  await wait();
+  await wait();
+  app.element('codexModel').value='codex/a';
+  await app.element('codexModel').fire('change');
+  app.element('codexModelSearch').value='deepseek';
+  await app.element('codexModelSearch').fire('input');
+  const groups=app.element('codexModel').children.slice(1);
+  assert.equal(groups.length,2,'selected group is retained while filtering');
+  assert.equal(app.element('codexModel').value,'codex/a');
+});
+
+test('old Magpie host leaves existing model setting intact', async () => {
+  const app=runPage({codexModel:'gpt-existing',codexModelProvider:'openai'},{modelReadError:true});
+  await wait();
+  await wait();
+  assert.match(app.element('modelPickerStatus').textContent,/尚未开放模型目录/);
+  assert.equal(app.element('codexLegacyModel').open,true);
+  assert.equal(app.element('codexModelFallback').value,'gpt-existing');
+  await app.element('saveCodexConfig').fire('click');
+  await wait();
+  assert.equal(app.options.codexModel,'gpt-existing');
+  assert.equal(app.options.codexModelProvider,'openai');
+});
+
+test('picker declares a scoped read-only permission and no direct network request', () => {
+  const pkg=JSON.parse(readFileSync(new URL('../package.json', import.meta.url),'utf8'));
+  const js=readFileSync(new URL('../page/app.js', import.meta.url),'utf8');
+  assert.deepEqual(pkg.magpie.permissions,['models:list']);
+  assert.match(js,/magpie\.read\('models:list'/);
+  assert.doesNotMatch(js,/XMLHttpRequest|fetch\(/);
+});
+
 test('remote service switch only writes the local Magpie options and preserves roots', async () => {
   const app = runPage({ rootsSource: 'magpie-page', roots: [{name:'TMN',path:'C:/work/TMN'}] });
   await wait();

@@ -64,7 +64,7 @@ test('Magpie registers stable Codex tool schemas without enabling execution', as
   assert.match(response.error, /Codex is disabled/);
   const projects = JSON.parse(await p.tool.projects.execute({}));
   assert.equal(projects.projects[0].name, 'TMN');
-  assert.equal(projects.codex.integrationVersion, '0.4.2-alpha.1');
+  assert.equal(projects.codex.integrationVersion, '0.4.3-alpha.1');
   assert.equal(projects.codex.toolsRegistered, true);
   assert.equal(projects.codex.toolCount, 10);
   assert.equal(projects.codex.localEnabled, false);

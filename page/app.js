@@ -1,3 +1,51 @@
+/* Magpie community pages run in a sandboxed frame with no direct API access.
+ * Implement the documented postMessage handshake in this already-loadable app.js;
+ * no dependency on a separate /_magpie/bridge.js asset or relative URL.
+ * The Magpie parent authorizes options.get / options.set for this plugin only. */
+const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
+  ? globalThis.magpie
+  : (() => {
+      const pending = new Map();
+      let nextId = 0;
+      const parentWindow = window.parent;
+      function request(method, params) {
+        return new Promise((resolve, reject) => {
+          const id = ++nextId;
+          const timeout = setTimeout(() => {
+            pending.delete(id);
+            reject(new Error('Magpie 页面通信超时（' + method + '）。请确认 Magpie 版本支持插件页面。'));
+          }, 8000);
+          pending.set(id, { resolve, reject, timeout });
+          try {
+            parentWindow.postMessage({ magpie: 1, id, method, params }, '*');
+          } catch (error) {
+            clearTimeout(timeout);
+            pending.delete(id);
+            reject(error);
+          }
+        });
+      }
+      window.addEventListener('message', (event) => {
+        if (event.source !== parentWindow) return;
+        const msg = event.data;
+        if (!msg || msg.magpie !== 1 || !Number.isInteger(msg.id)) return;
+        const entry = pending.get(msg.id);
+        if (!entry) return;
+        pending.delete(msg.id);
+        clearTimeout(entry.timeout);
+        if (msg.error) entry.reject(new Error(String(msg.error)));
+        else entry.resolve(msg.result);
+      });
+      const api = {
+        options: {
+          get: () => request('options.get'),
+          set: (options) => request('options.set', { options }),
+        },
+      };
+      api.ready = request('hello');
+      return api;
+    })();
+
 /* Magpie sandbox page. All writes go exclusively through magpie.options.set().
  * No network access, filesystem access or MCP tool to grant a root. */
 (async () => {

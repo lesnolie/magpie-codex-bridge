@@ -60,6 +60,8 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const add = document.getElementById('add');
   const legacy = document.getElementById('legacy');
   const revoke = document.getElementById('revoke');
+  const remoteAutoStart = document.getElementById('remoteAutoStart');
+  const remoteStatus = document.getElementById('remoteStatus');
   let rows = Array.isArray(options.roots) ? options.roots.filter((r) => r && typeof r.name === 'string' && typeof r.path === 'string') : [];
   let busy = false;
 
@@ -114,6 +116,8 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     pathInput.disabled = busy;
     revoke.disabled = busy;
     legacy.hidden = options.rootsSource === 'magpie-page';
+    remoteAutoStart.checked = options.remoteAutoStart === true;
+    remoteAutoStart.disabled = busy;
   }
   async function save(next) {
     if (busy) return;
@@ -134,6 +138,30 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       render();
     }
   }
+  remoteAutoStart.addEventListener('change', async () => {
+    if (busy) return;
+    const requested = remoteAutoStart.checked;
+    busy = true;
+    render();
+    try {
+      const next = { ...options, remoteAutoStart: requested };
+      const saved = await magpie.options.set(next);
+      options = saved || next;
+      remoteStatus.textContent = requested
+        ? '已保存自动启动设置。Magpie 插件宿主加载后会安装并启动本机服务；首次生效需要确认服务确实运行。'
+        : '已关闭自动启动设置。Magpie 插件宿主加载后将移除本插件创建的自启任务。';
+      remoteStatus.classList.remove('error');
+    } catch (error) {
+      remoteStatus.textContent = '保存失败：' + (error?.message || error);
+      remoteStatus.classList.add('error');
+    } finally {
+      busy = false;
+      render();
+    }
+  });
+  remoteStatus.textContent = options.remoteAutoStart === true
+    ? '自动启动已启用（仅设置状态，非实际连接检测）。'
+    : '自动启动未启用。';
   revoke.addEventListener('click', async () => {
     if (!confirm('撤销所有项目目录授权？此操作不会删除任何文件。')) return;
     await save([]);

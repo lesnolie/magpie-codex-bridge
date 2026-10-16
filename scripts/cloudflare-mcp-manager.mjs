@@ -73,9 +73,9 @@ export function createSupervisor({
       setState(hasConfig() ? 'waiting-for-magpie' : 'waiting-for-cloudflare-config');
       return;
     }
-    if (bridge?.listening) { setState('online'); return; }
-    if (bridge) { // Previous listener failed or is closing.
-      bridge = null;
+    if (bridge) {
+      setState(bridge.listening ? 'online' : 'starting');
+      return;
     }
     if (await isBridgeInUse()) { setState('external-listener-48765'); return; }
     try {

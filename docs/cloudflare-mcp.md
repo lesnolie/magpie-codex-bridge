@@ -19,6 +19,18 @@ alone. The local state file is
 `%LOCALAPPDATA%\MagpieLocalReview\service-status.json`.
 Switching the toggle off makes the host delete only this managed task.
 
+**Installation diagnostics (v0.3.4-alpha.2):** The adapter's
+`service-status.json` is written only if the background manager has
+actually started. The plugin host now writes a separate
+`%LOCALAPPDATA%\MagpieLocalReview\service-bootstrap.json`
+as soon as it begins processing the saved auto-start option. It records
+`initializing`, `checking-node`, `registering-windows-task`,
+`task-start-requested`, `task-start-failed`, or `setup-failed`
+(and a bounded error reason). If **neither file exists** after a
+plugin update and options toggle, the host probably has not executed
+the plugin initializer; do not claim the task has been installed.
+The page's checkbox reflects the desired setting, not Windows status.
+
 Magpie's embedded page can **only** modify plugin options; it cannot
 launch a process or inspect the Windows task state. The plugin host may be
 lazy: if it has not started since the settings update, installation waits

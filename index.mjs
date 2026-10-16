@@ -37,6 +37,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     codex_wait_task: { description: 'Wait up to 15 seconds for a local Codex task to finish; return its result so ChatGPT can immediately review it in this active conversation. Cannot initiate a new chat or send unsolicited notifications.', args: { project: arg('Approved project name'), taskId: arg('Task ID'), waitMs: { type: 'integer', minimum: 0, maximum: 15000, description: 'Maximum wait in milliseconds (up to 15000)' } }, execute: wrap(codex.wait) },
     codex_review_inbox: { description: 'List local completed Codex tasks awaiting ChatGPT review, including tasks from an earlier chat or plugin reload. Local receipt files are not project modifications.', args: { project: { type: 'string', description: 'Optional approved project name' } }, execute: wrap(codex.inbox) },
     codex_review_changes: { description: 'Read Codex task completion output and a bounded, filtered Git diff from its submission baseline for ChatGPT code review. Source files only, no execution or edits.', args: { project: arg('Approved project name'), taskId: arg('Task ID'), file: { type: 'string', description: 'Optional project-relative changed source file for focused review' } }, execute: wrap(codex.changes) },
+    codex_ack_review: { description: 'After ChatGPT has ACTUALLY reviewed a completed Codex task, record approved / changes_requested / no_changes verdict in the local review receipt. Does not edit source code or notify a chat.', args: { project: arg('Approved project'), taskId: arg('Completed task ID'), decision: { type: 'string', enum: ['approved', 'changes_requested', 'no_changes'] }, summary: arg('Brief evidence-based review conclusion, 1-1500 characters') }, execute: wrap(codex.acknowledge) },
     codex_cancel_task: { description: 'Cancel a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.cancel) },
   };
   const projectsWithStatus = async () => {
@@ -48,7 +49,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
       codex: {
         integrationVersion: '0.4.5-alpha.1',
         toolsRegistered: true,
-        toolCount: 13,
+        toolCount: 14,
         localEnabled: configured,
         allowWrites: configured && options.codexAllowWrites === true,
         remoteAutoStart: remoteOn,

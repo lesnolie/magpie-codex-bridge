@@ -105,7 +105,7 @@ test('Magpie bridge URL resolves to the token root served by Magpie, not /page/_
   // recognizes the bridge at /_magpie/plugin/<token>/_magpie/bridge.js.
   // A JS DOM mock cannot detect this regression; URL resolution does.
   const html = readFileSync(new URL('../page/index.html', import.meta.url), 'utf8');
-  const match = html.match(/<script\\s+src="([^"]*bridge\\.js)"/);
+  const match = html.match(/src="([^"]+_magpie\/bridge\.js)"/);
   assert.ok(match, 'the Magpie message bridge must be loaded');
   const pageUrl = 'http://127.0.0.1:3437/_magpie/plugin/' + 'a'.repeat(32) + '/page/index.html';
   const requestPath = new URL(match[1], pageUrl).pathname;

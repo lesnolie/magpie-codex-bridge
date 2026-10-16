@@ -84,8 +84,8 @@ async function locate(p, relative, kind = 'file') {
   // containment rather than case-sensitive string-prefix comparison.
   // Node's win32 path.relative performs case-insensitive comparisons while
   // the explicit .. / absolute rejection still blocks directory escapes.
-  const relative = path.relative(p.root, actual);
-  if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+  const canonicalRelative = path.relative(p.root, actual);
+  if (canonicalRelative === '..' || canonicalRelative.startsWith('..' + path.sep) || path.isAbsolute(canonicalRelative)) {
     throw new Error('Path leaves project');
   }
   const info = await lstat(actual);

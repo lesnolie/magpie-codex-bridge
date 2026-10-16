@@ -104,8 +104,8 @@ test('self-contained page never references the missing external Magpie bridge', 
   const html = readFileSync(new URL('../page/index.html', import.meta.url), 'utf8');
   const js = readFileSync(new URL('../page/app.js', import.meta.url), 'utf8');
   assert.doesNotMatch(html, /<script[^>]+bridge\\.js/);
-  assert.match(js, /parentWindow\\.postMessage/);
-  assert.match(js, /request\\('hello'\\)/);
+  assert.ok(js.includes("parentWindow.postMessage("));
+  assert.ok(js.includes("request('hello')"));
 });
 
 test('UI presents an explicit ready state after Magpie options handshake', async () => {

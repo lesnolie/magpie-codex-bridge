@@ -117,7 +117,8 @@ test('embedded UI is bundled with the Magpie page bridge and options-only permis
   assert.equal(pkg.magpie.page.file, 'page/index.html');
   assert.equal(pkg.magpie.permissions, undefined);
   const html = readFileSync(path.join(root, 'page/index.html'), 'utf8');
-  assert.match(html, /_magpie\/bridge\.js/);
+  assert.doesNotMatch(html, /<script[^>]+bridge\\.js/);
+  assert.ok(readFileSync(path.join(root, 'page/app.js'), 'utf8').includes("parentWindow.postMessage("));
   assert.match(html, /app\.js/);
   const js = readFileSync(path.join(root, 'page/app.js'), 'utf8');
   assert.match(js, /magpie\.options\.get/);

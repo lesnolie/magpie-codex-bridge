@@ -79,19 +79,13 @@ async function locate(p, relative, kind = 'file') {
     if (i !== parts.length - 1 && !info.isDirectory()) throw new Error('Parent path is not a directory');
   }
   const actual = await realpath(cursor);
-  // Canonical Windows realpath can differ in casing from the earlier sync
-  // realpath of the root (notably a drive letter). Use relative-path
-  // containment rather than case-sensitive string-prefix comparison.
-  // Node's win32 path.relative performs case-insensitive comparisons while
-  // the explicit .. / absolute rejection still blocks directory escapes.
-  const canonicalRelative = path.relative(p.root, actual);
+  // Sync realpath can preserve a Windows short 8.3 user profile alias
+  // (RUNNER~1), while async realpath expands it (runneradmin). Normalize
+  // both endpoints using the same async API before checking containment.
+  // This still rejects directory escapes and symlink traversal.
+  const canonicalRoot = await realpath(p.root);
+  const canonicalRelative = path.relative(canonicalRoot, actual);
   if (canonicalRelative === '..' || canonicalRelative.startsWith('..' + path.sep) || path.isAbsolute(canonicalRelative)) {
-    if (process.env.GITHUB_ACTIONS === 'true' && process.platform === 'win32') {
-      console.error('[Windows CI path diagnostics]', JSON.stringify({
-        root: p.root, actual, canonicalRelative, sep: path.sep,
-        rooted: path.isAbsolute(canonicalRelative),
-      }));
-    }
     throw new Error('Path leaves project');
   }
   const info = await lstat(actual);

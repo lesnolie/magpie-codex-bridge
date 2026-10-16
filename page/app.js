@@ -302,7 +302,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   }
   let catalogReload = 0;
   async function localSnapshot(refresh) {
-    // Page CSP disallows fetch(). Loading our own *data-only* script is
+    // Page CSP disallows direct network requests. Loading our own *data-only* script is
     // allowed by Magpie's pagePolicy and does not bypass the host API.
     if (refresh && document.head) {
       await new Promise((resolve, reject) => {

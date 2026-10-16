@@ -99,3 +99,23 @@ test('enter inside the input adds the folder without submitting a form', async (
   await app.element('folder').fire('keydown', { key: 'Enter' });
   assert.equal(app.options.roots[0].name, 'Demo');
 });
+
+test('Magpie bridge URL resolves to the token root served by Magpie, not /page/_magpie', () => {
+  // Real Magpie: /_magpie/plugin/<token>/page/index.html.  The service only
+  // recognizes the bridge at /_magpie/plugin/<token>/_magpie/bridge.js.
+  // A JS DOM mock cannot detect this regression; URL resolution does.
+  const html = readFileSync(new URL('../page/index.html', import.meta.url), 'utf8');
+  const match = html.match(/<script\\s+src="([^"]*bridge\\.js)"/);
+  assert.ok(match, 'the Magpie message bridge must be loaded');
+  const pageUrl = 'http://127.0.0.1:3437/_magpie/plugin/' + 'a'.repeat(32) + '/page/index.html';
+  const requestPath = new URL(match[1], pageUrl).pathname;
+  assert.equal(requestPath, '/_magpie/plugin/' + 'a'.repeat(32) + '/_magpie/bridge.js');
+  assert.notEqual(requestPath, '/_magpie/plugin/' + 'a'.repeat(32) + '/page/_magpie/bridge.js');
+});
+
+test('UI presents an explicit ready state after Magpie options handshake', async () => {
+  const app = runPage();
+  await wait();
+  assert.match(app.element('fieldStatus').textContent, /已连接 Magpie/);
+  assert.equal(app.element('fieldStatus').hidden, false);
+});

@@ -50,7 +50,18 @@ test('anonymous and unknown tool requests cannot read anything', async t => {
   assert.equal((await invoke(list)).status, 401);
   assert.equal(hits, 0);
   assert.equal((await invoke({ jsonrpc: '2.0', method: 'tools/call', id: 1, params: { name: 'shell' } }, makeJWT())).status, 403);
-  assert.equal((await invoke({ jsonrpc: '2.0', method: 'resources/list', id: 1 }, makeJWT())).status, 403);
+  const unavailable = await invoke({ jsonrpc: '2.0', method: 'resources/list', id: 1 }, makeJWT());
+  assert.equal(unavailable.status, 403);
+  assert.equal(unavailable.reply.reason, 'unsupported-method:resources/list');
+  const invalidTool = await invoke({ jsonrpc: '2.0', method: 'tools/call', id: 1, params: { name: 'nonexistent' } }, makeJWT());
+  assert.equal(invalidTool.reply.reason, 'tools-call-outside-allowlist');
+  const browserRequest = await fetch(`http://127.0.0.1:${bport}/mcp`, {
+    method: 'POST',
+    headers: { Origin: 'https://example.invalid', 'content-type': 'application/json' },
+    body: JSON.stringify(list),
+  });
+  assert.equal(browserRequest.status, 403);
+  assert.equal((await browserRequest.json()).reason, 'origin-header-present');
   assert.equal(hits, 0);
   const ok = await invoke(list, makeJWT());
   assert.equal(ok.status, 200);

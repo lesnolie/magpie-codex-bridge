@@ -281,10 +281,13 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       if (task.project !== project) throw Error('Unknown task in this project');
       if (task.state === 'running') {
         const ms = Math.min(15000, Math.max(0, Number(waitMs) || 12000));
-        await Promise.race([
-          task.done,
-          new Promise(resolve => setTimeout(resolve, ms)),
-        ]);
+        let timer;
+        try {
+          await Promise.race([
+            task.done,
+            new Promise(resolve => { timer = setTimeout(resolve, ms); timer.unref?.(); }),
+          ]);
+        } finally { clearTimeout(timer); }
       }
       return JSON.stringify(view(task));
     },

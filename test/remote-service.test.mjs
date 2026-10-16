@@ -28,7 +28,7 @@ test('current-user Run registry command quotes Windows paths safely', () => {
   assert.throws(() => startupCommand('C:\\node.exe" && echo bad', 'C:\\manager.mjs'));
   assert.equal(psLiteral("a'b"), "'a''b'");
   const ps = startupRegistryScript('set', command);
-  assert.match(ps, /Registry\.CurrentUser/);
+  assert.match(ps, /Registry\]::CurrentUser/);
   assert.match(ps, /SetValue/);
   assert.match(ps, /Run/);
   assert.doesNotMatch(ps, /LocalMachine|SYSTEM|schtasks/);

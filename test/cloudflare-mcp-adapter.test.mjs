@@ -55,6 +55,12 @@ test('anonymous and unknown tool requests cannot read anything', async t => {
   const ok = await invoke(list, makeJWT());
   assert.equal(ok.status, 200);
   assert.deepEqual(ok.reply.result.tools.map(x => x.name), ['magpie-codex-bridge_projects']);
+  assert.deepEqual(ok.reply.result.tools[0].annotations, {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  });
   assert.equal(hits, 1);
   const call = await invoke({ jsonrpc: '2.0', method: 'tools/call', id: 2, params: { name: 'magpie-codex-bridge_read_file', arguments: { project: 'TMN', file: 'README.md' } } }, makeJWT());
   assert.equal(call.status, 200);

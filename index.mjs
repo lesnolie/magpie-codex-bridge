@@ -1,6 +1,7 @@
 import { createProjectTools } from './src/projects.mjs';
 import { existsSync } from 'node:fs';
 import { createCodexTasks } from './src/codex-tasks.mjs';
+import { startModelCatalogSync } from './src/model-catalog.mjs';
 import { reconcileRemoteService, writeBootstrapStatus, remotePaths } from './src/remote-service.mjs';
 
 const arg = (description, extra = {}) => ({ type: 'string', description, ...extra });
@@ -18,6 +19,10 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     if (options.remoteAutoStart === true) await writeBootstrapStatus('setup-failed', error?.message || String(error));
     console.warn('[magpie-local-review] Remote autostart:', error?.message || String(error));
   }
+  // Local-only, data-only model snapshot for the sandboxed plugin page.
+  // Never blocks the six read-only tools when the gateway is unavailable.
+  try { await startModelCatalogSync(options); }
+  catch (error) { console.warn('[magpie-local-review] Catalog:', error?.message || String(error)); }
   const tools = createProjectTools(options);
   // Always register the four Codex tool schemas so the upstream Magpie MCP
   // discovery catalog is stable even when local options are changed later.
@@ -38,7 +43,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     return JSON.stringify({
       ...data,
       codex: {
-        integrationVersion: '0.4.3-alpha.1',
+        integrationVersion: '0.4.4-alpha.1',
         toolsRegistered: true,
         toolCount: 10,
         localEnabled: configured,

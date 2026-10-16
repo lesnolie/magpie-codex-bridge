@@ -1,32 +1,33 @@
-# Magpie Local Project Review (v0.4.2 alpha)
+# Magpie Local Project Review (v0.4.4 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
 
-## v0.4.3 alpha: Native Magpie model picker (host compatibility required)
+## v0.4.4 alpha: Select Magpie provider models without patching Magpie
 
-The Magpie plugin page now uses a searchable, provider-grouped **task model**
-picker instead of requiring a pasted model ID. The list is read with
-`magpie.read('models:list', {agent:'codex'})` through the existing sandboxed
-`postMessage` bridge. The page never calls the network, reads keys or
-changes Codex global configuration. It stores the selected thread model and
-provider only in this plugin's own options, used for future Codex tasks.
+This release reads **the real provider model catalog** Magpie already serves
+to Codex at GET /v1/codex/models on http://127.0.0.1:3425 (default).
+When that local Gateway is unavailable, it falls back to the Magpie-written
+Codex model catalog in CODEX_HOME/magpie-models.json (~/.codex by default).
 
-**Important compatibility requirement:** Current upstream Magpie does **not**
-yet grant a `models:list` plugin-page read. Its only supported reads are
-`providers:list` and `usage:summary`, neither of which carries model
-choices. `docs/magpie-host-models-list.patch` contains a minimal, permission-
-checked upstream host change to add the needed read. Until Magpie incorporates
-that host change, the picker shows a clear compatibility message and preserves
-the existing manual override inside **高级配置 / 旧版 Magpie 兼容**.
-Updating only this plugin does not make the models appear.
+The plugin backend refreshes the catalog on startup and once a minute, and
+writes only model ID, display name and available effort levels to a data-only
+page/model-catalog.js file in its own plugin directory. The Magpie sandboxed
+iframe may load its own JS assets but cannot fetch the network or provider
+credentials. The **Refresh models** button reloads this snapshot.
 
-The new read follows Codex's catalog visibility rather than exposing
-credentials or account details, and does not bypass the iframe sandbox.
-Magpie gateway models require the existing Codex `model_providers.magpie`
-configuration; the local Codex task reports an error rather than
-silently selecting another model when that provider is unavailable.
+**No upstream Magpie patch is required.** Updating Magpie does not remove
+this plugin-side integration. It lists only Magpie models shown to the Codex
+Agent, not every potentially available vendor model. Codex must have its
+model_providers.magpie provider connected (connect it once in Magpie Agents)
+for Magpie-hosted models to execute. Selecting a model affects only new Local
+Review Codex tasks, not global Codex settings or other users.
+
+If both catalog sources are unavailable, the UI clearly says so and keeps
+the advanced manual override. A non-default Gateway port can still use the
+Magpie-generated local Codex file. The older optional host patch remains
+in docs/magpie-host-models-list.patch but is no longer required.
 
 ## v0.4.2: Use Codex Desktop projects directly
 

@@ -300,13 +300,40 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     }
     codexModel.value = chosen;
   }
-  async function loadModels() {
-    modelPickerStatus.textContent = '正在读取 Magpie 模型列表…';
+  let catalogReload = 0;
+  async function localSnapshot(refresh) {
+    // Page CSP disallows direct network requests. Loading our own *data-only* script is
+    // allowed by Magpie's pagePolicy and does not bypass the host API.
+    if (refresh && document.head) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'model-catalog.js?reload=' + (++catalogReload);
+        script.onload = () => { script.remove?.(); resolve(); };
+        script.onerror = () => { script.remove?.(); reject(new Error('本地模型目录脚本读取失败')); };
+        document.head.append(script);
+      });
+    }
+    const snapshot = globalThis.__magpieLocalModelCatalog;
+    if (!snapshot || !Array.isArray(snapshot.models) || (snapshot.source === 'unavailable' && !snapshot.models.length)) {
+      throw new Error(snapshot?.warning || '本地模型目录尚未同步');
+    }
+    return snapshot;
+  }
+  async function loadModels(refresh = false) {
+    modelPickerStatus.textContent = '正在读取模型列表…';
+    let source = 'Magpie';
     try {
-      if (typeof magpie.read !== 'function') throw new Error('宿主未提供模型读取能力');
-      const response = await magpie.read('models:list', { agent: 'codex' });
+      let response;
+      // The upstream API is optional. Current Magpie does not implement it.
+      try {
+        if (typeof magpie.read !== 'function') throw new Error('No host model read');
+        response = await magpie.read('models:list', { agent: 'codex' });
+      } catch {
+        response = await localSnapshot(refresh);
+        source = response.source || '本地 Codex 模型目录';
+      }
       const raw = Array.isArray(response) ? response : response?.models;
-      if (!Array.isArray(raw)) throw new Error('宿主返回的模型目录格式不正确');
+      if (!Array.isArray(raw)) throw new Error('模型目录格式不正确');
       modelCatalog = raw.filter(m =>
         m && typeof m.id === 'string' && m.id.length > 0 && m.id.length <= 200 &&
         typeof m.name === 'string' && m.hidden !== true
@@ -316,7 +343,6 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
         modelProvider: typeof m.modelProvider === 'string' ? m.modelProvider : '',
       }));
       modelsAvailable = true;
-      // Match by Codex thread model and provider, not by friendly display name.
       const current = modelCatalog.find(m => m.threadModel === options.codexModel &&
         m.modelProvider === (options.codexModelProvider || '')) ||
         modelCatalog.find(m => m.threadModel === options.codexModel);
@@ -324,15 +350,16 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       modelOptions(codexModelSearch.value);
       codexLegacyModel.open = false;
       modelPickerStatus.textContent = modelCatalog.length
-        ? '已从 Magpie 同步 ' + modelCatalog.length + ' 个模型。修改后点击“保存 Codex 设置”。'
-        : 'Magpie 没有可用模型；可选“跟随 Codex 当前配置”。';
+        ? '已从' + source + '同步 ' + modelCatalog.length + ' 个模型。选择后点击保存。'
+        : source + '暂无可用模型；可选择继承 Codex 当前配置。';
     } catch (err) {
       modelsAvailable = false;
       modelCatalog = [];
       selectedCatalogID = options.codexModel || '';
       modelOptions();
       codexLegacyModel.open = true;
-      modelPickerStatus.textContent = '当前 Magpie 宿主尚未开放模型目录读取权限；请更新支持 models:list 的宿主。仍可在高级配置中保留旧模型 ID。';
+      modelPickerStatus.textContent = '模型目录不可用：' + (err?.message || err) +
+        '。可检查 Magpie Gateway 是否在运行，或暂时使用高级配置。';
     }
   }
   codexExecutable.value = options.codexExecutable || '';
@@ -341,7 +368,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   codexModelProvider.value = options.codexModelProvider || '';
   codexModel.addEventListener('change', () => { selectedCatalogID = codexModel.value; });
   codexModelSearch.addEventListener('input', () => modelOptions(codexModelSearch.value));
-  refreshModels.addEventListener('click', () => { void loadModels(); });
+  refreshModels.addEventListener('click', () => { void loadModels(true); });
 
   saveCodexConfig.addEventListener('click', async () => {
     if (busy) return;

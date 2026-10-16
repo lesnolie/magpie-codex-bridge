@@ -1,5 +1,5 @@
 import { realpath, lstat, readdir, readFile } from 'node:fs/promises';
-import { statSync, realpathSync, existsSync, readFileSync } from 'node:fs';
+import { statSync, lstatSync, realpathSync, existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -28,7 +28,71 @@ export function projectsConfigPath(config = {}) {
     : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'magpie-local-review', 'projects.json');
 }
 
+/**
+ * Codex Desktop persists its user-curated Projects in its own local state.
+ * Reading this file is independent of our Codex app-server task connection:
+ * a broken CLI executable cannot prevent listing the user's existing projects.
+ * This file is READ ONLY and never rewritten by Magpie.
+ *
+ * Codex also has an experimental app-server project/list API; this local
+ * persisted registry is used here to avoid starting model-capable processes
+ * just to list projects, and to work when the app-server cannot start.
+ */
+export function codexDesktopStatePath(config = {}) {
+  if (config.codexStatePath) return path.resolve(config.codexStatePath);
+  const home = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  return path.join(home, '.codex-global-state.json');
+}
+
+export function projectSource(config = {}) {
+  return config.projectSource === 'codex' ? 'codex' : 'manual';
+}
+
+export function codexDesktopProjectRoots(config = {}) {
+  const file = codexDesktopStatePath(config);
+  let source;
+  try {
+    if (statSync(file).size > 8 * 1024 * 1024) throw new Error('Codex project registry is too large');
+    source = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+  } catch (error) {
+    if (error?.code === 'ENOENT') throw new Error('Codex Desktop project registry not found. Open Codex Desktop and add a Project, or choose manual projects in Magpie.');
+    throw new Error('Cannot read Codex Desktop project registry (' + (error instanceof SyntaxError ? 'invalid JSON' : 'access denied or invalid file') + ')');
+  }
+  const listed = source && source['local-projects'];
+  if (!listed || typeof listed !== 'object' || Array.isArray(listed)) {
+    throw new Error('Codex Desktop project registry has no local-projects data');
+  }
+  const roots = [];
+  const used = new Set();
+  // A bounded subset: malicious/corrupt state must not grow the MCP catalog or
+  // accidentally grant a drive root. Do not fall back to Magpie's manual roots
+  // when Codex mode is selected.
+  for (const entry of Object.values(listed).slice(0, 100)) {
+    if (!entry || typeof entry !== 'object' || !Array.isArray(entry.rootPaths)) continue;
+    const folders = entry.rootPaths.slice(0, 8);
+    for (let i = 0; i < folders.length; i++) {
+      const folder = folders[i];
+      if (typeof folder !== 'string' || !path.isAbsolute(folder)) continue;
+      let resolved;
+      try {
+        if (lstatSync(folder).isSymbolicLink()) continue;
+        resolved = realpathSync(folder);
+        if (!statSync(resolved).isDirectory() || path.parse(resolved).root === resolved) continue;
+      } catch { continue; } // Gone/remote/WSL-only folder: don't expose it.
+      const label = typeof entry.name === 'string' && entry.name.trim()
+        ? entry.name.trim().slice(0, 96) : path.basename(resolved);
+      const proposed = folders.length === 1 ? label : label + ' / ' + path.basename(resolved);
+      let name = proposed;
+      for (let suffix = 2; used.has(name); suffix++) name = proposed + ' (' + suffix + ')';
+      used.add(name);
+      roots.push({ name, root: resolved, source: 'codex', codexProject: label });
+    }
+  }
+  return roots;
+}
+
 export function projectRoots(config = {}) {
+  if (projectSource(config) === 'codex') return codexDesktopProjectRoots(config);
   const file = projectsConfigPath(config);
   let input;
   // Explicitly saved in Magpie's embedded page: the page-owned allowlist wins,
@@ -118,7 +182,7 @@ export function createProjectTools(config = {}) {
   const roots = () => projectRoots(config);
   const maxBytes = Math.min(DEFAULT_MAX_BYTES, Math.max(1024, Number(config.maxBytes) || DEFAULT_MAX_BYTES));
   return {
-    projects: async () => safeOutput({ projects: roots().map(x => ({ name: x.name, directory: path.basename(x.root) })), readOnly: true }),
+    projects: async () => safeOutput({ projects: roots().map(x => ({ name: x.name, directory: path.basename(x.root), ...(x.source === 'codex' ? { codexProject: x.codexProject } : {}) })), source: projectSource(config), readOnly: true }),
     list_files: async ({ project, directory = '.' }) => {
       const p = get(roots(), project);
       const { actual } = await locate(p, directory, 'directory');

@@ -1,12 +1,11 @@
 {
   "name": "magpie-codex-bridge",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Experimental Magpie MCP tool plugin for resuming and compacting local Codex app-server threads.",
+  "version": "0.3.0-alpha.1",
+  "description": "Read-only local project review tools for ChatGPT Web via Magpie MCP",
   "type": "module",
   "main": "./index.mjs",
-  "exports": { ".": "./index.mjs" },
-  "scripts": { "test": "node --test test/*.test.mjs", "check": "node --check index.mjs && node --check src/app-server.mjs" },
+  "exports": "./index.mjs",
+  "scripts": { "check": "node --check index.mjs && node --check src/projects.mjs", "test": "node --test test/*.test.mjs" },
   "engines": { "node": ">=20" },
   "license": "MIT"
 }

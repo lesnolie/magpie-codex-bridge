@@ -1,45 +1,21 @@
-import { CodexAppServer } from './src/app-server.mjs';
+import { createProjectTools } from './src/projects.mjs';
 
-// Magpie's supported OpenCode-style `tool` hook; JSON Schema property definitions
-// avoid adding a runtime dependency for the very first compatibility probe.
-let sharedClient;
-const client = () => (sharedClient ||= new CodexAppServer());
-const json = (value) => JSON.stringify(value, null, 2);
-const safe = (operation) => async (args) => {
-  try { return json({ ok: true, result: await operation(args || {}) }); }
-  catch (err) { return json({ ok: false, error: err.message }); }
+const arg = (description, extra = {}) => ({ type: 'string', description, ...extra });
+const wrap = (fn) => async (args) => {
+  try { return await fn(args || {}); }
+  catch (error) { return JSON.stringify({ ok: false, error: error.message }); }
 };
-const threadArg = { type: 'string', minLength: 1, description: 'Existing Codex thread ID, not a filesystem directory.' };
 
-export const MagpieCodexBridge = async () => ({
-  tool: {
-    threads: {
-      description: 'List existing Codex threads saved on this computer. Does not create projects or change folders.',
-      args: { limit: { type: 'integer', minimum: 1, maximum: 30, description: 'Maximum number of recent threads.' } },
-      execute: safe(({ limit = 10 }) => client().listThreads(limit)),
-    },
-    resume: {
-      description: 'Attach to an existing local Codex thread by its ID, preserving Codex cwd, model and permissions.',
-      args: { threadId: threadArg },
-      execute: safe(({ threadId }) => client().resume(threadId)),
-    },
-    compact: {
-      description: 'Start native Codex thread compaction asynchronously. Does not summarize independently; use status to check.',
-      args: { threadId: threadArg },
-      execute: safe(({ threadId }) => client().compact(threadId)),
-    },
-    continue: {
-      description: 'Submit a new turn to an existing Codex thread with unchanged working directory. Opt-in disabled by default. Never use to bypass approvals.',
-      args: { threadId: threadArg, message: { type: 'string', minLength: 1, maxLength: 12000, description: 'Instructions to send to the resumed Codex thread.' } },
-      execute: safe(({ threadId, message }) => {
-        if (process.env.CODEX_BRIDGE_ENABLE_CONTINUE !== '1') throw new Error('Continue disabled. Set CODEX_BRIDGE_ENABLE_CONTINUE=1 on the trusted local Magpie host only after testing read-only calls.');
-        return client().continueThread(threadId, message);
-      }),
-    },
-    status: {
-      description: 'Check native thread status plus this bridge process’s most recent operation. Status can be unknown after host restart.',
-      args: { threadId: threadArg },
-      execute: safe(({ threadId }) => client().status(threadId)),
-    },
-  },
-});
+export const MagpieProjectReview = async (_input, options) => {
+  const tools = createProjectTools(options);
+  return {
+    tool: {
+      projects: { description: 'List only explicitly allowed project names (read-only).', args: {}, execute: wrap(tools.projects) },
+      list_files: { description: 'List non-secret files within an allowed project directory. Paths are project-relative.', args: { project: arg('Project name'), directory: arg('Relative directory, default .') }, execute: wrap(tools.list_files) },
+      read_file: { description: 'Read a limited range of an allowed source code or text file; no secrets, symlinks or files outside project roots.', args: { project: arg('Project name'), file: arg('Relative source path'), startLine: { type: 'integer', minimum: 1 }, maxLines: { type: 'integer', minimum: 1, maximum: 200 } }, execute: wrap(tools.read_file) },
+      search_text: { description: 'Search exact text within allowed source files, bounded to 300 files and 50 matches.', args: { project: arg('Project name'), query: arg('Literal search text'), directory: arg('Relative directory, default .'), maxMatches: { type: 'integer', minimum: 1, maximum: 50 } }, execute: wrap(tools.search_text) },
+      git_status: { description: 'Read Git worktree status from allowed local project; no changes made.', args: { project: arg('Project name') }, execute: wrap(tools.git_status) },
+      git_diff: { description: 'Review unstaged changes to a specific allowed, existing source file; no changes made.', args: { project: arg('Project name'), file: arg('Relative tracked source file') }, execute: wrap(tools.git_diff) },
+    }
+  };
+};

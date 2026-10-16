@@ -1,0 +1,50 @@
+diff --git a/internal/plugin/page.go b/internal/plugin/page.go
+--- a/internal/plugin/page.go
++++ b/internal/plugin/page.go
+@@
+-var PageReads = []string{"usage:summary", "providers:list"}
++var PageReads = []string{"usage:summary", "providers:list", "models:list"}
+diff --git a/internal/gui/pluginpage.go b/internal/gui/pluginpage.go
+--- a/internal/gui/pluginpage.go
++++ b/internal/gui/pluginpage.go
+@@
+ func pageRead(read string, params map[string]any) (any, error) {
+ 	switch read {
++	case "models:list":
++		// Plugin pages may read the names of the models Codex's own Agent
++		// picker knows. This mirrors the catalog without secrets, credentials
++		// or network permissions for the sandboxed plugin page.
++		if a, _ := params["agent"].(string); a != "codex" {
++			return nil, fmt.Errorf("models:list supports only codex")
++		}
++		type model struct {
++			ID            string `json:"id"`
++			Name          string `json:"name"`
++			Group         string `json:"group"`
++			ThreadModel   string `json:"threadModel"`
++			ModelProvider string `json:"modelProvider"`
++		}
++		listed, _ := provider.ListedFor("codex")
++		isHidden := provider.ModelOff("codex")
++		out := []model{}
++		for _, entry := range listed {
++			if isHidden(entry.ID) || len(out) >= 2000 {
++				continue
++			}
++			label := entry.Name
++			if label == "" {
++				label = entry.Model
++			}
++			group := entry.Provider.Name
++			if entry.Group != "" {
++				group = "Routing groups"
++			}
++			target, providerID := entry.ID, "magpie"
++			if provider.CodexOwn(entry) {
++				target, providerID = entry.Model, "openai"
++			}
++			out = append(out, model{ID: entry.ID, Name: label, Group: group,
++				ThreadModel: target, ModelProvider: providerID})
++		}
++		return map[string]any{"models": out}, nil
+ 	case "providers:list":

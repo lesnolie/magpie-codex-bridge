@@ -1,5 +1,5 @@
 import { createProjectTools } from './src/projects.mjs';
-import { reconcileRemoteService } from './src/remote-service.mjs';
+import { reconcileRemoteService, writeBootstrapStatus } from './src/remote-service.mjs';
 
 const arg = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const wrap = (fn) => async (args) => {
@@ -12,7 +12,10 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   // Never make tool discovery fail merely because Windows Task Scheduler or
   // Node.js is unavailable; the existing six read-only tools must still work.
   try { await reconcileRemoteService(options); }
-  catch (error) { console.warn('[magpie-local-review] Remote autostart:', error?.message || String(error)); }
+  catch (error) {
+    if (options.remoteAutoStart === true) await writeBootstrapStatus('setup-failed', error?.message || String(error));
+    console.warn('[magpie-local-review] Remote autostart:', error?.message || String(error));
+  }
   const tools = createProjectTools(options);
   return {
     tool: {

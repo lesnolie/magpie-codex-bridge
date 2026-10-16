@@ -2,6 +2,12 @@
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
+## Existing Cloudflare Tunnel adapter (v0.3.3 alpha)
+
+You can reuse a healthy Cloudflare Tunnel and fixed hostname, e.g. `c2c.ilxyz.xyz -> 127.0.0.1:48765`. This release **bundles** `scripts/cloudflare-mcp-adapter.mjs` plus a Windows setup launcher, and forwards only the six read-only project review tools to Magpie on `127.0.0.1:3425`. It rejects requests without a **cryptographically verified Cloudflare Access JWT**. Do **not** publish this without first protecting the entire hostname with a Cloudflare Access app limited to your own identity and enabling Managed OAuth.
+
+**Configuration**: In the plugin's `scripts` folder double-click `setup-cloudflare-mcp.cmd`, provide the Access team domain and app audience, and keep the PowerShell console running for initial verification. It does not change Cloudflare Tunnel routes or resurrect the previous C2C program. See [full Cloudflare configuration, authentication, tests, autostart, and troubleshooting](docs/cloudflare-mcp.md). ChatGPT's HTTPS MCP URL is `https://c2c.ilxyz.xyz/mcp` (use **HTTPS URL**, not OpenAI Tunnel). Windows Magpie tool-host may start lazily, so this proxy intentionally runs as a separate local process bundled in the same plugin repository, not as a tool or UI action.
+
 ## Architecture
 
 ```text

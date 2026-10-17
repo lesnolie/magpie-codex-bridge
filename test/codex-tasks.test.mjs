@@ -79,20 +79,22 @@ test('missing native executable yields helpful error and launch phase', async ()
 });
 
 test('Codex Desktop multi-root project adds only sibling roots to the workspace sandbox', () => {
-  const base = {root:'/local/one', name:'One', source:'codex',
-    workspaceRoots:['/local/one','/local/two','/local/two']};
+  const one=path.join(root,'one'), two=path.join(root,'two');
+  const base = {root:one, name:'One', source:'codex',
+    workspaceRoots:[one,two,two]};
   const {config,mode,additionalWorkspaceCount}=buildCodexThreadConfig(
     {projectSource:'codex',codexAllowWrites:true},base);
   assert.equal(mode,'workspace-write');
   assert.equal(config.sandbox,'workspace-write');
-  assert.deepEqual(config.config.sandbox_workspace_write.writable_roots,['/local/two']);
+  assert.deepEqual(config.config.sandbox_workspace_write.writable_roots,[two]);
   assert.equal(config.config.sandbox_workspace_write.network_access,false);
   assert.equal(additionalWorkspaceCount,1);
   assert.doesNotMatch(config.developerInstructions,/danger-full-access/);
 });
 
 test('Codex Desktop inherited permission setting is local-only and never expands manual projects or read-only tasks', () => {
-  const base={root:'/local/one',source:'codex',workspaceRoots:['/local/one','/local/two']};
+  const one=path.join(root,'one'),two=path.join(root,'two');
+  const base={root:one,source:'codex',workspaceRoots:[one,two]};
   const yes=buildCodexThreadConfig({projectSource:'codex',codexAllowWrites:true,
     codexInheritPermissions:true},base);
   assert.equal(yes.mode,'codex-local');
@@ -107,7 +109,7 @@ test('Codex Desktop inherited permission setting is local-only and never expands
   assert.equal('config' in noWrite.config,false);
 
   const manual=buildCodexThreadConfig({projectSource:'manual',codexAllowWrites:true,
-    codexInheritPermissions:true},{root:'/local/manual',source:'manual'});
+    codexInheritPermissions:true},{root:path.join(root,'manual'),source:'manual'});
   assert.equal(manual.mode,'workspace-write');
   assert.equal(manual.config.sandbox,'workspace-write');
   assert.equal('config' in manual.config,false);

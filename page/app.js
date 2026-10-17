@@ -89,6 +89,10 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   function cleanOptions(next) {
     // Migration removes obsolete grants when any setting is saved.
     const out = { ...next, projectSource: 'codex' };
+    // Freeze the effective legacy mode before deleting the old flags.
+    if (!['read-only','workspace-write','codex-local'].includes(out.codexPermissionMode)) {
+      out.codexPermissionMode = next.codexEnabled === true ? effectiveMode(next) : 'read-only';
+    }
     delete out.roots;
     delete out.rootsSource;
     delete out.codexAllowWrites;

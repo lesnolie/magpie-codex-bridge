@@ -118,6 +118,31 @@ test('single permission selector is reflected in plugin diagnostics', async () =
   assert.equal(data.source,'codex');
 });
 
+test('MCP chat switch only stages a transfer even when Codex app-server is disabled', async () => {
+  const before=process.env.MAGPIE_CHAT_SESSION_DIR;
+  process.env.MAGPIE_CHAT_SESSION_DIR=path.join(base,'remote-chat-handoff');
+  try {
+    const plugin=await MagpieProjectReview({},cfg({codexEnabled:false,remoteAutoStart:false}));
+    const url='https://chatgpt.com/c/12345678-1111-2222-3333-123456789012';
+    const call=JSON.parse(await plugin.tool.chat_session_request_transfer.execute({
+      project:'TMN',taskId:'tmn123',url,reason:'Switch chat'
+    }));
+    assert.equal(call.accepted,true);
+    assert.equal(call.active,null,'ChatGPT cannot remotely activate a conversation');
+    assert.equal(call.pending.url,url);
+    const status=JSON.parse(await plugin.tool.chat_session_status.execute({project:'TMN'}));
+    assert.equal(status.active,null);
+    assert.equal(status.pending.requestId,call.pending.requestId);
+    const refused=JSON.parse(await plugin.tool.chat_session_request_transfer.execute({
+      project:'TMN',taskId:'other',url:'https://evil.example/c/12345678'
+    }));
+    assert.equal(refused.ok,false);
+  } finally {
+    if(before===undefined)delete process.env.MAGPIE_CHAT_SESSION_DIR;
+    else process.env.MAGPIE_CHAT_SESSION_DIR=before;
+  }
+});
+
 test('embedded page has no manual permission or directory picker', () => {
   const dir=path.dirname(fileURLToPath(import.meta.url));
   const html=readFileSync(path.join(dir,'..','page','index.html'),'utf8');

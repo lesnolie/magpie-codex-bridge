@@ -1,4 +1,5 @@
-import { createProjectTools } from './src/projects.mjs';
+import { createProjectTools, projectRoots } from './src/projects.mjs';
+import { createChatSessions } from './skills/magpie-codex-collab/chat-session.mjs';
 import { existsSync } from 'node:fs';
 import { createCodexTasks, resolveCodexPermissionMode } from './src/codex-tasks.mjs';
 import { startModelCatalogSync } from './src/model-catalog.mjs';
@@ -30,6 +31,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   // explicitly enables Codex; Cloudflare also filters these tools by its
   // locally managed permission flag.
   const codex = createCodexTasks(options);
+  const chat = createChatSessions({projectRoots:()=>projectRoots(options)});
   const codexTools = {
     codex_submit_task: { description: 'Submit a task to local Codex for a Codex Desktop registered project. Only Codex may modify files, and only if separately enabled in Magpie.', args: { project: arg('Allowed project name'), prompt: arg('Task instruction'), continueThread: { type: 'boolean', description: 'Continue the last successful Codex thread for this project, default false' } }, execute: wrap(codex.submit) },
     codex_task_status: { description: 'Read state and progress of a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.status) },
@@ -38,6 +40,8 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     codex_review_inbox: { description: 'List local completed Codex tasks awaiting ChatGPT review, including tasks from an earlier chat or plugin reload. Local receipt files are not project modifications.', args: { project: { type: 'string', description: 'Optional approved project name' } }, execute: wrap(codex.inbox) },
     codex_review_changes: { description: 'Read Codex task completion output and a bounded, filtered Git diff from its submission baseline for ChatGPT code review. Source files only, no execution or edits.', args: { project: arg('Approved project name'), taskId: arg('Task ID'), file: { type: 'string', description: 'Optional project-relative changed source file for focused review' } }, execute: wrap(codex.changes) },
     codex_ack_review: { description: 'After ChatGPT has ACTUALLY reviewed a completed Codex task, record approved / changes_requested / no_changes verdict in the local review receipt. Does not edit source code or notify a chat.', args: { project: arg('Approved project'), taskId: arg('Completed task ID'), decision: { type: 'string', enum: ['approved', 'changes_requested', 'no_changes'] }, summary: arg('Brief evidence-based review conclusion, 1-1500 characters') }, execute: wrap(codex.acknowledge) },
+    chat_session_status: { description: 'Read the current verified ChatGPT conversation binding, task checkpoint and any pending switch for a Codex Desktop project. Does not operate a browser or send a message.', args: { project: arg('Codex Desktop project name') }, execute: wrap(({project})=>JSON.stringify(chat.status(project))) },
+    chat_session_request_transfer: { description: 'Stage a request to switch to a new ChatGPT conversation for an existing Codex task. The active chat remains unchanged until native Codex verifies and activates it locally. A URL is needed for new conversations outside the managed browser.', args: {project:arg('Codex Desktop project'), taskId:arg('Existing task ID'), url:{type:'string',description:'Optional exact https://chatgpt.com/c/... chat URL; recommended for outside-browser switches'},reason:{type:'string',description:'Short reason for transfer'}}, execute: wrap(args=>JSON.stringify(chat.request(args))) },
     codex_cancel_task: { description: 'Cancel a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.cancel) },
   };
   const projectsWithStatus = async () => {
@@ -54,9 +58,9 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     return JSON.stringify({
       ...data,
       codex: {
-        integrationVersion: '0.4.7-alpha.1',
+        integrationVersion: '0.4.8-alpha.1',
         toolsRegistered: true,
-        toolCount: 14,
+        toolCount: 16,
         pendingReviewCount,
         localEnabled: configured,
         allowWrites: configured && resolveCodexPermissionMode(options) !== 'read-only',

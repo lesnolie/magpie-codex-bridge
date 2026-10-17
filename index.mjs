@@ -1,6 +1,6 @@
 import { createProjectTools } from './src/projects.mjs';
 import { existsSync } from 'node:fs';
-import { createCodexTasks } from './src/codex-tasks.mjs';
+import { createCodexTasks, resolveCodexPermissionMode } from './src/codex-tasks.mjs';
 import { startModelCatalogSync } from './src/model-catalog.mjs';
 import { reconcileRemoteService, writeBootstrapStatus, remotePaths } from './src/remote-service.mjs';
 
@@ -31,7 +31,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   // locally managed permission flag.
   const codex = createCodexTasks(options);
   const codexTools = {
-    codex_submit_task: { description: 'Submit a task to local Codex for a project from the selected local project source. Only Codex may modify files, and only if separately enabled in Magpie.', args: { project: arg('Allowed project name'), prompt: arg('Task instruction'), continueThread: { type: 'boolean', description: 'Continue the last successful Codex thread for this project, default false' } }, execute: wrap(codex.submit) },
+    codex_submit_task: { description: 'Submit a task to local Codex for a Codex Desktop registered project. Only Codex may modify files, and only if separately enabled in Magpie.', args: { project: arg('Allowed project name'), prompt: arg('Task instruction'), continueThread: { type: 'boolean', description: 'Continue the last successful Codex thread for this project, default false' } }, execute: wrap(codex.submit) },
     codex_task_status: { description: 'Read state and progress of a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.status) },
     codex_task_result: { description: 'Read local Codex output and completion status for a task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.result) },
     codex_wait_task: { description: 'Wait up to 15 seconds for a local Codex task to finish; return its result so ChatGPT can immediately review it in this active conversation. Cannot initiate a new chat or send unsolicited notifications.', args: { project: arg('Approved project name'), taskId: arg('Task ID'), waitMs: { type: 'integer', minimum: 0, maximum: 15000, description: 'Maximum wait in milliseconds (up to 15000)' } }, execute: wrap(codex.wait) },
@@ -54,12 +54,13 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     return JSON.stringify({
       ...data,
       codex: {
-        integrationVersion: '0.4.6-alpha.1',
+        integrationVersion: '0.4.7-alpha.1',
         toolsRegistered: true,
         toolCount: 14,
         pendingReviewCount,
         localEnabled: configured,
-        allowWrites: configured && options.codexAllowWrites === true,
+        allowWrites: configured && resolveCodexPermissionMode(options) !== 'read-only',
+        permissionMode: resolveCodexPermissionMode(options),
         remoteAutoStart: remoteOn,
         remoteGateEnabled: process.platform === 'win32' && existsSync(remotePaths().codexEnabledFile),
       },
@@ -68,7 +69,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   return {
     tool: {
       ...codexTools,
-      projects: { description: 'List projects from the configured local source and report pending Codex reviews. When pendingReviewCount is positive call codex_review_inbox and codex_review_changes to audit; never modify project files.', args: {}, execute: wrap(projectsWithStatus) },
+      projects: { description: 'List Codex Desktop registered projects and report pending Codex reviews. When pendingReviewCount is positive call codex_review_inbox and codex_review_changes to audit; never modify project files.', args: {}, execute: wrap(projectsWithStatus) },
       list_files: { description: 'List non-secret files within an allowed project directory. Paths are project-relative.', args: { project: arg('Project name'), directory: arg('Relative directory, default .') }, execute: wrap(tools.list_files) },
       read_file: { description: 'Read a limited range of an allowed source code or text file; no secrets, symlinks or files outside project roots.', args: { project: arg('Project name'), file: arg('Relative source path'), startLine: { type: 'integer', minimum: 1 }, maxLines: { type: 'integer', minimum: 1, maximum: 200 } }, execute: wrap(tools.read_file) },
       search_text: { description: 'Search exact text within allowed source files, bounded to 300 files and 50 matches.', args: { project: arg('Project name'), query: arg('Literal search text'), directory: arg('Relative directory, default .'), maxMatches: { type: 'integer', minimum: 1, maximum: 50 } }, execute: wrap(tools.search_text) },

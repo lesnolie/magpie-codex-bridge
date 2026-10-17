@@ -78,7 +78,20 @@
           <button type="button" class="remove" id="cancelCodexWrite">取消</button>
         </div>
       </div>
-      <p class="hint">两个开关可独立配置。写入授权可以预先开启，但只有同时启用 Codex 后才会生效。默认使用只读沙盒；允许写入时使用 Codex workspace-write 沙盒。绝不自动授权提权或批准外部操作。</p>
+      <p class="hint">默认只允许任务修改当前 Codex 工作区；属于同一 Codex Desktop 项目的多个目录会自动纳入 workspace-write 范围。其他项目不自动获得写入权限。</p>
+      <label class="remote-switch" for="codexInheritPermissions">
+        <input id="codexInheritPermissions" type="checkbox" aria-label="使用 Codex 本地权限配置">
+        <span>跟随 Codex 本地权限（高级）</span>
+      </label>
+      <p class="hint">可用于 Codex Desktop 自身能操作、Magpie workspace-write 却被拒绝的情况。启用后不再由本插件覆盖 Codex 的沙盒模式；Codex 实际权限取决于本机 Codex CLI 配置和版本。它可能允许修改当前项目以外的文件，需额外确认。</p>
+      <div id="codexInheritConfirmation" class="permission-confirmation" role="group" aria-label="确认跟随 Codex 权限" hidden>
+        <p>确认使用本机 Codex 的权限配置？若 Codex 本地设置为完全访问，ChatGPT 提交的任务也可能在本机获得更广泛的文件写入权限。仍禁止自动同意提权请求。请只在可信设备和可信项目使用。</p>
+        <div class="controls">
+          <button type="button" id="confirmCodexInherit">确认使用本地权限</button>
+          <button type="button" class="remove" id="cancelCodexInherit">取消</button>
+        </div>
+      </div>
+      <p class="hint">仅 Codex 项目来源且开启 Codex 写入权限时生效。撤销写入会自动关闭本地权限继承。</p>
       <p class="hint">需要在 Windows 上安装可执行的 Codex CLI（codex.exe 应可被插件宿主找到），并预先在本地完成模型与提供商配置。ChatGPT 账户自身的 MCP 执行权限仍可能阻止远程调用。</p>
       <p class="hint">任务只在 Magpie 插件宿主存活期间维护，当前版本不保证跨重启恢复进行中的任务。请勿用作无人值守生产部署。</p>
       <div class="codex-config">

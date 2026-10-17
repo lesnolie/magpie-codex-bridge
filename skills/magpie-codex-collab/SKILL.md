@@ -16,7 +16,13 @@ fetch credentials, or install its own MCP server.
 Before touching a ChatGPT tab, check that native Codex provides the official
 control-in-app-browser skill and its runtime. When available, follow its
 documentation, initialize the runtime exactly once, obtain the **iab** browser
-and reuse **one dedicated tab**. Never call undocumented private ChatGPT APIs,
+and reuse **one dedicated tab**. In environments exposing the documented
+browser runtime, run setupBrowserRuntime() once, obtain
+agent.browsers.get("iab"), create only one managed tab, and reuse its exact
+tab handle for all later navigation. Set visibility when the browser supports
+it and use tab.markHandoff()/tab.markDeliverable() to prevent automatic cleanup
+from closing the tab. Reclaim the same tab after transient timeouts. Never
+call undocumented private ChatGPT APIs,
 read cookies/tokens, automate the user's other browsers, or impersonate a native
 assistant reply. If in-app browser is unavailable, report **browser-unavailable**
 and leave pending work saved locally. Do not claim that a notification was sent.
@@ -52,6 +58,9 @@ continuing checkpoint.
    exact browser-observed URL (https://chatgpt.com/c/... or a Project chat URL).
    node <skill-dir>/chat-session.mjs prepare --project "<exact-name>" --task-id "<id>" --url "<chat-url>"
    This creates only a pending request; it does not authorize the target.
+   When starting a NEW task while the previous local task is DONE/BLOCKED,
+   add --new-task true explicitly. This override exists only in the local
+   CLI; ChatGPT cannot replace an active task remotely.
 4. In the ChatGPT conversation ask it to call Magpie projects, identify this
    project and confirm it can use its source-reading tools. Ensure the browser
    still shows the same URL. Never trust chat titles, a guess from a list of

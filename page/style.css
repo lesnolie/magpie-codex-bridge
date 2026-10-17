@@ -31,3 +31,8 @@
 .codex-config details[open] label{margin-top:12px}
 .codex-config .section-heading{margin:8px 0 0}
 .codex-config .section-heading label{margin:0}
+
+/* Unified task permission picker */
+#codexPermissionMode{display:block;width:100%;min-width:0;padding:12px 14px;border-radius:10px;font:inherit;font-size:13px;color:var(--magpie-fg,#111);background:var(--magpie-bg,#fff);border:1px solid color-mix(in srgb,var(--magpie-fg,#111) 22%,transparent);margin-bottom:8px}
+#codexPermissionMode:focus-visible{outline:2px solid var(--magpie-accent,#007aff);outline-offset:2px}
+#codexPermissionMode:disabled{opacity:.6}

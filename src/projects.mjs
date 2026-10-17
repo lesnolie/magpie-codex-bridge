@@ -69,23 +69,29 @@ export function codexDesktopProjectRoots(config = {}) {
   // when Codex mode is selected.
   for (const entry of Object.values(listed).slice(0, 100)) {
     if (!entry || typeof entry !== 'object' || !Array.isArray(entry.rootPaths)) continue;
+    // A Codex Desktop project may contain several independent workspaces.
+    // Validate every root before associating them; do not authorize arbitrary
+    // descendants, stale paths, symlinks or entire drives.
     const folders = entry.rootPaths.slice(0, 8);
-    for (let i = 0; i < folders.length; i++) {
-      const folder = folders[i];
-      if (typeof folder !== 'string' || !path.isAbsolute(folder)) continue;
-      let resolved;
+    const validated = folders.map(folder => {
+      if (typeof folder !== 'string' || !path.isAbsolute(folder)) return null;
       try {
-        if (lstatSync(folder).isSymbolicLink()) continue;
-        resolved = realpathSync(folder);
-        if (!statSync(resolved).isDirectory() || path.parse(resolved).root === resolved) continue;
-      } catch { continue; } // Gone/remote/WSL-only folder: don't expose it.
+        if (lstatSync(folder).isSymbolicLink()) return null;
+        const resolved = realpathSync(folder);
+        return statSync(resolved).isDirectory() && path.parse(resolved).root !== resolved ? resolved : null;
+      } catch { return null; }
+    });
+    const workspaceRoots = [...new Set(validated.filter(Boolean))];
+    for (let i = 0; i < folders.length; i++) {
+      const resolved = validated[i];
+      if (!resolved) continue;
       const label = typeof entry.name === 'string' && entry.name.trim()
         ? entry.name.trim().slice(0, 96) : path.basename(resolved);
       const proposed = folders.length === 1 ? label : label + ' / ' + path.basename(resolved);
       let name = proposed;
       for (let suffix = 2; used.has(name); suffix++) name = proposed + ' (' + suffix + ')';
       used.add(name);
-      roots.push({ name, root: resolved, source: 'codex', codexProject: label });
+      roots.push({ name, root: resolved, source: 'codex', codexProject: label, workspaceRoots });
     }
   }
   return roots;

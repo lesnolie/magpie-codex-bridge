@@ -119,6 +119,9 @@ test('Codex project source lists saved Desktop projects instead of Magpie manual
   assert.equal(projectSource({projectSource:'codex'}), 'codex');
   const discovered = codexDesktopProjectRoots({codexStatePath:state});
   assert.deepEqual(discovered.map(x=>x.name), ['Alpha','Multi / Codex-B','Multi / project']);
+  assert.deepEqual(discovered[1].workspaceRoots, [beta,root]);
+  assert.deepEqual(discovered[2].workspaceRoots, [beta,root]);
+  assert.deepEqual(discovered[0].workspaceRoots, [alpha]);
   const codex = createProjectTools({projectSource:'codex', codexStatePath:state,
     rootsSource:'magpie-page',roots:[{name:'ManuallyAdded',path:root}]});
   const listing=JSON.parse(await codex.projects());

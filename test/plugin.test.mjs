@@ -127,6 +127,6 @@ test('embedded page has no manual permission or directory picker', () => {
   assert.match(html,/id="codexPermissionMode"/);
   assert.doesNotMatch(app,/fetch\(|XMLHttpRequest|child_process|execFile\(/);
   assert.match(app,/magpie\.options\.set/);
-  assert.ok(existsSync(path.join(dir,'..','scripts','manage-projects.cmd')),'old helper remains bundled only for migration compatibility');
+  assert.equal(existsSync(path.join(dir,'..','scripts','manage-projects.cmd')),false,'legacy picker executable was removed');
 });
 test.after(()=>rmSync(base,{recursive:true,force:true}));

@@ -12,39 +12,13 @@
 <body>
   <main class="wrap">
     <header>
-      <div class="eyebrow">MAGPIE · LOCAL ACCESS</div>
-      <h1>项目访问</h1>
-      <p class="intro">可直接选择 Codex Desktop 已有项目，不必在 Magpie 重复登记；ChatGPT 仅调用只读检查或提交任务，代码修改由本地 Codex 执行。</p>
+      <div class="eyebrow">MAGPIE · CODEX</div>
+      <h1>Codex 项目集成</h1>
+      <p class="intro">自动使用 Codex Desktop 已登记的项目。无需再向 Magpie 添加文件夹或维护第二份目录授权。</p>
     </header>
     <section class="card">
-      <div class="section-heading">
-        <div><h2>项目来源</h2><p class="remote-sub">直接读取本机 Codex Desktop 中已有的项目</p></div>
-        <label class="remote-switch" for="useCodexProjects">
-          <input id="useCodexProjects" type="checkbox" aria-label="使用 Codex Desktop 的项目">
-          <span>使用 Codex 项目</span>
-        </label>
-      </div>
-      <p class="hint">开启后，ChatGPT 的项目列表、文件读取和 Codex 任务提交都以 Codex Desktop 已登记的工作目录为准，不再要求在 Magpie 逐个添加项目。只读读取和代码分析仍由 ChatGPT 发起，实际修改由本地 Codex 执行。</p>
-      <p class="hint">Codex 项目来自本机用户的只读状态记录；不修改 Codex 项目配置，也不授予整个磁盘访问权限。写入仍须在下方开启 Codex 修改权限。</p>
-      <p class="remote-status" id="projectSourceStatus" role="status" aria-live="polite"></p>
-    </section>
-    <section class="card">
-      <div class="section-heading"><h2>Magpie 手动项目（备用）</h2><div class="controls"><span class="tag" id="count">0 个项目</span><button class="remove" type="button" id="revoke">撤销全部授权</button></div></div>
-      <div class="empty" id="empty">此页面还没有添加项目。</div>
-      <ul id="projects" class="projects" aria-label="已授权项目列表"></ul>
-    </section>
-    <section class="card">
-      <div class="section-heading"><h2>手动添加项目（备用）</h2><span class="tag">本地只读</span></div>
-      <div id="addForm">
-        <label for="folder">项目文件夹路径</label>
-        <div class="path-row">
-          <input id="folder" name="folder" type="text" required spellcheck="false" placeholder="C:\work\TMN" autocomplete="off">
-          <button type="button" id="add">添加项目</button>
-        </div>
-        <p id="fieldStatus" class="field-status" role="status" aria-live="polite" hidden></p>
-        <p class="hint">在 Windows 文件资源管理器中打开项目文件夹，按 <kbd>Alt+D</kbd>、<kbd>Ctrl+C</kbd>，然后粘贴到这里。</p>
-        <p class="hint">当前 Magpie 页面无法获取 Windows 的完整文件夹路径，因此不提供无效的系统目录选择按钮。</p>
-      </div>
+      <div class="section-heading"><h2>项目来源</h2><span class="tag">Codex Desktop</span></div>
+      <p class="hint">所有文件检查和本地 Codex 任务只针对 Codex Desktop 项目。若项目未出现，请先在 Codex Desktop 添加；不会回退到已废弃的手动授权列表。</p>
     </section>
     <section class="card remote-section">
       <div class="section-heading">
@@ -67,33 +41,23 @@
           <span>启用 Codex</span>
         </label>
       </div>
-      <label class="remote-switch" for="codexAllowWrites">
-        <input id="codexAllowWrites" type="checkbox" aria-label="允许 Codex 写入已授权项目">
-        <span>允许 Codex 修改项目文件</span>
-      </label>
-      <div id="codexWriteConfirmation" class="permission-confirmation" role="group" aria-label="确认 Codex 项目写入权限" hidden>
-        <p>确认允许本地 Codex 修改当前项目来源中的项目文件？Codex 可能更改或删除代码。此授权仅在启用 Codex 后生效，建议先备份项目。</p>
+      <label for="codexPermissionMode">执行权限</label>
+      <select id="codexPermissionMode" aria-label="选择 Codex 任务执行权限">
+        <option value="read-only">只读 — 分析代码，不修改文件</option>
+        <option value="workspace-write">允许修改项目 — Codex 工作区沙盒</option>
+        <option value="codex-local">跟随 Codex 本地权限 — 高级</option>
+      </select>
+      <p class="hint">只读为安全默认值。修改项目时仅开放 Codex Desktop 中对应工作区；跟随本地权限时可能获得更大范围的文件访问权。</p>
+      <div id="codexPermissionConfirmation" class="permission-confirmation" role="group" aria-label="确认 Codex 执行权限" hidden>
+        <p id="codexPermissionWarning">确认允许 Codex 修改项目代码？</p>
         <div class="controls">
-          <button type="button" id="confirmCodexWrite">确认授权</button>
-          <button type="button" class="remove" id="cancelCodexWrite">取消</button>
+          <button type="button" id="confirmCodexPermission">确认授权</button>
+          <button type="button" class="remove" id="cancelCodexPermission">取消</button>
         </div>
       </div>
-      <p class="hint">默认只允许任务修改当前 Codex 工作区；属于同一 Codex Desktop 项目的多个目录会自动纳入 workspace-write 范围。其他项目不自动获得写入权限。</p>
-      <label class="remote-switch" for="codexInheritPermissions">
-        <input id="codexInheritPermissions" type="checkbox" aria-label="使用 Codex 本地权限配置">
-        <span>跟随 Codex 本地权限（高级）</span>
-      </label>
-      <p class="hint">可用于 Codex Desktop 自身能操作、Magpie workspace-write 却被拒绝的情况。启用后不再由本插件覆盖 Codex 的沙盒模式；Codex 实际权限取决于本机 Codex CLI 配置和版本。它可能允许修改当前项目以外的文件，需额外确认。</p>
-      <div id="codexInheritConfirmation" class="permission-confirmation" role="group" aria-label="确认跟随 Codex 权限" hidden>
-        <p>确认使用本机 Codex 的权限配置？若 Codex 本地设置为完全访问，ChatGPT 提交的任务也可能在本机获得更广泛的文件写入权限。仍禁止自动同意提权请求。请只在可信设备和可信项目使用。</p>
-        <div class="controls">
-          <button type="button" id="confirmCodexInherit">确认使用本地权限</button>
-          <button type="button" class="remove" id="cancelCodexInherit">取消</button>
-        </div>
-      </div>
-      <p class="hint">仅 Codex 项目来源且开启 Codex 写入权限时生效。撤销写入会自动关闭本地权限继承。</p>
+      <p class="hint">提升执行权限必须在本地明确确认。Magpie 不会自动同意 Codex 的权限提升请求，也不会提供直接修改项目的 ChatGPT MCP 工具。</p>
       <p class="hint">需要在 Windows 上安装可执行的 Codex CLI（codex.exe 应可被插件宿主找到），并预先在本地完成模型与提供商配置。ChatGPT 账户自身的 MCP 执行权限仍可能阻止远程调用。</p>
-      <p class="hint">任务只在 Magpie 插件宿主存活期间维护，当前版本不保证跨重启恢复进行中的任务。请勿用作无人值守生产部署。</p>
+      <p class="hint">运行中的任务仍依赖本地插件进程；已完成任务的审核记录保存在本地。</p>
       <div class="codex-config">
         <label for="codexExecutable">Codex 本地可执行程序路径（可选）</label>
         <input id="codexExecutable" type="text" spellcheck="false" placeholder="C:\\...\\codex.exe">
@@ -117,8 +81,7 @@
       <p class="remote-status" id="codexStatus" role="status" aria-live="polite"></p>
     </section>
     <p id="status" class="status" role="status" aria-live="polite"></p>
-    <div class="note" id="legacy" hidden>旧版授权提醒：曾通过 Windows 辅助选择器或插件 Options 添加的项目可能仍有效，但无法在此页面完整列出。请在本页重新添加所需项目，或点击「撤销全部授权」停用所有旧授权。</div>
-    <footer>ChatGPT 文件工具只读 · 本地 Codex 执行修改 · 项目目录来源可选</footer>
+    <footer>Codex Desktop 项目 · 单一执行权限选择 · ChatGPT 文件工具只读</footer>
   </main>
 </body>
 </html>

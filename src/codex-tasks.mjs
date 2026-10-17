@@ -127,10 +127,22 @@ export function resolveCodexBinary(options = {}) {
  * arguments: writable roots must come from the validated local project source.
  * Default stays sandboxed; broader Codex permissions require local opt-in.
  */
+export function resolveCodexPermissionMode(options = {}) {
+  if (['read-only', 'workspace-write', 'codex-local'].includes(options.codexPermissionMode)) {
+    return options.codexPermissionMode;
+  }
+  // Migration support for existing local settings only; no old UI or manual
+  // project grants remain. Unknown values fall back to read-only.
+  return options.codexAllowWrites === true
+    ? (options.codexInheritPermissions === true ? 'codex-local' : 'workspace-write')
+    : 'read-only';
+}
+
 export function buildCodexThreadConfig(options = {}, project = {}) {
-  const writes = options.codexAllowWrites === true;
-  const codexSource = options.projectSource === 'codex' && project.source === 'codex';
-  const inherit = writes && codexSource && options.codexInheritPermissions === true;
+  const permission = resolveCodexPermissionMode(options);
+  const writes = permission !== 'read-only';
+  const codexSource = project.source === 'codex';
+  const inherit = writes && codexSource && permission === 'codex-local';
   const extraRoots = codexSource && writes && Array.isArray(project.workspaceRoots)
     ? [...new Set(project.workspaceRoots.filter(root =>
         typeof root === 'string' && isAbsolute(root) && root !== project.root

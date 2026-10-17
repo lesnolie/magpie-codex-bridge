@@ -1,207 +1,132 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createProjectTools, codexDesktopProjectRoots, projectSource } from '../src/projects.mjs';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
+import { createProjectTools, projectSource, projectRoots, codexDesktopProjectRoots } from '../src/projects.mjs';
 import { MagpieProjectReview } from '../index.mjs';
 
-const base = mkdtempSync(path.join(tmpdir(), 'review-'));
+const base = mkdtempSync(path.join(tmpdir(), 'magpie-codex-only-'));
 const root = path.join(base, 'project');
-mkdirSync(root);
-mkdirSync(path.join(root, 'src'));
+const other = path.join(base, 'second-workspace');
+const state = path.join(base, 'codex-state.json');
+mkdirSync(path.join(root, 'src'), {recursive:true});
+mkdirSync(other);
 writeFileSync(path.join(root, 'src', 'app.lua'), 'local hello = "world"\nprint(hello)\n');
-writeFileSync(path.join(root, '.env'), 'SECRET=password');
+writeFileSync(path.join(root, '.env'), 'PRIVATE_API_KEY=secret');
 writeFileSync(path.join(root, 'secret.key'), 'private');
 writeFileSync(path.join(base, 'outside.lua'), 'OUTSIDE');
 symlinkSync(path.join(base, 'outside.lua'), path.join(root, 'linked.lua'));
 execFileSync('git', ['init', '-q', root]);
-const tools = createProjectTools({roots:[{name:'TMN',path:root}]});
+const register = projects => writeFileSync(state, JSON.stringify({ 'local-projects': projects }));
+register({ tmn: {name:'TMN',rootPaths:[root]} });
+const cfg = (extras={}) => ({ codexStatePath: state, ...extras });
+const tools = createProjectTools(cfg());
 
-test('lists configured projects only', async () => {
-  const r = JSON.parse(await tools.projects());
-  assert.equal(r.projects[0].name, 'TMN');
+test('always uses Codex Desktop even with legacy Magpie projectSource and roots', async () => {
+  assert.equal(projectSource({projectSource:'manual'}), 'codex');
+  const r = JSON.parse(await createProjectTools(cfg({
+    projectSource:'manual', rootsSource:'magpie-page',
+    roots:[{name:'OldAccess',path:base}]
+  })).projects());
+  assert.deepEqual(r.projects.map(p=>p.name), ['TMN']);
+  assert.equal(r.source, 'codex');
   assert.equal(r.readOnly, true);
-  assert.equal(JSON.stringify(r).includes(base), false);
+  assert.ok(!JSON.stringify(r).includes(base));
+  await assert.rejects(createProjectTools(cfg({roots:[{name:'OldAccess',path:base}]}))
+    .read_file({project:'OldAccess',file:'outside.lua'}), /Unknown project/);
 });
-test('lists filtered files', async () => {
-  const r = JSON.parse(await tools.list_files({project:'TMN'}));
-  assert.deepEqual(r.entries.map(e => e.name), ['src']);
+
+test('reading and search are scoped to validated Codex paths; secrets and symlinks rejected', async () => {
+  const files = JSON.parse(await tools.list_files({project:'TMN'}));
+  assert.deepEqual(files.entries.map(e=>e.name), ['src']);
+  assert.match(JSON.parse(await tools.read_file({project:'TMN',file:'src/app.lua',startLine:2})).text, /2: print\(hello\)/);
+  assert.equal(JSON.parse(await tools.search_text({project:'TMN',query:'hello'})).matches.length,2);
+  for (const file of ['.env','secret.key','linked.lua','../outside.lua']) {
+    await assert.rejects(tools.read_file({project:'TMN',file}));
+  }
+  const status = JSON.parse(await tools.git_status({project:'TMN'}));
+  assert.equal(status.changes.some(x=>/\.env|key/.test(x)),false);
 });
-test('reads line-numbered source', async () => {
-  const r = JSON.parse(await tools.read_file({project:'TMN',file:'src/app.lua',startLine:2}));
-  assert.match(r.text, /2: print\(hello\)/);
+
+test('Git diff remains restricted to source files', async () => {
+  execFileSync('git', ['-C',root,'-c','user.name=Tester','-c','user.email=t@example.com','add','src/app.lua']);
+  execFileSync('git', ['-C',root,'-c','user.name=Tester','-c','user.email=t@example.com','commit','-qm','baseline']);
+  writeFileSync(path.join(root,'src','app.lua'), 'local hello = "there"\n');
+  const diff = JSON.parse(await tools.git_diff({project:'TMN',file:'src/app.lua'}));
+  assert.match(diff.text, /there/);
 });
-test('rejects traversal and secrets', async () => {
-  await assert.rejects(tools.read_file({project:'TMN',file:'../outside.lua'}));
-  await assert.rejects(tools.read_file({project:'TMN',file:'.env'}));
-  await assert.rejects(tools.read_file({project:'TMN',file:'secret.key'}));
-  await assert.rejects(tools.read_file({project:'TMN',file:'linked.lua'}));
+
+test('Codex registry changes revoke old project access without relying on stale manual grants', async () => {
+  const alt = path.join(base,'second-project');
+  mkdirSync(alt);
+  register({ second:{name:'Next',rootPaths:[alt]} });
+  assert.deepEqual(JSON.parse(await tools.projects()).projects.map(p=>p.name),['Next']);
+  await assert.rejects(tools.list_files({project:'TMN'}),/Unknown project/);
+  register({tmn:{name:'TMN',rootPaths:[root]}});
 });
-test('searches content without exposing secrets', async () => {
-  const r = JSON.parse(await tools.search_text({project:'TMN',query:'hello'}));
-  assert.equal(r.matches.length, 2);
-  assert.equal(r.matches[0].file, 'src/app.lua');
+
+test('fail closed when Codex registry is missing, invalid or contains a drive root', async () => {
+  const missing = createProjectTools({codexStatePath:path.join(base,'missing.json'),
+    projectSource:'manual', roots:[{name:'Old',path:root}]});
+  await assert.rejects(missing.projects(),/Codex Desktop project registry not found/);
+  const broken=path.join(base,'broken.json');
+  writeFileSync(broken,'{"unrelated":true}');
+  await assert.rejects(createProjectTools({codexStatePath:broken}).projects(),/no local-projects data/);
+  register({bad:{name:'Drive',rootPaths:[path.parse(root).root]}, tmn:{name:'TMN',rootPaths:[root]}});
+  assert.deepEqual(projectRoots(cfg()).map(x=>x.name),['TMN']);
+  register({tmn:{name:'TMN',rootPaths:[root]}});
 });
-test('checks Git status read-only', async () => {
-  const r = JSON.parse(await tools.git_status({project:'TMN'}));
-  assert.equal(r.changes.some(x=>x.includes('.env') || x.includes('key')), false);
+
+test('multi-root Codex projects stay grouped; missing roots and symlinks stay excluded', () => {
+  register({first:{name:'Multi',rootPaths:[root,other,path.join(base,'missing')]}});
+  const list=codexDesktopProjectRoots(cfg());
+  assert.deepEqual(list.map(x=>x.name),['Multi / project','Multi / second-workspace']);
+  assert.deepEqual(list[0].workspaceRoots,[root,other]);
+  assert.deepEqual(list[1].workspaceRoots,[root,other]);
+  register({tmn:{name:'TMN',rootPaths:[root]}});
 });
-test('cannot configure filesystem root', async () => {
-  await assert.rejects(createProjectTools({roots:[path.parse(root).root]}).projects(), /filesystem root/);
-});
-test('Magpie registers stable Codex tool schemas without enabling execution', async () => {
-  const p = await MagpieProjectReview({}, {roots:[{name:'TMN',path:root}], codexExecutable:'invalid-program'});
-  assert.deepEqual(Object.keys(p.tool).sort(), [
-    'codex_ack_review','codex_cancel_task','codex_review_changes','codex_review_inbox','codex_submit_task',
-    'codex_task_result','codex_task_status','codex_wait_task',
+
+test('Magpie MCP tools still register without granting Codex execution', async () => {
+  const plugin=await MagpieProjectReview({},cfg({codexEnabled:false,remoteAutoStart:false}));
+  assert.deepEqual(Object.keys(plugin.tool).sort(),[
+    'codex_ack_review','codex_cancel_task','codex_review_changes','codex_review_inbox',
+    'codex_submit_task','codex_task_result','codex_task_status','codex_wait_task',
     'git_diff','git_status','list_files','projects','read_file','search_text',
   ]);
-  const response = JSON.parse(await p.tool.codex_submit_task.execute({project:'TMN',prompt:'read only'}));
-  assert.equal(response.ok, false);
-  assert.match(response.error, /Codex is disabled/);
-  const projects = JSON.parse(await p.tool.projects.execute({}));
-  assert.equal(projects.projects[0].name, 'TMN');
-  assert.equal(projects.codex.integrationVersion, '0.4.6-alpha.1');
-  assert.equal(projects.codex.toolsRegistered, true);
-  assert.equal(projects.codex.toolCount, 14);
-  assert.equal(projects.codex.localEnabled, false);
-  assert.equal(projects.codex.allowWrites, false);
-  assert.equal(projects.codex.remoteAutoStart, false);
-  assert.equal(JSON.stringify(projects).includes(base), false);
-  assert.equal('auth' in p, false);
-  assert.equal('config' in p, false);
+  const result=JSON.parse(await plugin.tool.codex_submit_task.execute({project:'TMN',prompt:'read only'}));
+  assert.equal(result.ok,false);
+  assert.match(result.error,/Codex is disabled/);
+  const listing=JSON.parse(await plugin.tool.projects.execute({}));
+  assert.equal(listing.codex.integrationVersion,'0.4.7-alpha.1');
+  assert.equal(listing.codex.toolCount,14);
+  assert.equal(listing.codex.allowWrites,false);
+  assert.equal(listing.projects[0].name,'TMN');
+  assert.ok(!JSON.stringify(listing).includes(base));
 });
 
-test('Codex diagnostic reports local opt-in without leaking paths', async () => {
-  const p = await MagpieProjectReview({}, {
-    roots: [{name:'TMN',path:root}],
-    codexEnabled:true, codexAllowWrites:true, remoteAutoStart:false,
-  });
-  const info=JSON.parse(await p.tool.projects.execute({}));
-  assert.equal(info.codex.localEnabled,true);
-  assert.equal(info.codex.allowWrites,true);
-  assert.equal(info.codex.remoteAutoStart,false);
-  assert.equal(typeof info.codex.remoteGateEnabled,'boolean');
-  assert.equal(JSON.stringify(info).includes(base),false);
-});
-test('single file git diff of committed change', async () => {
-  execFileSync('git', ['-C',root,'-c','user.email=test@example.com','-c','user.name=Test','add','src/app.lua']);
-  execFileSync('git', ['-C',root,'-c','user.email=test@example.com','-c','user.name=Test','commit','-qm','test']);
-  writeFileSync(path.join(root, 'src', 'app.lua'), 'local hello = "there"\n');
-  const r=JSON.parse(await tools.git_diff({project:'TMN',file:'src/app.lua'}));
-  assert.match(r.text, /there/);
-});
-
-
-
-test('Codex project source lists saved Desktop projects instead of Magpie manual roots', async () => {
-  const codexHome = path.join(base, 'codex-fixture');
-  const state = path.join(codexHome, '.codex-global-state.json');
-  mkdirSync(codexHome, { recursive:true });
-  const alpha = path.join(base, 'Codex-A');
-  const beta = path.join(base, 'Codex-B');
-  mkdirSync(alpha);
-  mkdirSync(beta);
-  writeFileSync(path.join(alpha,'app.lua'), 'print("from Codex project")\n');
-  writeFileSync(path.join(beta,'README.md'), 'Second Codex project\n');
-  writeFileSync(state, JSON.stringify({
-    'local-projects': {
-      first: { id:'first', name:'Alpha', rootPaths:[alpha] },
-      second: { id:'second', name:'Multi', rootPaths:[beta, root] },
-      unused: { id:'unused', name:'Missing', rootPaths:[path.join(base,'removed')] },
-      dangerous: { id:'dangerous', name:'Drive', rootPaths:[path.parse(alpha).root] },
-    },
+test('single permission selector is reflected in plugin diagnostics', async () => {
+  const p=await MagpieProjectReview({},cfg({
+    codexEnabled:true,codexPermissionMode:'codex-local',remoteAutoStart:false
   }));
-  assert.equal(projectSource({projectSource:'codex'}), 'codex');
-  const discovered = codexDesktopProjectRoots({codexStatePath:state});
-  assert.deepEqual(discovered.map(x=>x.name), ['Alpha','Multi / Codex-B','Multi / project']);
-  assert.deepEqual(discovered[1].workspaceRoots, [beta,root]);
-  assert.deepEqual(discovered[2].workspaceRoots, [beta,root]);
-  assert.deepEqual(discovered[0].workspaceRoots, [alpha]);
-  const codex = createProjectTools({projectSource:'codex', codexStatePath:state,
-    rootsSource:'magpie-page',roots:[{name:'ManuallyAdded',path:root}]});
-  const listing=JSON.parse(await codex.projects());
-  assert.equal(listing.source,'codex');
-  assert.deepEqual(listing.projects.map(x=>x.name), ['Alpha','Multi / Codex-B','Multi / project']);
-  assert.equal(listing.projects.every(x=>x.codexProject), true);
-  assert.match(JSON.parse(await codex.read_file({project:'Alpha',file:'app.lua'})).text,/from Codex project/);
-  await assert.rejects(codex.read_file({project:'ManuallyAdded',file:'src/app.lua'}),/Unknown project/);
-  assert.equal(JSON.stringify(listing).includes(alpha), false, 'never expose full root paths');
-  // Updated Codex registry takes effect immediately without duplicating a
-  // project authorization or restarting the Magpie tool host.
-  writeFileSync(state,JSON.stringify({'local-projects':{first:{name:'Renamed',rootPaths:[alpha]}}}));
-  assert.deepEqual(JSON.parse(await codex.projects()).projects.map(x=>x.name), ['Renamed']);
-  await assert.rejects(codex.read_file({project:'Alpha',file:'app.lua'}),/Unknown project/);
+  const data=JSON.parse(await p.tool.projects.execute({}));
+  assert.equal(data.codex.allowWrites,true);
+  assert.equal(data.codex.permissionMode,'codex-local');
+  assert.equal(data.source,'codex');
 });
 
-test('Codex source is fail-closed and never silently falls back to manual roots', async () => {
-  const manual={name:'manual',path:root};
-  const missing=createProjectTools({projectSource:'codex',codexStatePath:path.join(base,'missing.json'),roots:[manual]});
-  await assert.rejects(missing.projects(),/Codex Desktop project registry not found/);
-  const brokenState=path.join(base,'broken-codex.json');
-  writeFileSync(brokenState,'{"otherSetting":true}');
-  const broken=createProjectTools({projectSource:'codex',codexStatePath:brokenState,roots:[manual]});
-  await assert.rejects(broken.projects(),/no local-projects data/);
+test('embedded page has no manual permission or directory picker', () => {
+  const dir=path.dirname(fileURLToPath(import.meta.url));
+  const html=readFileSync(path.join(dir,'..','page','index.html'),'utf8');
+  const app=readFileSync(path.join(dir,'..','page','app.js'),'utf8');
+  const pkg=JSON.parse(readFileSync(path.join(dir,'..','package.json'),'utf8'));
+  assert.equal(pkg.magpie.page.file,'page/index.html');
+  assert.doesNotMatch(html,/id="folder"|id="add"|id="revoke"|id="useCodexProjects"|id="codexAllowWrites"/);
+  assert.match(html,/id="codexPermissionMode"/);
+  assert.doesNotMatch(app,/fetch\(|XMLHttpRequest|child_process|execFile\(/);
+  assert.match(app,/magpie\.options\.set/);
+  assert.equal(existsSync(path.join(dir,'..','scripts','manage-projects.cmd')),false,'legacy picker executable was removed');
 });
-
-test('native-picker config is applied live without restarting the plugin', async () => {
-  const cfg = path.join(base, 'picker-projects.json');
-  const dynamic = createProjectTools({ configPath: cfg });
-  assert.deepEqual(JSON.parse(await dynamic.projects()).projects, []);
-  writeFileSync(cfg, JSON.stringify({ roots: [{ name: 'Local', path: root }] }));
-  assert.equal(JSON.parse(await dynamic.projects()).projects[0].name, 'Local');
-  assert.equal(JSON.parse(await dynamic.read_file({ project: 'Local', file: 'src/app.lua' })).file, 'src/app.lua');
-  writeFileSync(cfg, JSON.stringify({ roots: [] }));
-  assert.deepEqual(JSON.parse(await dynamic.projects()).projects, []);
-  await assert.rejects(dynamic.read_file({ project: 'Local', file: 'src/app.lua' }), /Unknown project/);
-});
-
-test('picker allowlist rejects arbitrary filesystem roots and invalid file content', async () => {
-  const cfg = path.join(base, 'invalid-picker.json');
-  const dynamic = createProjectTools({ configPath: cfg, roots: [{ name: 'Old', path: root }] });
-  writeFileSync(cfg, JSON.stringify({ roots: [path.parse(root).root] }));
-  await assert.rejects(dynamic.projects(), /filesystem root/);
-  writeFileSync(cfg, JSON.stringify({ dangerous: true }));
-  await assert.rejects(dynamic.projects(), /expected roots array/);
-});
-
-test('old inline options remain compatible before the picker is used', async () => {
-  const cfg = path.join(base, 'not-created.json');
-  const compat = createProjectTools({configPath: cfg, roots: [{ name: 'Old', path: root }]});
-  assert.equal(JSON.parse(await compat.projects()).projects[0].name, 'Old');
-});
-
 test.after(()=>rmSync(base,{recursive:true,force:true}));
-
-
-test('embedded Magpie page overrides a previously authorized Windows picker, including revoke all', async () => {
-  const cfg = path.join(base, 'embedded-override.json');
-  writeFileSync(cfg, JSON.stringify({ roots: [{ name: 'FromPicker', path: root }] }));
-  const page = createProjectTools({ configPath: cfg, rootsSource: 'magpie-page', roots: [{ name: 'FromPage', path: root }] });
-  assert.equal(JSON.parse(await page.projects()).projects[0].name, 'FromPage');
-  await assert.rejects(page.read_file({ project: 'FromPicker', file: 'src/app.lua' }), /Unknown project/);
-  const cleared = createProjectTools({ configPath: cfg, rootsSource: 'magpie-page', roots: [] });
-  assert.deepEqual(JSON.parse(await cleared.projects()).projects, []);
-  await assert.rejects(cleared.read_file({ project: 'FromPicker', file: 'src/app.lua' }), /Unknown project/);
-});
-
-test('embedded UI is bundled with the Magpie page bridge and options-only permissions', () => {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const root = path.resolve(here, '..');
-  const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
-  assert.equal(pkg.magpie.page.file, 'page/index.html');
-  assert.deepEqual(pkg.magpie.permissions, ['models:list']);
-  const html = readFileSync(path.join(root, 'page/index.html'), 'utf8');
-  assert.doesNotMatch(html, /<script[^>]+bridge\\.js/);
-  assert.ok(readFileSync(path.join(root, 'page/app.js'), 'utf8').includes("parentWindow.postMessage("));
-  assert.match(html, /app\.js/);
-  const js = readFileSync(path.join(root, 'page/app.js'), 'utf8');
-  assert.match(js, /magpie\.options\.get/);
-  assert.match(js, /magpie\.options\.set/);
-  assert.doesNotMatch(js, /fetch\(|XMLHttpRequest|shell|execFile\(/);
-  assert.ok(existsSync(path.join(root, 'scripts/manage-projects.cmd')));
-});

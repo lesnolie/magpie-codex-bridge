@@ -1,8 +1,37 @@
-# Magpie Local Project Review (v0.4.6 alpha)
+# Magpie Local Project Review (v0.4.7 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.7 alpha: Codex-only projects, one permission selector
+
+**Removed the old Magpie directory authorization system.** The plugin now
+reads registered Codex Desktop projects exclusively, even when old saved
+options still include manual `roots`, `projectSource: "manual"`, or a
+legacy projects.json file. Old manual grants are never used; the bundled
+native directory-picker scripts have been removed. Project authorization
+fails closed if Codex Desktop's local project registry is absent.
+
+The Magpie Project Review page has one execution-permission selector:
+**只读 / 允许修改项目 / 跟随 Codex 本地权限**. The last two choices
+require a separate explicit local confirmation. The saved value is the
+single `codexPermissionMode` setting, and the backend uses the same
+interpretation. Existing `codexAllowWrites` and
+`codexInheritPermissions` settings are read for one-time migration, and
+are stripped along with old manual directory grants on the next page save.
+
+The Codex task enabled switch, model choice, Cloudflare remote switch and
+read-only tool filters remain. Codex project roots are still validated: no
+drive root, missing directory or symbolic link is automatically accepted.
+For workspaces with multiple folders registered in **one** Codex Desktop
+project, workspace-write permissions include the additional validated
+folders only. The plugin never grants source-file writes directly to ChatGPT.
+
+**Breaking change:** Users without a Codex Desktop registry must add their
+projects in Codex Desktop. The legacy Magpie manual-folder mode is no longer
+available. The separate `scripts/manage-projects.cmd` and
+`scripts/manage-projects.ps1` helpers are no longer shipped.
 
 ## v0.4.6 alpha: Codex Desktop workspace permissions
 
@@ -115,7 +144,7 @@ remain stored as a fallback but do not supplement the Codex list when this
 mode is selected. Codex Desktop's project registry is read but never modified.
 
 Codex Desktop's JSON project state is not a stable public API. If it is
-missing or its schema changes, switch back to the manual project source.
+missing or its schema changes, add the project again in Codex Desktop.
 The supported app-server `project/list` endpoint is a future migration path.
 
 ## v0.4.1: Codex discovery and managed gateway refresh
@@ -227,50 +256,35 @@ Local Codex (budget model) ── edits/tests ──> allowed project directory 
 - `git_status`: read uncommitted state (does not stage or commit).
 - `git_diff`: read **unstaged diff for a specific existing source file**. Staged changes are visible through GitHub after commit/push; use `git status` to identify them locally.
 
-No arbitrary shell, code write, git push or Codex session tools. The Magpie tools endpoint exposes **all enabled plugins' tools**, not just this one. Turn off unrelated sensitive tool plugins before granting remote access.
+No arbitrary shell, direct code write, or Git push tools for ChatGPT. Codex task tools are separately permission-gated. The Magpie tools endpoint exposes **all enabled plugins' tools**, not just this one. Turn off unrelated sensitive tool plugins before granting remote access.
 
-## Manage project permissions directly in Magpie (v0.3.2 alpha)
+## Configure project access (Codex Desktop)
 
-**No second download and no manual JSON editing.** Update this plugin in Magpie and open the new **Project Review** entry in Magpie's sidebar under **Plugins**. Paste the full folder path from Windows Explorer (open the folder, Alt+D then Ctrl+C), then click **添加项目**. Remove permissions from the same page. All changes are stored in the plugin's own Magpie `options` and automatically reload the plugin host.
+Open the project in Codex Desktop and add its working directory there.
+Project Review reads the existing Codex Desktop project registry on the
+same machine and shows only validated directories. This is now the **only**
+source of project paths. There is no manual folder picker, supplemental
+Magpie allowlist, or automatic access to unrelated files.
 
-Magpie's [embedded plugin page API](https://usemagpie.ai/docs/plugins#pages-in-the-window) permits reading and saving only this plugin's options, **not obtaining local absolute paths from an OS folder dialog**. Thus the embedded page asks for a folder path rather than pretending to offer a native chooser. Magpie validates project roots when its tools are called; never select a whole drive/home directory.
+In Magpie → Plugins → Project Review, enable Codex tasks when needed, then
+choose one execution permission:
 
-## Optional legacy native Windows folder picker (v0.3.1)
+- **只读:** the default, no project modifications.
+- **允许修改项目:** sandboxed writes to the selected Codex Desktop project
+  and its additional registered workspace folders.
+- **跟随 Codex 本地权限:** delegates sandbox selection to Codex CLI, which
+  can grant broader access if configured on the local machine.
 
-**No editing `plugins.json` is required.** If you specifically want the native Windows system folder dialog, locate the bundled plugin files in Magpie’s plugin cache and double-click `scripts/manage-projects.cmd`. The helper opens a native **Choose folder** dialog with **Add folder**, **Remove selected** and **Done**. You may manage multiple approved projects at any time. Native helper changes take effect on the **next MCP tool call**, without restarting Magpie; page changes reload the tool host automatically. The helper runs locally only, does not start a network service, and is not callable through MCP.
+Any change from read-only to a write mode requires explicit confirmation.
+Disabling Codex clears the stored permission back to read-only. Legacy
+option keys are removed on the next save but do not delete or change
+your actual Codex Desktop projects. A Windows ACL or a Codex approval
+requirement can still prevent an operation.
 
-The optional helper stores its small allowlist at `%APPDATA%\magpie-local-review\projects.json`, not inside Magpie's own `plugins.json`. Project names are derived from directory names (Latin letters/numbers; others transliterated to `-` or given a `project` name). This is intentionally separate from Codex's working-folder list. Removing a folder immediately blocks **new** MCP reads but does not retract data already returned in the conversation.
-
-The local picker file takes precedence over legacy `options.roots`, but **not** over roots explicitly saved from the new Magpie embedded page. Deleting the picker file restores the old inline options. This design keeps older plugin installations working until the embedded page is used.
-
-**Windows/WSL distinction:** The picker writes the Windows `%APPDATA%` file. If Magpie itself runs inside WSL/Linux, it cannot automatically see that Windows file. Use the original explicit Linux `roots` option (or point `MAGPIE_REVIEW_CONFIG_PATH` in Magpie's environment to a shared, accessible JSON file) until a WSL-specific helper is provided. On macOS/Linux, the original manual options remain available.
-
-**Magpie UI:** The plugin now registers an embedded page under Plugins. Page-managed roots (once saved) take priority over the legacy Windows chooser file. A native folder picker cannot be invoked directly by this sandboxed page; the Windows helper remains optional.
-
-## Configure allowed folders (alternative / non-Windows)
-
-Do **not** make the root of a drive or your whole home directory available. Add only projects you intend to review. If Magpie does not yet support embedded plugin pages and the Windows folder picker cannot be used, edit `~/.config/magpie/plugins.json` in **the Magpie host's own environment**:
-
-```json
-{
-  "plugins": [
-    {
-      "spec": "github:lesnolie/magpie-codex-bridge",
-      "options": {
-        "roots": [
-          { "name": "TMN", "path": "C:/work/TMN" }
-        ]
-      }
-    }
-  ]
-}
-```
-
-**Merge this entry into your existing plugins list; do not replace the whole file.** If Magpie runs in WSL instead of Windows, use an accessible Linux path (e.g. `/mnt/c/work/TMN`), not a Windows drive path. The plugin must run on a machine/environment that can read the desired project. Settings changed from the embedded page trigger Magpie to reload the plugin host; the separate Windows picker updates on the next call.
-
-Existing users: click **Update** in Magpie after the new version is merged to `main`. The Magpie sidebar shows a new **Project Review** page when Magpie supports community plugin pages. The plugin's MCP tool list remains the same six read-only tools.
-
-> The embedded page is tested with local mocks but has not yet been tested in the installed Windows Magpie application. If no page appears after updating the plugin, verify the Magpie application itself supports the community `magpie.page` API.
+**Migration:** update the plugin, open its page and save any setting to
+remove obsolete manual directory grants. If the older permission flags
+are present, their effective mode is shown until you explicitly choose
+another mode. There is no need to delete your old project folders.
 
 ## Connect ChatGPT Web
 

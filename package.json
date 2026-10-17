@@ -1,7 +1,7 @@
 {
   "name": "magpie-codex-bridge",
-  "version": "0.4.6-alpha.1",
-  "description": "Magpie local project review with optional Codex app-server tasks and Cloudflare Access",
+  "version": "0.4.7-alpha.1",
+  "description": "Codex Desktop project review with a single local execution permission selector",
   "type": "module",
   "main": "./index.mjs",
   "exports": "./index.mjs",

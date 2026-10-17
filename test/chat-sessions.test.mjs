@@ -79,9 +79,22 @@ test('checkpoint is generation-gated; only a verified transfer can replace a cha
     protocolState:'DONE',waitingFor:'none',goal:'Refactor core',progress:'Review passed'});
 });
 
+test('only a native local prepare can start a different task after DONE',()=>{
+  assert.throws(()=>api.request({project:'TMN',taskId:'tmn.task_002',url:chat1}),
+    /Different active task/);
+  const prepared=api.request({project:'TMN',taskId:'tmn.task_002',url:chat1},true);
+  assert.equal(prepared.active.taskId,id,'old task remains current until activation');
+  assert.equal(prepared.pending.taskId,'tmn.task_002');
+  const switched=api.activate({project:'TMN',requestId:prepared.pending.requestId,
+    observedUrl:chat1,verifiedProject:'TMN'});
+  assert.equal(switched.active.taskId,'tmn.task_002');
+  assert.equal(switched.checkpoint.iteration,0,'new task must not inherit old progress');
+  assert.equal(switched.checkpoint.protocolState,'INIT');
+});
+
 test('project scoping: same task IDs cannot cross projects or access stale roots',()=>{
   const otherBound=api.request({project:'Other',taskId:id,url:chat1});
-  assert.equal(api.status('TMN').active.url,chat2);
+  assert.equal(api.status('TMN').active.url,chat1);
   assert.equal(api.status('Other').active,null);
   assert.throws(()=>api.activate({project:'TMN',requestId:otherBound.pending.requestId,
     observedUrl:chat1,verifiedProject:'TMN'}),/not found/);
@@ -96,7 +109,7 @@ test('session stored outside project and contains no control token or file body'
   const contents=files.map(x=>fs.readFileSync(path.join(stateDir,x),'utf8')).join('\n');
   assert.ok(!contents.includes(root),'absolute project paths never persisted');
   assert.ok(!contents.includes('sk-'));
-  assert.ok(contents.includes(chat2));
+  assert.ok(contents.includes(chat1));
 });
 
 test('native CLI sees same persisted state using Codex project registry',()=>{
@@ -110,8 +123,8 @@ test('native CLI sees same persisted state using Codex project registry',()=>{
     env:{...process.env,CODEX_HOME:codexHome,MAGPIE_CHAT_SESSION_DIR:stateDir},encoding:'utf8'
   });
   assert.equal(proc.status,0,proc.stderr);
-  assert.equal(JSON.parse(proc.stdout).active.url,chat2);
-  assert.equal(JSON.parse(proc.stdout).checkpoint.protocolState,'DONE');
+  assert.equal(JSON.parse(proc.stdout).active.url,chat1);
+  assert.equal(JSON.parse(proc.stdout).checkpoint.protocolState,'INIT');
 });
 
 test('without Codex Desktop project registration, no manual grant fallback',()=>{

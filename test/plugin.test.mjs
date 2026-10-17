@@ -65,7 +65,7 @@ test('Magpie registers stable Codex tool schemas without enabling execution', as
   assert.match(response.error, /Codex is disabled/);
   const projects = JSON.parse(await p.tool.projects.execute({}));
   assert.equal(projects.projects[0].name, 'TMN');
-  assert.equal(projects.codex.integrationVersion, '0.4.5-alpha.1');
+  assert.equal(projects.codex.integrationVersion, '0.4.6-alpha.1');
   assert.equal(projects.codex.toolsRegistered, true);
   assert.equal(projects.codex.toolCount, 14);
   assert.equal(projects.codex.localEnabled, false);
@@ -119,6 +119,9 @@ test('Codex project source lists saved Desktop projects instead of Magpie manual
   assert.equal(projectSource({projectSource:'codex'}), 'codex');
   const discovered = codexDesktopProjectRoots({codexStatePath:state});
   assert.deepEqual(discovered.map(x=>x.name), ['Alpha','Multi / Codex-B','Multi / project']);
+  assert.deepEqual(discovered[1].workspaceRoots, [beta,root]);
+  assert.deepEqual(discovered[2].workspaceRoots, [beta,root]);
+  assert.deepEqual(discovered[0].workspaceRoots, [alpha]);
   const codex = createProjectTools({projectSource:'codex', codexStatePath:state,
     rootsSource:'magpie-page',roots:[{name:'ManuallyAdded',path:root}]});
   const listing=JSON.parse(await codex.projects());

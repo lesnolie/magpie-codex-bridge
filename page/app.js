@@ -67,6 +67,10 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const remoteStatus = document.getElementById('remoteStatus');
   const codexEnabled = document.getElementById('codexEnabled');
   const codexAllowWrites = document.getElementById('codexAllowWrites');
+  const codexInheritPermissions = document.getElementById('codexInheritPermissions');
+  const codexInheritConfirmation = document.getElementById('codexInheritConfirmation');
+  const confirmCodexInherit = document.getElementById('confirmCodexInherit');
+  const cancelCodexInherit = document.getElementById('cancelCodexInherit');
   const codexStatus = document.getElementById('codexStatus');
   const codexWriteConfirmation = document.getElementById('codexWriteConfirmation');
   const confirmCodexWrite = document.getElementById('confirmCodexWrite');
@@ -83,6 +87,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   let rows = Array.isArray(options.roots) ? options.roots.filter((r) => r && typeof r.name === 'string' && typeof r.path === 'string') : [];
   let busy = false;
   let pendingCodexWrite = false;
+  let pendingInherit = false;
   let modelCatalog = [];
   let modelsAvailable = false;
   let selectedCatalogID = null;
@@ -149,6 +154,11 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     // A disabled Codex runner remains unable to execute tasks even if write
     // consent was granted earlier. Do not lock the switch based on order.
     codexAllowWrites.disabled = busy;
+    codexInheritPermissions.checked = pendingInherit || options.codexInheritPermissions === true;
+    codexInheritPermissions.disabled = busy || options.projectSource !== 'codex' || options.codexAllowWrites !== true;
+    codexInheritConfirmation.hidden = !pendingInherit;
+    confirmCodexInherit.disabled = busy;
+    cancelCodexInherit.disabled = busy;
     codexWriteConfirmation.hidden = !pendingCodexWrite;
     confirmCodexWrite.disabled = busy;
     cancelCodexWrite.disabled = busy;
@@ -181,6 +191,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     render();
     try {
       const next = { ...options, projectSource: source };
+      if (source !== 'codex') next.codexInheritPermissions = false;
       const saved = await magpie.options.set(next);
       options = saved || next;
       projectSourceStatus.textContent = source === 'codex'
@@ -223,7 +234,11 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     render();
     try {
       const next = { ...options, [name]: requested };
-      if (name === 'codexEnabled' && !requested) next.codexAllowWrites = false;
+      if (name === 'codexEnabled' && !requested) {
+        next.codexAllowWrites = false;
+        next.codexInheritPermissions = false;
+      }
+      if (name === 'codexAllowWrites' && !requested) next.codexInheritPermissions = false;
       const saved = await magpie.options.set(next);
       options = saved || next;
       codexStatus.textContent = '已保存。需等待 Magpie 插件宿主加载/重载后生效；此提示并不证明远程可执行权限已经生效。';
@@ -266,6 +281,37 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     codexStatus.classList.remove('error');
     render();
   });
+  codexInheritPermissions.addEventListener('change', () => {
+    if (busy) return;
+    if (codexInheritPermissions.checked) {
+      if (options.projectSource !== 'codex' || options.codexAllowWrites !== true) {
+        codexStatus.textContent = '请先使用 Codex 项目并开启修改权限。';
+        codexStatus.classList.add('error');
+        render();
+        return;
+      }
+      pendingInherit = true;
+      codexStatus.textContent = '请确认：Codex 本地设置可能允许写入项目之外的文件。';
+      codexStatus.classList.remove('error');
+      render();
+    } else {
+      pendingInherit = false;
+      void saveCodexOption('codexInheritPermissions', false);
+    }
+  });
+  confirmCodexInherit.addEventListener('click', () => {
+    if (busy || !pendingInherit) return;
+    pendingInherit = false;
+    void saveCodexOption('codexInheritPermissions', true);
+  });
+  cancelCodexInherit.addEventListener('click', () => {
+    if (busy || !pendingInherit) return;
+    pendingInherit = false;
+    codexStatus.textContent = '已取消使用 Codex 本地权限。';
+    codexStatus.classList.remove('error');
+    render();
+  });
+
   function modelOptions(search = '') {
     // Dynamic catalog comes only from the Magpie-host-approved read.
     // Filtering never sends a search string to a remote provider.

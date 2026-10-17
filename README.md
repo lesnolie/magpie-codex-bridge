@@ -1,8 +1,40 @@
-# Magpie Local Project Review (v0.4.5 alpha)
+# Magpie Local Project Review (v0.4.6 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.6 alpha: Codex Desktop workspace permissions
+
+Previously Local Review used `sandbox: "workspace-write"` or `read-only`
+for every task, even when Codex Desktop had a broader local permission
+configuration. This could prevent edits, local build/test operations and
+multi-folder workspaces that worked from the Codex Desktop UI.
+
+**Default (no new consent):** `使用 Codex 项目` plus `允许 Codex 修改项目文件`
+continues to use workspace-write. When a single Codex Desktop project
+has multiple validated `rootPaths`, all of that project's workspaces
+are passed as additional workspace-write roots for the task. A sibling
+project is **not** silently writable. No drive root, symlink or missing
+directory is accepted.
+
+**Advanced local opt-in:** `跟随 Codex 本地权限` requires Codex Desktop
+project source, write enabled, and a separate explicit local confirmation.
+Then Local Review stops forcing an app-server `sandbox` value and lets
+the installed Codex CLI resolve its own permissions. The bridge still
+uses `approvalPolicy: never` and does not approve escalation requests.
+This may expose broader OS filesystem writes if the user's Codex
+configuration grants them. It is not enabled automatically and is
+revoked when write permission is disabled or manual projects are used.
+The selected model and task project are unchanged.
+
+**Limits:** Codex Desktop trust/permission UI and CLI app-server do not
+always resolve the same effective policy, especially on Windows. This
+does not bypass Windows ACLs, Codex tool restrictions, network sandbox,
+project trust, or server-driven approval. For permission-denied errors,
+inspect the task's `permissionMode`, `additionalWorkspaceCount`, Codex
+CLI version and the affected file/operation. Do not assume that selecting
+a project authorizes arbitrary folders or GitHub publishing.
 
 ## v0.4.5 alpha: Codex completion handoff and ChatGPT review
 

@@ -1,8 +1,70 @@
-# Magpie Local Project Review (v0.4.7 alpha)
+# Magpie Local Project Review (v0.4.8 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.8 alpha: native Codex Skill and verified ChatGPT chat transfer
+
+Magpie Local Review now includes **`skills/magpie-codex-collab/`**, a
+self-contained Codex Skill you can import from GitHub using **Magpie Skills**
+and assign to **Codex**. This does not require the plugin's `codex app-server`
+task runner. Native Codex executes code/tests with its own harness, while
+ChatGPT Web plans and reviews using the **existing protected Magpie MCP**.
+
+The Skill tells the native Codex Agent to use its official
+`control-in-app-browser` integration, **if present**, to maintain one
+dedicated ChatGPT tab. It must stop safely if this browser is not available.
+The Skill is an agent workflow, not an independently running browser daemon.
+
+### Stable conversation identity and switching
+
+A standalone zero-dependency Node CLI lives beside the Skill:
+`skills/magpie-codex-collab/chat-session.mjs`. It stores the active
+ChatGPT **conversation URL**, Codex task ID, generation and bounded execution
+checkpoint in `%LOCALAPPDATA%/MagpieLocalReview/chat-sessions` on Windows (the
+OS user state directory on Linux). Files are private to the local user and
+stored **outside the repository**. Chat URLs are restricted to exact
+`https://chatgpt.com/c/...` or Project conversation routes.
+
+The handoff protocol is **prepare → verify workspace + browser URL → activate**.
+A pending request NEVER replaces the active chat. The native Codex Skill
+verifies that ChatGPT called the correct Magpie MCP project and that the
+actual in-app browser URL matches, then locally activates it. A stale
+generation cannot update the new chat's checkpoint. Completed/blocked tasks
+can be replaced locally with `prepare --new-task true`. Remote clients
+cannot start a different task under the same active binding.
+
+Two additional MCP tools (16 total):
+- `chat_session_status`: read active chat, checkpoint, and pending transfer;
+- `chat_session_request_transfer`: **request only**, cannot activate a
+  different conversation or grant filesystem permissions.
+
+Both are available through the existing Cloudflare Access protected MCP even
+when remote Codex execution is disabled. Transfer requests never require
+ChatGPT access to your filesystem beyond its existing read-only project tools.
+
+**Native CLI illustration** (the installed Skill supplies the actual path):
+
+~~~shell
+node chat-session.mjs status --project "TMN"
+node chat-session.mjs prepare --project "TMN" --task-id "tmn.task001" --url "https://chatgpt.com/c/<real-chat-id>"
+node chat-session.mjs activate --project "TMN" --request-id "<requestId>" --observed-url "https://chatgpt.com/c/<real-chat-id>" --verified-project "TMN"
+node chat-session.mjs handoff --project "TMN"
+~~~
+
+The displayed URLs and request IDs above are placeholders; no identifiers
+are assumed or invented when running. For a new native Codex task after
+the previous task is DONE/BLOCKED, use `prepare --new-task true`.
+
+**Limits:** The local Skill does not control a ChatGPT Web conversation
+opened in some unrelated user browser without its direct URL or a new
+user-approved binding. It sends a new **user message** through the supported
+in-app browser, not a forged assistant response. It cannot send after the
+Codex agent has stopped running, and the presence of the Skill does not prove
+that your particular Codex Desktop build exposes `control-in-app-browser`.
+Real-world Windows end-to-end validation is still required before calling
+automated ChatGPT wake-up production-ready.
 
 ## v0.4.7 alpha: Codex-only projects, one permission selector
 

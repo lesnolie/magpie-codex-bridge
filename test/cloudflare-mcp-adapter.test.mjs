@@ -220,3 +220,36 @@ test('Codex MCP tools remain hidden until local permission is enabled', async t 
   assert.equal((await call('tools/call', {name:codexName, arguments:{}})).code, 200);
   assert.equal((await call('tools/call', {name:'unrelated_plugin_shell', arguments:{}})).code, 403);
 });
+
+
+test('authenticated ChatGPT may stage a chat transfer while Codex remote execution is off',async t=>{
+  const name='magpie-codex-bridge_chat_session_request_transfer';
+  const status='magpie-codex-bridge_chat_session_status';
+  const upstream=http.createServer(async(req,res)=>{
+    let payload='';for await(const chunk of req)payload+=chunk;
+    const msg=JSON.parse(payload);
+    res.setHeader('content-type','application/json');
+    res.end(JSON.stringify({jsonrpc:'2.0',id:msg.id,result:msg.method==='tools/list'
+      ?{tools:[{name,inputSchema:{type:'object'}},{name:status,inputSchema:{type:'object'}},
+        {name:'magpie-codex-bridge_codex_submit_task',inputSchema:{type:'object'}}]}
+      :{content:[{type:'text',text:JSON.stringify({accepted:true,pending:{requestId:'local-only'}})}]}}));
+  });
+  const port=await listen(upstream);
+  const bridge=createBridge({verifyJWT:check,upstream:'http://127.0.0.1:'+port,isCodexEnabled:()=>false});
+  const bport=await listen(bridge);
+  t.after(async()=>{await close(bridge);await close(upstream);});
+  const send=async(method,params={})=>{
+    const res=await fetch('http://127.0.0.1:'+bport+'/mcp',{
+      method:'POST',headers:{'content-type':'application/json','Cf-Access-Jwt-Assertion':makeJWT()},
+      body:JSON.stringify({jsonrpc:'2.0',id:3,method,params}),
+    });
+    return {status:res.status,body:await res.json()};
+  };
+  const listing=await send('tools/list');
+  assert.deepEqual(listing.body.result.tools.map(x=>x.name),[name,status]);
+  assert.equal(listing.body.result.tools[0].annotations.readOnlyHint,false);
+  assert.equal(listing.body.result.tools[0].annotations.destructiveHint,false);
+  assert.equal(listing.body.result.tools[1].annotations.readOnlyHint,true);
+  assert.equal((await send('tools/call',{name,arguments:{project:'TMN',taskId:'t-01'}})).status,200);
+  assert.equal((await send('tools/call',{name:'magpie-codex-bridge_codex_submit_task',arguments:{}})).status,403);
+});

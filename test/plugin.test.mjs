@@ -92,6 +92,7 @@ test('multi-root Codex projects stay grouped; missing roots and symlinks stay ex
 test('Magpie MCP tools still register without granting Codex execution', async () => {
   const plugin=await MagpieProjectReview({},cfg({codexEnabled:false,remoteAutoStart:false}));
   assert.deepEqual(Object.keys(plugin.tool).sort(),[
+    'chat_session_request_transfer','chat_session_status',
     'codex_ack_review','codex_cancel_task','codex_review_changes','codex_review_inbox',
     'codex_submit_task','codex_task_result','codex_task_status','codex_wait_task',
     'git_diff','git_status','list_files','projects','read_file','search_text',
@@ -100,8 +101,8 @@ test('Magpie MCP tools still register without granting Codex execution', async (
   assert.equal(result.ok,false);
   assert.match(result.error,/Codex is disabled/);
   const listing=JSON.parse(await plugin.tool.projects.execute({}));
-  assert.equal(listing.codex.integrationVersion,'0.4.7-alpha.1');
-  assert.equal(listing.codex.toolCount,14);
+  assert.equal(listing.codex.integrationVersion,'0.4.8-alpha.1');
+  assert.equal(listing.codex.toolCount,16);
   assert.equal(listing.codex.allowWrites,false);
   assert.equal(listing.projects[0].name,'TMN');
   assert.ok(!JSON.stringify(listing).includes(base));
@@ -115,6 +116,31 @@ test('single permission selector is reflected in plugin diagnostics', async () =
   assert.equal(data.codex.allowWrites,true);
   assert.equal(data.codex.permissionMode,'codex-local');
   assert.equal(data.source,'codex');
+});
+
+test('MCP chat switch only stages a transfer even when Codex app-server is disabled', async () => {
+  const before=process.env.MAGPIE_CHAT_SESSION_DIR;
+  process.env.MAGPIE_CHAT_SESSION_DIR=path.join(base,'remote-chat-handoff');
+  try {
+    const plugin=await MagpieProjectReview({},cfg({codexEnabled:false,remoteAutoStart:false}));
+    const url='https://chatgpt.com/c/12345678-1111-2222-3333-123456789012';
+    const call=JSON.parse(await plugin.tool.chat_session_request_transfer.execute({
+      project:'TMN',taskId:'tmn123',url,reason:'Switch chat'
+    }));
+    assert.equal(call.accepted,true);
+    assert.equal(call.active,null,'ChatGPT cannot remotely activate a conversation');
+    assert.equal(call.pending.url,url);
+    const status=JSON.parse(await plugin.tool.chat_session_status.execute({project:'TMN'}));
+    assert.equal(status.active,null);
+    assert.equal(status.pending.requestId,call.pending.requestId);
+    const refused=JSON.parse(await plugin.tool.chat_session_request_transfer.execute({
+      project:'TMN',taskId:'other',url:'https://evil.example/c/12345678'
+    }));
+    assert.equal(refused.ok,false);
+  } finally {
+    if(before===undefined)delete process.env.MAGPIE_CHAT_SESSION_DIR;
+    else process.env.MAGPIE_CHAT_SESSION_DIR=before;
+  }
 });
 
 test('embedded page has no manual permission or directory picker', () => {

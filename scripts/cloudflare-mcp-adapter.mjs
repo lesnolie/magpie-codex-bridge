@@ -15,7 +15,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 const PORT = 48765;
 const MCP_PATH = '/mcp';
 const MODERN_MCP_VERSION = '2026-07-28';
-const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.4.7-alpha.1' });
+const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.4.8-alpha.1' });
 const SERVER_META = Object.freeze({ 'io.modelcontextprotocol/serverInfo': SERVER_INFO });
 const UPSTREAM = 'http://127.0.0.1:3425/mcp/magpie/tools';
 const TOOL_NAMES = Object.freeze([
@@ -25,6 +25,8 @@ const TOOL_NAMES = Object.freeze([
   'magpie-codex-bridge_search_text',
   'magpie-codex-bridge_git_status',
   'magpie-codex-bridge_git_diff',
+  'magpie-codex-bridge_chat_session_status',
+  'magpie-codex-bridge_chat_session_request_transfer',
 ]);
 const CODEX_NAMES = Object.freeze([
   'magpie-codex-bridge_codex_submit_task',
@@ -36,7 +38,7 @@ const CODEX_NAMES = Object.freeze([
   'magpie-codex-bridge_codex_ack_review',
   'magpie-codex-bridge_codex_cancel_task',
 ]);
-const READ_ONLY = new Set(TOOL_NAMES);
+const READ_ONLY = new Set(TOOL_NAMES.filter(x=>!x.endsWith('_chat_session_request_transfer')));
 const CODEX_PERMISSION_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-remote-enabled.flag');
 const remoteCodexEnabled = () => existsSync(CODEX_PERMISSION_FILE);
 const allowedTools = (enabled) => new Set(enabled ? [...TOOL_NAMES, ...CODEX_NAMES] : TOOL_NAMES);

@@ -112,12 +112,15 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
     return p;
   }
   function status(project){const p=allowed(project);return view(p,load(filename(p,folder)));}
-  function request({project,taskId,url,reason}={}){
+  function request({project,taskId,url,reason}={},localNewTask=false){
     const p=allowed(project),file=filename(p,folder);
     return locked(file,()=>{
       const s=load(file),id=taskId?taskName(taskId):s.active?.taskId;
       if(!id)fail('taskId required for first binding');
-      if(s.active&&s.active.taskId!==id)fail('Different active task; start a new task with a local handoff');
+      if(s.active&&s.active.taskId!==id){
+        if(!localNewTask || !['DONE','BLOCKED'].includes(s.checkpoint?.protocolState))
+          fail('Different active task; only a completed/blocked task can be replaced locally');
+      }
       const target=url?normalizeChatUrl(url):null;
       if(s.pending&&s.pending.taskId===id&&s.pending.url===target)
         return {...view(p,s),accepted:true};
@@ -191,11 +194,11 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
   try{
     const {command,opts}=argsOf(process.argv.slice(2)),api=createChatSessions();
     const result=command==='status'?api.status(opts.project):
-      command==='prepare'?api.request(opts):
+      command==='prepare'?api.request(opts,opts.newTask==='true'):
       command==='activate'?api.activate(opts):
       command==='checkpoint'?api.checkpoint(opts):
       command==='handoff'?api.handoff(opts):null;
-    if(!result)fail('Usage: node chat-session.mjs status|prepare|activate|checkpoint|handoff --project NAME [--task-id ID] [--url HTTPS] [--request-id UUID] [--observed-url HTTPS] [--verified-project NAME]');
+    if(!result)fail('Usage: node chat-session.mjs status|prepare|activate|checkpoint|handoff --project NAME [--task-id ID] [--url HTTPS] [--new-task true] [--request-id UUID] [--observed-url HTTPS] [--verified-project NAME]');
     process.stdout.write(JSON.stringify(result,null,2)+'\n');
   }catch(e){process.stderr.write('Chat handoff: '+e.message+'\n');process.exitCode=1;}
 }

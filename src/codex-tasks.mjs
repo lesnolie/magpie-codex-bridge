@@ -122,6 +122,40 @@ export function resolveCodexBinary(options = {}) {
   return 'codex';
 }
 
+/**
+ * Build task-scoped Codex execution permissions. Never trust a path from MCP
+ * arguments: writable roots must come from the validated local project source.
+ * Default stays sandboxed; broader Codex permissions require local opt-in.
+ */
+export function buildCodexThreadConfig(options = {}, project = {}) {
+  const writes = options.codexAllowWrites === true;
+  const codexSource = options.projectSource === 'codex' && project.source === 'codex';
+  const inherit = writes && codexSource && options.codexInheritPermissions === true;
+  const extraRoots = codexSource && writes && Array.isArray(project.workspaceRoots)
+    ? [...new Set(project.workspaceRoots.filter(root =>
+        typeof root === 'string' && isAbsolute(root) && root !== project.root
+      ))].slice(0, 7) : [];
+  const config = {
+    cwd: project.root,
+    approvalPolicy: 'never',
+    // Read-only must always remain explicit. The Codex-permission opt-in
+    // deliberately omits sandbox; the native Codex configuration then decides.
+    ...(!inherit ? { sandbox: writes ? 'workspace-write' : 'read-only' } : {}),
+    developerInstructions: inherit
+      ? 'Operate only on the project requested and other Codex Desktop projects explicitly referenced by the task. Do not access secrets or unrelated user files. No privilege escalation, unapproved network publishing or Git push. Report any missing permission rather than bypass it.'
+      : 'Work only in this approved project and, when configured, other workspace roots of this SAME Codex Desktop project. Do not attempt privilege escalation, global configuration changes, secrets access, network publishing, or Git push.',
+  };
+  if (!inherit && writes && extraRoots.length) {
+    config.config = { sandbox_workspace_write: {
+      writable_roots: extraRoots, network_access: false,
+    } };
+  }
+  if (typeof options.codexModel === 'string' && options.codexModel.trim()) config.model = options.codexModel.trim();
+  if (typeof options.codexModelProvider === 'string' && options.codexModelProvider.trim()) config.modelProvider = options.codexModelProvider.trim();
+  return { config, mode: inherit ? 'codex-local' : writes ? 'workspace-write' : 'read-only',
+    additionalWorkspaceCount: extraRoots.length };
+}
+
 export function createCodexTasks(options = {}, dependencies = {}) {
   const jobs = new Map();
   const lastThreads = new Map();
@@ -153,12 +187,15 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       phase: task.phase || null,
       output: bounded(task.output), error: task.error || null,
       needsReview: task.state !== 'running',
+      permissionMode: task.permissionMode || null,
+      additionalWorkspaceCount: task.additionalWorkspaceCount ?? 0,
     };
   }
   function addOutput(job, delta) {
     if (typeof delta === 'string') job.output = bounded(job.output + delta);
   }
-  async function run(job, projectRoot, resumeThreadId) {
+  async function run(job, selectedProject, resumeThreadId) {
+    const projectRoot = selectedProject.root;
     let rpc;
     let finish;
     const completed = new Promise(resolve => { finish = resolve; });
@@ -203,16 +240,9 @@ export function createCodexTasks(options = {}, dependencies = {}) {
         capabilities: { experimentalApi: false },
       });
       rpc.notify('initialized');
-      const config = {
-        cwd: projectRoot,
-        approvalPolicy: 'never',
-        sandbox: options.codexAllowWrites === true ? 'workspace-write' : 'read-only',
-        developerInstructions: 'Work only in the approved project directory. Do not attempt privilege escalation, global configuration changes, secrets access, network publishing, or Git push.',
-      };
-      // Only local Magpie settings may pin a custom model/provider. Remote MCP
-      // arguments cannot override provider, credentials, binary or sandbox.
-      if (typeof options.codexModel === 'string' && options.codexModel.trim()) config.model = options.codexModel.trim();
-      if (typeof options.codexModelProvider === 'string' && options.codexModelProvider.trim()) config.modelProvider = options.codexModelProvider.trim();
+      const { config, mode, additionalWorkspaceCount } = buildCodexThreadConfig(options, selectedProject);
+      job.permissionMode = mode;
+      job.additionalWorkspaceCount = additionalWorkspaceCount;
       job.phase = 'thread/start';
       const response = resumeThreadId
         ? await rpc.request('thread/resume', { threadId: resumeThreadId, ...config })
@@ -264,7 +294,7 @@ export function createCodexTasks(options = {}, dependencies = {}) {
         const old = [...jobs.values()].find(x => x.state !== 'running' && x.id !== id);
         if (old) jobs.delete(old.id);
       }
-      void run(task, p.root, continueThread === true ? lastThreads.get(project) : null);
+      void run(task, p, continueThread === true ? lastThreads.get(project) : null);
       return JSON.stringify(view(task));
     },
     status({ project, taskId } = {}) { return JSON.stringify(view(lookup(project, taskId))); },

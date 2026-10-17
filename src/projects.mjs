@@ -1,5 +1,5 @@
 import { realpath, lstat, readdir, readFile } from 'node:fs/promises';
-import { statSync, lstatSync, realpathSync, existsSync, readFileSync } from 'node:fs';
+import { statSync, lstatSync, realpathSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -19,15 +19,6 @@ export function isAllowedEntry(name, isDirectory = false) {
   return SAFE_BASENAMES.has(name) || SAFE_EXT.has(path.extname(name).toLowerCase());
 }
 
-/** The picker writes a separate local-only allowlist; the MCP tool surface cannot edit it. */
-export function projectsConfigPath(config = {}) {
-  const specified = config.configPath || process.env.MAGPIE_REVIEW_CONFIG_PATH;
-  if (specified) return path.resolve(specified);
-  return process.platform === 'win32'
-    ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'magpie-local-review', 'projects.json')
-    : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'magpie-local-review', 'projects.json');
-}
-
 /**
  * Codex Desktop persists its user-curated Projects in its own local state.
  * Reading this file is independent of our Codex app-server task connection:
@@ -44,8 +35,10 @@ export function codexDesktopStatePath(config = {}) {
   return path.join(home, '.codex-global-state.json');
 }
 
-export function projectSource(config = {}) {
-  return config.projectSource === 'codex' ? 'codex' : 'manual';
+export function projectSource() {
+  // Single authority: Codex Desktop's registered projects.
+  // Prior Magpie roots / projects.json options are never accepted as access grants.
+  return 'codex';
 }
 
 export function codexDesktopProjectRoots(config = {}) {
@@ -55,7 +48,7 @@ export function codexDesktopProjectRoots(config = {}) {
     if (statSync(file).size > 8 * 1024 * 1024) throw new Error('Codex project registry is too large');
     source = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
   } catch (error) {
-    if (error?.code === 'ENOENT') throw new Error('Codex Desktop project registry not found. Open Codex Desktop and add a Project, or choose manual projects in Magpie.');
+    if (error?.code === 'ENOENT') throw new Error('Codex Desktop project registry not found. Open Codex Desktop and add a Project.');
     throw new Error('Cannot read Codex Desktop project registry (' + (error instanceof SyntaxError ? 'invalid JSON' : 'access denied or invalid file') + ')');
   }
   const listed = source && source['local-projects'];
@@ -98,34 +91,10 @@ export function codexDesktopProjectRoots(config = {}) {
 }
 
 export function projectRoots(config = {}) {
-  if (projectSource(config) === 'codex') return codexDesktopProjectRoots(config);
-  const file = projectsConfigPath(config);
-  let input;
-  // Explicitly saved in Magpie's embedded page: the page-owned allowlist wins,
-  // including an empty list (revocation). Legacy native-picker files still work
-  // until the user chooses to manage projects inside Magpie.
-  if (config.rootsSource === 'magpie-page') {
-    if (!Array.isArray(config.roots)) throw new Error('Invalid embedded project configuration: expected roots array');
-    input = config.roots;
-  } else if (existsSync(file)) {
-    const parsed = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
-    if (!parsed || !Array.isArray(parsed.roots)) throw new Error('Invalid project manager configuration: expected roots array');
-    input = parsed.roots;
-  } else {
-    input = config.roots ?? (process.env.MAGPIE_REVIEW_ROOTS || '').split(';').filter(Boolean);
-  }
-  if (!Array.isArray(input)) throw new Error('roots must be a list');
-  const roots = input.map((entry, i) => {
-    const folder = typeof entry === 'string' ? entry : entry?.path;
-    if (typeof folder !== 'string' || !path.isAbsolute(folder)) throw new Error(`Project #${i + 1} requires an absolute path`);
-    const resolved = realpathSync(folder);
-    if (!statSync(resolved).isDirectory() || path.parse(resolved).root === resolved) throw new Error('Project must be a specific directory, not a filesystem root');
-    const name = typeof entry === 'object' && entry.name ? String(entry.name) : path.basename(resolved);
-    if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(name)) throw new Error('Project name should contain only letters, numbers, dots, underscores or hyphens');
-    return { name, root: resolved };
-  });
-  if (new Set(roots.map(x => x.name)).size !== roots.length) throw new Error('Duplicate project names');
-  return roots;
+  // Old Magpie manual roots and picker files are ignored, including when an
+  // upgraded installation still holds projectSource='manual'. Fail closed if
+  // Codex Desktop's registry is missing; do not fall back to old authorization.
+  return codexDesktopProjectRoots(config);
 }
 
 function segments(relative = '.') {

@@ -52,29 +52,16 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
 (async () => {
   await magpie.ready;
   let options = await magpie.options.get() || {};
-  const projects = document.getElementById('projects');
-  const empty = document.getElementById('empty');
-  const count = document.getElementById('count');
   const status = document.getElementById('status');
-  const fieldStatus = document.getElementById('fieldStatus');
-  const pathInput = document.getElementById('folder');
-  const add = document.getElementById('add');
-  const legacy = document.getElementById('legacy');
-  const revoke = document.getElementById('revoke');
-  const useCodexProjects = document.getElementById('useCodexProjects');
-  const projectSourceStatus = document.getElementById('projectSourceStatus');
   const remoteAutoStart = document.getElementById('remoteAutoStart');
   const remoteStatus = document.getElementById('remoteStatus');
   const codexEnabled = document.getElementById('codexEnabled');
-  const codexAllowWrites = document.getElementById('codexAllowWrites');
-  const codexInheritPermissions = document.getElementById('codexInheritPermissions');
-  const codexInheritConfirmation = document.getElementById('codexInheritConfirmation');
-  const confirmCodexInherit = document.getElementById('confirmCodexInherit');
-  const cancelCodexInherit = document.getElementById('cancelCodexInherit');
+  const codexPermissionMode = document.getElementById('codexPermissionMode');
+  const codexPermissionConfirmation = document.getElementById('codexPermissionConfirmation');
+  const codexPermissionWarning = document.getElementById('codexPermissionWarning');
+  const confirmCodexPermission = document.getElementById('confirmCodexPermission');
+  const cancelCodexPermission = document.getElementById('cancelCodexPermission');
   const codexStatus = document.getElementById('codexStatus');
-  const codexWriteConfirmation = document.getElementById('codexWriteConfirmation');
-  const confirmCodexWrite = document.getElementById('confirmCodexWrite');
-  const cancelCodexWrite = document.getElementById('cancelCodexWrite');
   const codexExecutable = document.getElementById('codexExecutable');
   const codexModel = document.getElementById('codexModel');
   const codexModelSearch = document.getElementById('codexModelSearch');
@@ -84,164 +71,52 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const codexLegacyModel = document.getElementById('codexLegacyModel');
   const codexModelProvider = document.getElementById('codexModelProvider');
   const saveCodexConfig = document.getElementById('saveCodexConfig');
-  let rows = Array.isArray(options.roots) ? options.roots.filter((r) => r && typeof r.name === 'string' && typeof r.path === 'string') : [];
   let busy = false;
-  let pendingCodexWrite = false;
-  let pendingInherit = false;
+  let pendingMode = null;
   let modelCatalog = [];
   let modelsAvailable = false;
   let selectedCatalogID = null;
 
-  function updateStatus(message, error = false) {
-    status.textContent = message;
-    status.classList.toggle('error', error);
-    fieldStatus.textContent = message;
-    fieldStatus.hidden = !message;
-    fieldStatus.classList.toggle('error', error);
+  function effectiveMode(config) {
+    if (['read-only', 'workspace-write', 'codex-local'].includes(config.codexPermissionMode)) {
+      return config.codexPermissionMode;
+    }
+    // Read old saved flags but do NOT keep the old permission system alive.
+    if (config.codexAllowWrites === true) return config.codexInheritPermissions === true
+      ? 'codex-local' : 'workspace-write';
+    return 'read-only';
   }
-  function parsedFolder(value) {
-    const folder = value.trim().replace(/^["']|["']$/g, '').trim().replace(/\\/g, '/');
-    if (!folder || folder.includes('\0')) throw Error('请填写文件夹的完整路径。');
-    if (!/^([A-Za-z]:\/|\/)/.test(folder)) throw Error('请填写绝对路径，例如 C:/work/TMN。');
-    const clean = folder.replace(/\/+$/g, '');
-    if (!clean || /^[A-Za-z]:$/.test(clean)) throw Error('不能授权整个磁盘。');
-    return clean;
-  }
-  function suggestName(folder) {
-    const leaf = folder.split('/').filter(Boolean).at(-1) || 'project';
-    const base = leaf.replace(/[^a-zA-Z0-9_.-]/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'project';
-    let candidate = base;
-    for (let i = 2; rows.some((r) => r.name === candidate); i++) candidate = `${base}-${i}`;
-    return candidate;
+  function cleanOptions(next) {
+    // Migration removes obsolete grants when any setting is saved.
+    const out = { ...next, projectSource: 'codex' };
+    delete out.roots;
+    delete out.rootsSource;
+    delete out.codexAllowWrites;
+    delete out.codexInheritPermissions;
+    return out;
   }
   function render() {
-    projects.replaceChildren();
-    count.textContent = `${rows.length} 个项目`;
-    empty.hidden = rows.length > 0;
-    for (const item of rows) {
-      const li = document.createElement('li');
-      const label = document.createElement('div');
-      label.className = 'entry';
-      const name = document.createElement('strong');
-      name.textContent = item.name;
-      const dir = document.createElement('small');
-      dir.textContent = item.path;
-      label.append(name, dir);
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'remove';
-      del.textContent = '移除';
-      del.disabled = busy;
-      del.addEventListener('click', async () => {
-        if (!confirm(`取消授权 ${item.name}？这将阻止新的 MCP 读取请求。`)) return;
-        await save(rows.filter((r) => r.name !== item.name));
-      });
-      li.append(label, del);
-      projects.append(li);
-    }
-    add.disabled = busy;
-    pathInput.disabled = busy;
-    revoke.disabled = busy;
-    legacy.hidden = options.rootsSource === 'magpie-page';
-    useCodexProjects.checked = options.projectSource === 'codex';
-    useCodexProjects.disabled = busy;
     remoteAutoStart.checked = options.remoteAutoStart === true;
     remoteAutoStart.disabled = busy;
     codexEnabled.checked = options.codexEnabled === true;
     codexEnabled.disabled = busy;
-    codexAllowWrites.checked = pendingCodexWrite || options.codexAllowWrites === true;
-    // Local write consent can be set independently of Codex activation.
-    // A disabled Codex runner remains unable to execute tasks even if write
-    // consent was granted earlier. Do not lock the switch based on order.
-    codexAllowWrites.disabled = busy;
-    codexInheritPermissions.checked = pendingInherit || options.codexInheritPermissions === true;
-    codexInheritPermissions.disabled = busy || options.projectSource !== 'codex' || options.codexAllowWrites !== true;
-    codexInheritConfirmation.hidden = !pendingInherit;
-    confirmCodexInherit.disabled = busy;
-    cancelCodexInherit.disabled = busy;
-    codexWriteConfirmation.hidden = !pendingCodexWrite;
-    confirmCodexWrite.disabled = busy;
-    cancelCodexWrite.disabled = busy;
+    codexPermissionMode.value = pendingMode || effectiveMode(options);
+    codexPermissionMode.disabled = busy;
+    codexPermissionConfirmation.hidden = !pendingMode;
+    confirmCodexPermission.disabled = busy;
+    cancelCodexPermission.disabled = busy;
     saveCodexConfig.disabled = busy;
     refreshModels.disabled = busy;
   }
-  async function save(next) {
+  async function saveOptions(next, success) {
     if (busy) return;
     busy = true;
     render();
     try {
-      // Mark page mode explicitly; an empty roots list revokes all prior permissions.
-      const saved = await magpie.options.set({ ...options, rootsSource: 'magpie-page', roots: next });
-      options = saved || { ...options, rootsSource: 'magpie-page', roots: next };
-      rows = next;
-      updateStatus('已保存。Magpie 将重新加载插件授权目录。');
-      return true;
-    } catch (err) {
-      updateStatus(`保存失败：${err?.message || err}`, true);
-      return false;
-    } finally {
-      busy = false;
-      render();
-    }
-  }
-  useCodexProjects.addEventListener('change', async () => {
-    if (busy) return;
-    const source = useCodexProjects.checked ? 'codex' : 'manual';
-    busy = true;
-    render();
-    try {
-      const next = { ...options, projectSource: source };
-      if (source !== 'codex') next.codexInheritPermissions = false;
-      const saved = await magpie.options.set(next);
-      options = saved || next;
-      projectSourceStatus.textContent = source === 'codex'
-        ? '已切换到 Codex Desktop 项目。现有手动添加记录保留，但不会参与项目读取或 Codex 任务提交。'
-        : '已切换回 Magpie 手动项目。';
-      projectSourceStatus.classList.remove('error');
-    } catch (error) {
-      projectSourceStatus.textContent = '切换失败：' + (error?.message || error);
-      projectSourceStatus.classList.add('error');
-    } finally {
-      busy = false;
-      render();
-    }
-  });
-  remoteAutoStart.addEventListener('change', async () => {
-    if (busy) return;
-    const requested = remoteAutoStart.checked;
-    busy = true;
-    render();
-    try {
-      const next = { ...options, remoteAutoStart: requested };
-      const saved = await magpie.options.set(next);
-      options = saved || next;
-      remoteStatus.textContent = requested
-        ? '已保存自动启动设置。Magpie 插件宿主加载后会安装并启动本机服务；首次生效需要确认服务确实运行。'
-        : '已关闭自动启动设置。Magpie 插件宿主加载后将移除本插件创建的自启任务。';
-      remoteStatus.classList.remove('error');
-    } catch (error) {
-      remoteStatus.textContent = '保存失败：' + (error?.message || error);
-      remoteStatus.classList.add('error');
-    } finally {
-      busy = false;
-      render();
-    }
-  });
-
-  async function saveCodexOption(name, requested) {
-    if (busy) return;
-    busy = true;
-    render();
-    try {
-      const next = { ...options, [name]: requested };
-      if (name === 'codexEnabled' && !requested) {
-        next.codexAllowWrites = false;
-        next.codexInheritPermissions = false;
-      }
-      if (name === 'codexAllowWrites' && !requested) next.codexInheritPermissions = false;
-      const saved = await magpie.options.set(next);
-      options = saved || next;
-      codexStatus.textContent = '已保存。需等待 Magpie 插件宿主加载/重载后生效；此提示并不证明远程可执行权限已经生效。';
+      const clean = cleanOptions(next);
+      const saved = await magpie.options.set(clean);
+      options = cleanOptions(saved || clean);
+      codexStatus.textContent = success || '已保存；Magpie 重新加载插件后生效。';
       codexStatus.classList.remove('error');
     } catch (error) {
       codexStatus.textContent = '保存失败：' + (error?.message || error);
@@ -251,63 +126,50 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       render();
     }
   }
-  codexEnabled.addEventListener('change', () => {
-    pendingCodexWrite = false;
-    void saveCodexOption('codexEnabled', codexEnabled.checked);
-  });
-  codexAllowWrites.addEventListener('change', () => {
+  remoteAutoStart.addEventListener('change', async () => {
     if (busy) return;
-    if (codexAllowWrites.checked && options.codexAllowWrites !== true) {
-      // Native modal dialogs are blocked in Magpie's sandboxed iframe.
-      // Show a second, explicit in-page authorization action instead.
-      pendingCodexWrite = true;
-      codexStatus.textContent = '请在下方点击“确认授权”，写入权限才会保存。';
-      codexStatus.classList.remove('error');
-      render();
+    const next = remoteAutoStart.checked;
+    await saveOptions({ ...options, remoteAutoStart: next });
+    remoteStatus.textContent = options.remoteAutoStart
+      ? '本地远程连接自动启动已配置。' : '本地远程连接自动启动未启用。';
+  });
+  codexEnabled.addEventListener('change', () => {
+    pendingMode = null;
+    const enabled = codexEnabled.checked;
+    // Disabling the runner also revokes any previously saved write elevation.
+    void saveOptions({ ...options, codexEnabled: enabled,
+      codexPermissionMode: enabled ? effectiveMode(options) : 'read-only' });
+  });
+  codexPermissionMode.addEventListener('change', () => {
+    if (busy) return;
+    const next = codexPermissionMode.value;
+    if (!['read-only','workspace-write','codex-local'].includes(next)) {
+      render(); return;
+    }
+    if (next === effectiveMode(options)) { pendingMode = null; render(); return; }
+    if (next === 'read-only') {
+      pendingMode = null;
+      void saveOptions({ ...options, codexPermissionMode: 'read-only' });
       return;
     }
-    pendingCodexWrite = false;
-    void saveCodexOption('codexAllowWrites', codexAllowWrites.checked);
-  });
-  confirmCodexWrite.addEventListener('click', () => {
-    if (busy || !pendingCodexWrite) return;
-    pendingCodexWrite = false;
-    void saveCodexOption('codexAllowWrites', true);
-  });
-  cancelCodexWrite.addEventListener('click', () => {
-    if (busy || !pendingCodexWrite) return;
-    pendingCodexWrite = false;
-    codexStatus.textContent = '已取消写入授权，权限没有变更。';
+    pendingMode = next;
+    codexPermissionWarning.textContent = next === 'codex-local'
+      ? '本地 Codex 可能拥有超出当前项目的文件写入权限。确认使用本机 Codex 权限配置？'
+      : '确认允许 Codex 修改当前 Codex Desktop 项目中的文件？';
+    codexStatus.textContent = '执行权限尚未更改，请在下方明确确认。';
     codexStatus.classList.remove('error');
     render();
   });
-  codexInheritPermissions.addEventListener('change', () => {
+  confirmCodexPermission.addEventListener('click', () => {
+    if (busy || !pendingMode) return;
+    const mode = pendingMode;
+    pendingMode = null;
+    void saveOptions({ ...options, codexPermissionMode: mode });
+  });
+  cancelCodexPermission.addEventListener('click', () => {
     if (busy) return;
-    if (codexInheritPermissions.checked) {
-      if (options.projectSource !== 'codex' || options.codexAllowWrites !== true) {
-        codexStatus.textContent = '请先使用 Codex 项目并开启修改权限。';
-        codexStatus.classList.add('error');
-        render();
-        return;
-      }
-      pendingInherit = true;
-      codexStatus.textContent = '请确认：Codex 本地设置可能允许写入项目之外的文件。';
-      codexStatus.classList.remove('error');
-      render();
-    } else {
-      pendingInherit = false;
-      void saveCodexOption('codexInheritPermissions', false);
-    }
-  });
-  confirmCodexInherit.addEventListener('click', () => {
-    if (busy || !pendingInherit) return;
-    pendingInherit = false;
-    void saveCodexOption('codexInheritPermissions', true);
-  });
-  cancelCodexInherit.addEventListener('click', () => {
-    if (busy || !pendingInherit) return;
-    pendingInherit = false;
-    codexStatus.textContent = '已取消使用 Codex 本地权限。';
+    pendingMode = null;
+    codexStatus.textContent = '已取消执行权限变更。';
     codexStatus.classList.remove('error');
     render();
   });
@@ -449,47 +311,17 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       codexStatus.classList.add('error');
     } finally { busy = false; render(); }
   });
-  projectSourceStatus.textContent = options.projectSource === 'codex'
-    ? '当前项目来源：Codex Desktop 已登记的项目（自动同步）。'
-    : '当前项目来源：Magpie 手动项目；开启上方开关即可切换到 Codex 项目。';
   codexStatus.textContent = options.codexEnabled === true
-    ? 'Codex 接口已在本机配置为启用（不代表 ChatGPT Web 已获得执行权限）。'
-    : 'Codex 接口默认关闭。';
+    ? 'Codex 任务接口已配置为启用（不代表远程 ChatGPT 已获得执行权限）。'
+    : 'Codex 任务接口默认关闭。';
   remoteStatus.textContent = options.remoteAutoStart === true
     ? '自动启动已启用（仅设置状态，非实际连接检测）。'
     : '自动启动未启用。';
-  revoke.addEventListener('click', async () => {
-    if (!confirm('撤销所有项目目录授权？此操作不会删除任何文件。')) return;
-    await save([]);
-  });
-  // Magpie's iframe has sandbox="allow-scripts" and CSP form-action 'none':
-  // browsers suppress form submit events. Use an explicit button click instead.
-  async function addProject() {
-    if (busy) return;
-    try {
-      const folder = parsedFolder(pathInput.value);
-      if (rows.some((r) => r.path.replace(/\\/g, '/').toLowerCase() === folder.toLowerCase())) throw Error('这个文件夹已经添加。');
-      const entry = { name: suggestName(folder), path: folder };
-      if (await save([...rows, entry])) pathInput.value = '';
-    } catch (err) {
-      updateStatus(err.message, true);
-      pathInput.focus();
-    }
-  }
-  add.addEventListener('click', addProject);
-  pathInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      void addProject();
-    }
-  });
   render();
-  updateStatus('已连接 Magpie。请输入完整文件夹路径，然后点击添加项目。');
+  status.textContent = '项目来源：Codex Desktop。旧的 Magpie 手动目录授权不再生效。';
   void loadModels();
 })().catch((error) => {
   const s = document.getElementById('status');
   const message = `项目管理界面初始化失败：${error?.message || error}。请检查 Magpie 是否已加载插件通信脚本。`;
   if (s) { s.textContent = message; s.classList.add('error'); }
-  const fieldStatus = document.getElementById('fieldStatus');
-  if (fieldStatus) { fieldStatus.textContent = message; fieldStatus.hidden = false; fieldStatus.classList.add('error'); }
 });

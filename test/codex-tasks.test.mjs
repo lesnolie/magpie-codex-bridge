@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCodexTasks, classifyCodexStderr } from '../src/codex-tasks.mjs';
+import { createCodexTasks, classifyCodexStderr, buildCodexThreadConfig } from '../src/codex-tasks.mjs';
 import { MagpieProjectReview } from '../index.mjs';
 
 const mock = fileURLToPath(new URL('./mock-codex-app-server.mjs', import.meta.url));
@@ -76,4 +76,39 @@ test('missing native executable yields helpful error and launch phase', async ()
   assert.equal(report.state,'failed');
   assert.equal(report.phase,'initialize');
   assert.match(report.error,/executable not found|ENOENT|Codex startup failed/i);
+});
+
+test('Codex Desktop multi-root project adds only sibling roots to the workspace sandbox', () => {
+  const base = {root:'/local/one', name:'One', source:'codex',
+    workspaceRoots:['/local/one','/local/two','/local/two']};
+  const {config,mode,additionalWorkspaceCount}=buildCodexThreadConfig(
+    {projectSource:'codex',codexAllowWrites:true},base);
+  assert.equal(mode,'workspace-write');
+  assert.equal(config.sandbox,'workspace-write');
+  assert.deepEqual(config.config.sandbox_workspace_write.writable_roots,['/local/two']);
+  assert.equal(config.config.sandbox_workspace_write.network_access,false);
+  assert.equal(additionalWorkspaceCount,1);
+  assert.doesNotMatch(config.developerInstructions,/danger-full-access/);
+});
+
+test('Codex Desktop inherited permission setting is local-only and never expands manual projects or read-only tasks', () => {
+  const base={root:'/local/one',source:'codex',workspaceRoots:['/local/one','/local/two']};
+  const yes=buildCodexThreadConfig({projectSource:'codex',codexAllowWrites:true,
+    codexInheritPermissions:true},base);
+  assert.equal(yes.mode,'codex-local');
+  assert.equal('sandbox' in yes.config,false,'Codex CLI settings determine the actual sandbox');
+  assert.equal(yes.config.approvalPolicy,'never','Never auto-approve escalation');
+  assert.equal('config' in yes.config,false,'Do not silently override the native permission profile');
+
+  const noWrite=buildCodexThreadConfig({projectSource:'codex',codexAllowWrites:false,
+    codexInheritPermissions:true},base);
+  assert.equal(noWrite.mode,'read-only');
+  assert.equal(noWrite.config.sandbox,'read-only');
+  assert.equal('config' in noWrite.config,false);
+
+  const manual=buildCodexThreadConfig({projectSource:'manual',codexAllowWrites:true,
+    codexInheritPermissions:true},{root:'/local/manual',source:'manual'});
+  assert.equal(manual.mode,'workspace-write');
+  assert.equal(manual.config.sandbox,'workspace-write');
+  assert.equal('config' in manual.config,false);
 });

@@ -94,14 +94,15 @@ test('Magpie MCP tools still register without granting Codex execution', async (
   assert.deepEqual(Object.keys(plugin.tool).sort(),[
     'codex_ack_review','codex_cancel_task','codex_review_changes','codex_review_inbox',
     'codex_submit_task','codex_task_result','codex_task_status','codex_wait_task',
+    'chat_session_request_transfer','chat_session_status',
     'git_diff','git_status','list_files','projects','read_file','search_text',
   ]);
   const result=JSON.parse(await plugin.tool.codex_submit_task.execute({project:'TMN',prompt:'read only'}));
   assert.equal(result.ok,false);
   assert.match(result.error,/Codex is disabled/);
   const listing=JSON.parse(await plugin.tool.projects.execute({}));
-  assert.equal(listing.codex.integrationVersion,'0.4.7-alpha.1');
-  assert.equal(listing.codex.toolCount,14);
+  assert.equal(listing.codex.integrationVersion,'0.4.8-alpha.1');
+  assert.equal(listing.codex.toolCount,16);
   assert.equal(listing.codex.allowWrites,false);
   assert.equal(listing.projects[0].name,'TMN');
   assert.ok(!JSON.stringify(listing).includes(base));

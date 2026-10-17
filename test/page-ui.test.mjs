@@ -338,3 +338,37 @@ test('disabling Codex revokes previously granted write consent', async () => {
   assert.equal(app.element('codexAllowWrites').disabled, false,
     'permission can be configured in either order');
 });
+
+test('Codex native permission inheritance requires explicit local consent', async () => {
+  const app=runPage({projectSource:'codex',codexEnabled:true,codexAllowWrites:true,
+    codexInheritPermissions:false});
+  await wait();
+  assert.equal(app.element('codexInheritPermissions').disabled,false);
+  app.element('codexInheritPermissions').checked=true;
+  await app.element('codexInheritPermissions').fire('change');
+  assert.equal(app.element('codexInheritConfirmation').hidden,false);
+  assert.equal(app.options.codexInheritPermissions,false,'switch alone never grants broader access');
+  await app.element('cancelCodexInherit').fire('click');
+  assert.equal(app.element('codexInheritConfirmation').hidden,true);
+  assert.equal(app.options.codexInheritPermissions,false);
+  app.element('codexInheritPermissions').checked=true;
+  await app.element('codexInheritPermissions').fire('change');
+  await app.element('confirmCodexInherit').fire('click');
+  await wait();
+  assert.equal(app.options.codexInheritPermissions,true);
+  app.element('codexAllowWrites').checked=false;
+  await app.element('codexAllowWrites').fire('change');
+  await wait();
+  assert.equal(app.options.codexAllowWrites,false);
+  assert.equal(app.options.codexInheritPermissions,false,'revoking write also revokes inheritance');
+});
+
+test('manual projects cannot grant native Codex permission inheritance', async () => {
+  const app=runPage({projectSource:'manual',codexEnabled:true,codexAllowWrites:true});
+  await wait();
+  assert.equal(app.element('codexInheritPermissions').disabled,true);
+  app.element('codexInheritPermissions').checked=true;
+  await app.element('codexInheritPermissions').fire('change');
+  assert.notEqual(app.options.codexInheritPermissions,true);
+});
+

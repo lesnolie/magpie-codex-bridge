@@ -54,7 +54,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     return JSON.stringify({
       ...data,
       codex: {
-        integrationVersion: '0.4.5-alpha.1',
+        integrationVersion: '0.4.6-alpha.1',
         toolsRegistered: true,
         toolCount: 14,
         pendingReviewCount,

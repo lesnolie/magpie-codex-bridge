@@ -22,7 +22,7 @@
     </section>
     <section class="card remote-section">
       <div class="section-heading">
-        <div><h2>ChatGPT 远程连接</h2><p class="remote-sub">本机管理 Cloudflare MCP 适配器 · 默认仅六个只读工具</p></div>
+        <div><h2>ChatGPT 远程连接</h2><p class="remote-sub">本机管理 Cloudflare MCP 适配器 · 代码读取只读；会话切换需本地核验</p></div>
         <label class="remote-switch" for="remoteAutoStart">
           <input id="remoteAutoStart" type="checkbox" aria-label="自动启动远程连接">
           <span>自动启动</span>
@@ -31,6 +31,17 @@
       <p class="hint">开启一次后，插件将尝试注册当前 Windows 用户的登录自启项（无需管理员权限）。Magpie 运行时自动启用 48765，退出后关闭监听；无需每次运行 PowerShell。</p>
       <p class="hint">需要事先配置 Cloudflare Access、安装 Node.js 20+，且 Magpie 与 Cloudflare Tunnel 正在运行。不修改你的 Cloudflare 设置，Codex 工具需在本机单独开启。</p>
       <p class="remote-status" id="remoteStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="card remote-section">
+      <div class="section-heading">
+        <div><h2>原生 Codex + ChatGPT 协作</h2><p class="remote-sub">推荐方式 · Magpie Skills 安装 · 无需开启下面的 app-server</p></div>
+        <span class="tag">Skill</span>
+      </div>
+      <p class="hint">在 Magpie 的 Skills 中从 GitHub 导入 <strong>magpie-codex-collab</strong> 并指定给 Codex。Skill 使用原生 Codex 执行和已有的 Magpie MCP 连接，不会新开隧道，也不会复制项目文件。</p>
+      <p class="hint">专用 ChatGPT 标签页由 Codex 内置浏览器管理；只有该环境提供 control-in-app-browser 时才能自动发送审核消息。不同对话通过任务 ID、真实聊天 URL、MCP 项目验证后安全切换。</p>
+      <p class="hint">Skill 路径：<code>skills/magpie-codex-collab</code>。GitHub：<a href="https://github.com/lesnolie/magpie-codex-bridge/tree/main/skills/magpie-codex-collab" target="_blank" rel="noopener noreferrer">查看安装源</a>。</p>
+      <p class="hint">两个新工具：chat_session_status、chat_session_request_transfer。后者只提交切换申请，不会直接操纵浏览器。原生 Codex 关闭时也不会自动唤醒 ChatGPT。</p>
     </section>
 
     <section class="card remote-section">

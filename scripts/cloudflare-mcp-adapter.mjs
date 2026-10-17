@@ -15,7 +15,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 const PORT = 48765;
 const MCP_PATH = '/mcp';
 const MODERN_MCP_VERSION = '2026-07-28';
-const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.4.5-alpha.1' });
+const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.4.6-alpha.1' });
 const SERVER_META = Object.freeze({ 'io.modelcontextprotocol/serverInfo': SERVER_INFO });
 const UPSTREAM = 'http://127.0.0.1:3425/mcp/magpie/tools';
 const TOOL_NAMES = Object.freeze([

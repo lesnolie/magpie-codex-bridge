@@ -191,6 +191,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     render();
     try {
       const next = { ...options, projectSource: source };
+      if (source !== 'codex') next.codexInheritPermissions = false;
       const saved = await magpie.options.set(next);
       options = saved || next;
       projectSourceStatus.textContent = source === 'codex'

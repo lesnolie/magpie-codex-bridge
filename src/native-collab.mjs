@@ -8,6 +8,7 @@
 import { execFile as nativeExecFile, spawn as nativeSpawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createChatSessions } from '../skills/magpie-codex-collab/chat-session.mjs';
+import { tryVerifiedDesktopAutoSend } from './desktop-auto-send.mjs';
 import { projectRoots } from './projects.mjs';
 import { resolveCodexBinary, resolveCodexPermissionMode } from './codex-tasks.mjs';
 
@@ -241,6 +242,7 @@ export function createNativeCollab(options={},dependencies={}){
   const platform=dependencies.platform||process.platform;
   const bin=dependencies.binary||(()=>resolveCodexBinary(options));
   const cli=dependencies.launchCli||launchNativeCli;
+  const autoSend=dependencies.desktopAutoSend||tryVerifiedDesktopAutoSend;
 
   function diagnose({project}={}){
     // Never export the launch source fields to MCP; the inspector callback
@@ -331,8 +333,16 @@ export function createNativeCollab(options={},dependencies={}){
       dispatchStage='windows-launcher';
       await open(url,{platform});
       chat.updateLaunch({project,launchId,status:'opened_unconfirmed'});
+      // Local-only experimental opt-in. Never treat an invoked UI button as
+      // evidence of Codex turn execution or successful ChatGPT pairing.
+      const autoSubmit=options.nativeDesktopAutoSendExperimental===true
+        ?await autoSend(prompt,{platform})
+        :'disabled';
       return response(ticket,'opened_unconfirmed',{
-        instructions:'Codex Desktop was asked to open the project with a prefilled $magpie-codex-collab prompt. Press Send once in Codex Desktop. Only native Codex can verify and activate this ChatGPT chat.'
+        autoSubmit,
+        instructions:autoSubmit==='invoked-unconfirmed'
+          ?'A uniquely verified native Codex Send button was invoked. Actual turn execution and chat binding remain unconfirmed.'
+          :'Codex Desktop was asked to open the project with a prefilled $magpie-codex-collab prompt. If present, press Send once in Codex Desktop. Only native Codex can verify and activate this ChatGPT chat.'
       });
     }catch(error){
       const detail=safeDesktopFailureDetails(error,dispatchStage);

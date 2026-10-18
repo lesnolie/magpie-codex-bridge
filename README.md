@@ -1,8 +1,27 @@
-# Magpie Local Project Review (v0.4.17 alpha)
+# Magpie Local Project Review (v0.4.18 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.18 alpha: diagnosable Windows Desktop dispatch failures
+
+A short `Start-Process codex://threads/new` successfully opened native
+Codex Desktop from interactive PowerShell, but the actual Magpie-triggered
+full-prompt startup still ended in `dispatch_failed` with a generic
+`unexpected-error`. This release does **not** claim that startup is fixed.
+
+After the next **user-approved** failed Desktop launch, both the MCP launch
+response and `chat_session_status` provide an allowlisted
+`failureCategory`, `failureStage`, `failureCode`, `exitStatus` and
+`failureKind`. Error diagnostics cannot disclose the full chat URL,
+PowerShell command, local project path, prompt, stdout, or stderr. Windows
+exit-code strings, oversize process arguments and output overflow now have
+distinct classifications.
+
+The same single explicit retry guard applies: no further launch occurs
+without user authorization. `opened_unconfirmed` never means Codex
+executed, and no CLI/app-server fallback is performed.
 
 ## v0.4.17 alpha: explicitly retry a failed native Desktop launch from ChatGPT Web
 

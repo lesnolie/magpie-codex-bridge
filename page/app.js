@@ -361,7 +361,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     }
     cliTestBusy=true;render();
     try{
-      const request={id:globalThis.crypto.randomUUID(),project,chatUrl};
+      const request={id:globalThis.crypto.randomUUID(),project,chatUrl,createdAt:Date.now()};
       const next=cleanOptions({...options,nativeCliLocalTestRequest:request});
       // Only this physical, locally-authorized button emits a request.
       const saved=await magpie.options.set(next);

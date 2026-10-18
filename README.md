@@ -1,8 +1,31 @@
-# Magpie Local Project Review (v0.4.18 alpha)
+# Magpie Local Project Review (v0.4.19 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.19 alpha: read-only Desktop URI preflight without another launch
+
+`chat_session_status` now includes `desktopUriPreflight` for an existing
+native Desktop launch. It reconstructs the EXACT `codex://threads/new`
+URI from the launch's **locally saved original goal**, task ID, launch ID,
+registered project root and ChatGPT URL, then returns only:
+
+- `valid`, `reason` (`ready`, `url-too-long`, `invalid-project-root`,
+  `invalid-prompt`, `uri-construction-error`)
+- `uriLength`, `limit`, `promptLength`, and `rootLength`
+- `transport` for non-Desktop tickets
+
+Neither the URI, workspace path, ChatGPT URL, nor goal/prompt text is
+returned in this added field. The preflight does **not** open Desktop, send a
+queue message, change the session record, reset or retry a failed ticket.
+The same validation reasons are now safely classified if the URI builder
+fails during an explicitly approved future launch. No new MCP tool or
+permission is introduced.
+
+A passing preflight does NOT prove the Windows protocol handler ran.
+A failed `building-uri` record that preflights successfully should be
+investigated as a runtime/host discrepancy, not blindly retried.
 
 ## v0.4.18 alpha: diagnosable Windows Desktop dispatch failures
 

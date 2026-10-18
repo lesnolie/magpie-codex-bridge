@@ -67,6 +67,36 @@ chat URL already maps to ONE workspace-verified native thread. A brand-new
 ChatGPT chat cannot reveal the focused Codex Desktop project to MCP and must
 first be paired from native Desktop; never silently select the last project.
 
+## Safely recovering a failed Desktop launch (local only)
+
+A successful `codex://threads/new?path=...` experiment in interactive
+PowerShell validates the Windows protocol registration, **not** the Magpie
+host's ability to dispatch the full Skill launch. If a remote launch is
+stuck or failed, query Magpie's `chat_session_status` and never assume
+Desktop executed.
+
+`dispatch_failed` is terminal for remote retries; use the local-only
+`recover-launch` CLI after inspecting the original ticket. Run from the
+currently intended Codex Desktop workspace (or pass the exact registered
+project) and supply the original **launch ID**, **task ID**, and **ChatGPT
+URL**, plus the explicit `--confirm true` flag:
+
+```
+node <skill-dir>/chat-session.mjs recover-launch --project "<project>" --launch-id "<original UUID>" --task-id "<original task ID>" --chat-url "https://chatgpt.com/c/<actual conversation>" --confirm true
+```
+
+Only a matching **failed Desktop transport** launch can be rearmed. The
+command rotates the launch UUID and sets the ticket to `prepared`; it does
+NOT start Desktop. The original remote goal and destination remain unchanged.
+Afterwards request exactly the SAME project, task ID, chat URL and goal with
+`codex_collab_start` ONE time. Remote retries alone cannot recover a
+failed launch. Never rerun blindly when the state is still `dispatching`,
+`opened_unconfirmed` or `queued_unconfirmed`.
+
+Magpie stores and returns one fixed diagnostic category, never raw
+PowerShell stderr or full process invocation. Categories are diagnostic
+only; they do not prove the URL handler ran.
+
 ## Project validation
 
 Resolve the exact project name from the current native workspace when available, then verify it exists in the Magpie MCP projects tool (it is also the

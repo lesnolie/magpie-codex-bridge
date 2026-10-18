@@ -102,6 +102,8 @@ function view(p,s){
     pending:s.pending?{requestId:s.pending.requestId,taskId:s.pending.taskId,
       url:s.pending.url,requestedAt:s.pending.requestedAt}:null,
     checkpoint:s.checkpoint||null,stateGeneration:s.generation,
+    nativeThreadLinked:Boolean(s.nativeThreadId),
+    launch:s.launch?{launchId:s.launch.launchId,taskId:s.launch.taskId,status:s.launch.status,transport:s.launch.transport,requestedAt:s.launch.requestedAt,chatUrl:s.launch.chatUrl}:null,
     browserControl:'not-verified',
     note:'Requesting transfer does not activate it. A native Codex browser must verify the target and activate locally.'};
 }
@@ -165,6 +167,72 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       save(file,s);return {...view(p,s),saved:true};
     });
   }
+  // Remote invocation may stage a future native Codex start, but cannot
+  // activate chat binding. Idempotency prevents duplicate launches on retry.
+  function prepareLaunch({project,goal,chatUrl,taskId}={}){
+    const p=allowed(project),file=filename(p,folder);
+    const normalized=normalizeChatUrl(chatUrl);
+    if(typeof goal!=='string'||!goal.trim()||goal.length>1200||
+       /[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]/.test(goal))
+      fail('Goal must contain 1-1200 safe characters');
+    return locked(file,()=>{
+      const s=load(file),clean=goal.trim();
+      if(s.launch&&['prepared','dispatching','opened_unconfirmed','queued_unconfirmed'].includes(s.launch.status)){
+        if(s.launch.chatUrl===normalized&&s.launch.goal===clean&&(!taskId||taskId===s.launch.taskId))
+          return {...view(p,s),reused:true,localRoot:p.root,nativeThreadId:s.nativeThreadId||null};
+        fail('A different native Codex launch is pending; resolve it locally before starting another');
+      }
+      if(s.active&&s.active.url!==normalized&&s.checkpoint?.protocolState!=='DONE'&&
+         s.checkpoint?.protocolState!=='BLOCKED')
+        fail('Active chat differs; switch the current task using verified chat handoff first');
+      if(s.active&&s.checkpoint&& !['DONE','BLOCKED'].includes(s.checkpoint.protocolState))
+        fail('A different task is already active; finish or block it before starting again');
+      const id=taskId?taskName(taskId):'native-'+randomUUID();
+      const matchingThread=Boolean(s.nativeThreadId&&s.active?.url===normalized);
+      s.launch={launchId:randomUUID(),taskId:id,goal:clean,chatUrl:normalized,
+        status:'prepared',transport:matchingThread?'queue':'desktop',
+        requestedAt:new Date().toISOString()};
+      // This does NOT change s.active or start execution.
+      save(file,s);
+      return {...view(p,s),reused:false,localRoot:p.root,
+        nativeThreadId:matchingThread?s.nativeThreadId:null};
+    });
+  }
+  function updateLaunch({project,launchId,status}={}){
+    const p=allowed(project),file=filename(p,folder);
+    if(!['dispatching','opened_unconfirmed','queued_unconfirmed','dispatch_failed',
+          'acknowledged','blocked'].includes(status))fail('Invalid launch status');
+    return locked(file,()=>{
+      const s=load(file);
+      if(s.launch?.launchId!==launchId)fail('Launch receipt no longer matches');
+      const transitions={
+        prepared:['dispatching','dispatch_failed'],
+        dispatching:['opened_unconfirmed','queued_unconfirmed','dispatch_failed'],
+        opened_unconfirmed:['acknowledged','blocked'],
+        queued_unconfirmed:['acknowledged','blocked'],
+        dispatch_failed:[],acknowledged:[],blocked:[]
+      };
+      if(!transitions[s.launch.status]?.includes(status))fail('Invalid launch status transition');
+      s.launch.status=status;
+      s.launch.updatedAt=new Date().toISOString();
+      save(file,s);return view(p,s);
+    });
+  }
+  // Invoked only in the local Skill CLI after a browser-visible workspace check.
+  function linkThread({project,taskId,generation,threadId}={}){
+    const p=allowed(project),file=filename(p,folder);
+    if(typeof threadId!=='string'||!/^[a-f0-9]{8}-[a-f0-9-]{27,45}$/i.test(threadId))
+      fail('Native Codex thread UUID required');
+    return locked(file,()=>{
+      const s=load(file);
+      if(!s.active||s.active.taskId!==taskName(taskId)||
+         s.active.generation!==Number(generation))fail('Stale chat or task binding');
+      s.nativeThreadId=threadId;
+      if(s.launch?.taskId===taskId&&['opened_unconfirmed','queued_unconfirmed'].includes(s.launch.status))
+        s.launch.status='acknowledged';
+      save(file,s);return view(p,s);
+    });
+  }
   function handoff({project,taskId}={}){
     const s=status(project),a=s.active,c=s.checkpoint;
     if(!a)fail('No active chat');
@@ -179,7 +247,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       'Use only the verified Magpie workspace connector. Never re-execute completed iterations.'];
     return {project:s.project,active:a,checkpoint:c,handoff:lines.join('\n')};
   }
-  return {status,request,activate,checkpoint,handoff};
+  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,linkThread};
 }
 function argsOf(argv){
   const [command,...rest]=argv,opts={};
@@ -197,8 +265,9 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
       command==='prepare'?api.request(opts,opts.newTask==='true'):
       command==='activate'?api.activate(opts):
       command==='checkpoint'?api.checkpoint(opts):
-      command==='handoff'?api.handoff(opts):null;
-    if(!result)fail('Usage: node chat-session.mjs status|prepare|activate|checkpoint|handoff --project NAME [--task-id ID] [--url HTTPS] [--new-task true] [--request-id UUID] [--observed-url HTTPS] [--verified-project NAME]');
+      command==='handoff'?api.handoff(opts):
+      command==='link-thread'?api.linkThread(opts):null;
+    if(!result)fail('Usage: node chat-session.mjs status|prepare|activate|checkpoint|handoff|link-thread --project NAME [--task-id ID] [--url HTTPS] [--new-task true] [--request-id UUID] [--observed-url HTTPS] [--verified-project NAME]');
     process.stdout.write(JSON.stringify(result,null,2)+'\n');
   }catch(e){process.stderr.write('Chat handoff: '+e.message+'\n');process.exitCode=1;}
 }

@@ -67,6 +67,17 @@ chat URL already maps to ONE workspace-verified native thread. A brand-new
 ChatGPT chat cannot reveal the focused Codex Desktop project to MCP and must
 first be paired from native Desktop; never silently select the last project.
 
+## Windows startup diagnosis (v0.4.18)
+
+If `codex_collab_start` returns `dispatch_failed`, read the current
+`chat_session_status` before any further action. The sanitized
+`failureStage` is either `building-uri` or `windows-launcher`;
+`failureCode`, `exitStatus`, and `failureKind` may identify a spawn,
+PowerShell or argument-length failure. Never display raw PowerShell
+stderr/stdout or speculate that the native window executed. A working short
+user PowerShell URL does not prove the full Magpie launch works.
+Do not retry automatically.
+
 ## Explicit recovery from ChatGPT Web (v0.4.17)
 
 After a **confirmed `dispatch_failed` native Desktop launch**, ChatGPT Web

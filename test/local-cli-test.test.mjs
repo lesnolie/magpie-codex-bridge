@@ -143,6 +143,30 @@ test('CLI failure returns redacted category and exit code, timeout distinct',asy
     assert.ok(!JSON.stringify(result).includes('unsafe path'));
   }
 });
+test('timeout preserves the latest safe Codex exec lifecycle stage',async()=>{
+  const req=request(),spawns=[],session=fakeSession(null);
+  await startLocalCliTest({...opts,nativeCliLocalTestRequest:req},config('progress',spawns));
+  await runLocalCliTestWorker(dir('progress'),req.id,{
+    roots:projects,target:target('progress'),sessions:()=>session,
+    binary:()=>'/fake/native.exe',
+    cli:async ({onProgress})=>{
+      onProgress('cli-process-started');
+      onProgress('cli-turn-started');
+      onProgress('SECRET_EXFILTRATION');
+      const error=new Error('SecretValue in raw error');
+      error.code='ETIMEDOUT';
+      throw error;
+    }
+  });
+  assert.equal(readState('progress').status,'timed_out');
+  assert.equal(readState('progress').phase,'cli-turn-started');
+  assert.equal(session.status().launch.status,'blocked');
+  const published=readFileSync(target('progress'),'utf8');
+  assert.ok(published.includes('cli-turn-started'));
+  assert.ok(!published.includes('SECRET_EXFILTRATION'));
+  assert.ok(!published.includes('SecretValue'));
+});
+
 test('diagnostic worker forwards only the locally saved codexExecutable',async()=>{
   const req=request(),spawns=[];
   const explicit='C:/Tools/Native/codex.exe';

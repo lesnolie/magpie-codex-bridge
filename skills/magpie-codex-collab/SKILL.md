@@ -100,6 +100,23 @@ LAUNCH_ID and TARGET_CHAT:
 Never claim an unopened URI composer, a stored queue message or an MCP
 receipt means a task was executed.
 
+## Standalone CLI exec entry point (not Desktop)
+
+When START MODE identifies **Standalone Codex CLI exec**, do not assume that
+Codex Desktop's `iab` browser backend is attached to this independent process.
+Check the documented backend availability once. A mounted Browser Skill or
+browser-client module does not establish that a usable backend exists.
+
+- If `iab` is unavailable, output the exact final marker
+  `MAGPIE_BROWSER_UNAVAILABLE`, end the Codex turn promptly, and do not
+  create or activate a ChatGPT binding.
+- Do not retry browser initialization indefinitely, search private APIs,
+  inject Desktop session metadata or use an unrelated external browser.
+- If `iab` works, use the normal exact-URL verification and local binding
+  workflow. An exit code of zero alone is not confirmation.
+- Native CLI is not the Desktop chat UI; a successful CLI turn does not create
+  or show a visible Desktop conversation.
+
 ## One-tab workflow
 
 1. Read local state:

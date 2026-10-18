@@ -287,6 +287,17 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     }
   }
 
+  const cliPhases = {
+    'preparing-launch-ticket':'准备本地启动票据',
+    'resolving-native-cli':'定位原生 CLI',
+    'starting-cli-exec':'正在启动 Codex exec',
+    'cli-process-started':'Codex exec 进程已启动',
+    'cli-thread-started':'Codex CLI 已创建内部线程',
+    'cli-turn-started':'Codex CLI 已开始执行任务',
+    'cli-turn-finished':'Codex CLI 任务结束',
+    'cli-turn-failed':'Codex CLI 任务失败',
+    'checking-chat-binding':'正在验证 ChatGPT 会话绑定'
+  };
   const cliLabels = {
     running:'本地 CLI 正在运行。等待只读测试完成…',
     cli_exited_unverified:'CLI 正常退出，但尚未验证 ChatGPT 会话绑定。',
@@ -338,9 +349,10 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     }
     if(test){
       const label=cliLabels[test.status]||'等待本机状态…';
+      const phase=test.phase&&cliPhases[test.phase]?' 阶段：'+cliPhases[test.phase]+'。':'';
       const suffix=test.exitCode!==null?' 退出码：'+test.exitCode+'。':'';
       const category=test.category?' 诊断类别：'+test.category+'。':'';
-      localCliTestStatus.textContent=label+suffix+category;
+      localCliTestStatus.textContent=label+phase+suffix+category;
       localCliTestStatus.classList.toggle('error',['cli_failed','timed_out','spawn_failed','rejected','stale'].includes(test.status));
       if(test.status!=='running'&&cliTestPolling){
         clearInterval(cliTestPolling);cliTestPolling=null;

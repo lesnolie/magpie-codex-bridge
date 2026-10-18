@@ -77,6 +77,7 @@ async function publish(dir,projects,target=PAGE_FILE){
   }
   const publicState=state?{
     id:state.id,project:state.project,status:state.status,
+    phase:typeof state.phase==='string'?state.phase:null,
     category:state.category||null,exitCode:Number.isInteger(state.exitCode)?state.exitCode:null,
     chatVerified:state.status==='chat_verified',
     startedAt:state.startedAt||null,finishedAt:state.finishedAt||null,
@@ -203,7 +204,8 @@ export async function runLocalCliTestWorker(dir,id,{
   const project=cleanRequest(req,roots());
   if(project.id!==id)throw Error('Test request mismatch');
   const taskId='localtest-'+id;
-  const state={id,project:project.project,status:'running',startedAt:new Date().toISOString()};
+  const state={id,project:project.project,status:'running',
+    phase:'preparing-launch-ticket',startedAt:new Date().toISOString()};
   let chat;
   let launchId;
   try{
@@ -226,17 +228,37 @@ export async function runLocalCliTestWorker(dir,id,{
     return;
   }
   const prompt=desktopPrompt({
-    project:project.project,chatUrl:project.chatUrl,taskId,launchId,
+    project:project.project,chatUrl:project.chatUrl,taskId,launchId,mode:'cli',
     goal:'READ-ONLY diagnostic of Codex CLI and the installed magpie-codex-collab Skill. '+
       'Read project metadata only. Do NOT edit or generate project files, run builds, commit, publish, or create a PR. '+
       'Try the official Codex in-app browser to verify the EXACT target chat through Magpie MCP; '+
       'only then prepare/activate the chat binding locally. If the browser tool is unavailable, '+
       'report MAGPIE_BROWSER_UNAVAILABLE and do not claim a binding.'
   });
+  let updates=Promise.resolve();
+  const allowedPhases=new Set(['cli-process-started','cli-thread-started',
+    'cli-turn-started','cli-turn-finished','cli-turn-failed']);
+  function progress(phase){
+    if(!allowedPhases.has(phase))return;
+    // Only immutable, allowlisted phase labels reach the local status page.
+    state.phase=phase;
+    const snapshot={...state};
+    updates=updates.then(async()=>{
+      await atomicJson(path.join(dir,STATE),snapshot);
+      await publish(dir,roots(),target);
+    }).catch(()=>{});
+  }
   try{
-    const result=await cli({binary:binary({codexExecutable:project.codexExecutable}),
-      root:project.root,prompt,sandbox:'read-only',
+    state.phase='resolving-native-cli';
+    const executable=binary({codexExecutable:project.codexExecutable});
+    state.phase='starting-cli-exec';
+    await atomicJson(path.join(dir,STATE),state);
+    await publish(dir,roots(),target).catch(()=>{});
+    const result=await cli({binary:executable,
+      root:project.root,prompt,sandbox:'read-only',onProgress:progress,
       approval:'never',timeout:TIMEOUT});
+    await updates;
+    state.phase='checking-chat-binding';
     // The local Skill is authoritative for the chat session. CLI's exit code
     // or its LLM-produced text alone never constitutes binding proof.
     let verified=false;
@@ -257,6 +279,7 @@ export async function runLocalCliTestWorker(dir,id,{
       category:verified?null:reportedUnavailable?'browser-unavailable-self-report':'browser-unverified',
       exitCode:0,finishedAt:new Date().toISOString()});
   }catch(e){
+    await updates;
     try{chat.updateLaunch({project:project.project,launchId,status:'blocked'});}catch{}
     await atomicJson(path.join(dir,STATE),{...state,
       status:errorCategory(e)==='timeout'?'timed_out':'cli_failed',

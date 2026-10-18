@@ -5,7 +5,7 @@
  * message to a previously LOCAL-verified, project-matched Codex thread.
  * Neither mechanism proves the agent has begun work. Do not auto-retry.
  */
-import { execFile as nativeExecFile } from 'node:child_process';
+import { execFile as nativeExecFile, spawn as nativeSpawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createChatSessions } from '../skills/magpie-codex-collab/chat-session.mjs';
 import { projectRoots } from './projects.mjs';
@@ -23,16 +23,23 @@ function response(ticket,status,extra={}){
     ...extra
   };
 }
-export function desktopPrompt({project,goal,chatUrl,taskId,launchId}){
+export function desktopPrompt({project,goal,chatUrl,taskId,launchId,mode='desktop'}){
+  const cliMode=mode==='cli';
   const instructions=[
     '$magpie-codex-collab',
-    'START MODE: Native Codex Desktop, not Magpie app-server.',
+    cliMode?'START MODE: Standalone Codex CLI exec, not Codex Desktop or Magpie app-server.'
+      :'START MODE: Native Codex Desktop, not Magpie app-server.',
     'PROJECT: '+project,
     'TASK_ID: '+taskId,
     'LAUNCH_ID: '+launchId,
     'TARGET_CHAT: '+chatUrl,
     '',
     'Follow the installed magpie-codex-collab Skill. IMPORTANT:',
+    ...(cliMode?[
+      'CLI GATE: An independently launched codex exec session may have no in-app browser backend.',
+      'Check the official browser backend once. If iab is unavailable, report MAGPIE_BROWSER_UNAVAILABLE and finish promptly.',
+      'Do not retry unavailable backends, use private APIs, infer a browser session, or assert chat binding.'
+    ]:[]),
     '1. First open EXACT TARGET_CHAT in ONE Codex-managed ChatGPT tab.',
     '2. Ask ChatGPT there to verify this same project using Magpie MCP projects and read_file.',
     '3. Only after the verification, run local chat-session prepare/activate for this TASK_ID and TARGET_CHAT.',
@@ -72,23 +79,86 @@ export async function queueToNativeThread(threadId,prompt,{binary='codex.exe',ru
 }
 
 // Experimental native Codex CLI backend. Does not use app-server.
-// CLI stdout/stderr are deliberately not returned to remote MCP clients.
+// CLI stdout/stderr are never returned to remote MCP clients.
+const CLI_PROGRESS_TYPES=Object.freeze({
+  'thread.started':'cli-thread-started',
+  'turn.started':'cli-turn-started',
+  'turn.completed':'cli-turn-finished',
+  'turn.failed':'cli-turn-failed'
+});
+async function runObservedCli(binary,args,options,progress,spawnProcess=nativeSpawn){
+  return new Promise((resolve,reject)=>{
+    let child;
+    try {
+      child=spawnProcess(binary,args,{...options,stdio:['ignore','pipe','pipe']});
+    } catch(e) {reject(e);return;}
+    let out='',errTail='',lineBuffer='',settled=false,timedOut=false;
+    let timer;
+    const done=(error,result)=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(timer);
+      if(error)reject(error);else resolve(result);
+    };
+    child.once('spawn',()=>progress('cli-process-started'));
+    child.stdout?.on('data',chunk=>{
+      const part=String(chunk);
+      out=(out+part).slice(-64*1024);
+      lineBuffer+=part;
+      if(lineBuffer.length>256*1024)lineBuffer=lineBuffer.slice(-4096);
+      let idx;
+      while((idx=lineBuffer.indexOf('\n'))>=0){
+        const line=lineBuffer.slice(0,idx);
+        lineBuffer=lineBuffer.slice(idx+1);
+        let event;
+        try{event=JSON.parse(line);}catch{continue;}
+        const phase=CLI_PROGRESS_TYPES[event?.type];
+        if(phase)progress(phase); // Only four fixed labels; no model output.
+      }
+    });
+    child.stderr?.on('data',chunk=>{errTail=(errTail+String(chunk)).slice(-2048);});
+    child.once('error',error=>done(error));
+    child.once('close',(code,signal)=>{
+      if(timedOut){
+        const e=new Error('Codex exec timeout');
+        e.code='ETIMEDOUT';done(e);return;
+      }
+      if(code!==0){
+        const e=new Error('Codex exec failed');
+        e.code=Number.isInteger(code)?code:'CLI_EXIT';
+        e.stderr=errTail;done(e);return;
+      }
+      done(null,{stdout:out,stderr:errTail,exitCode:0});
+    });
+    timer=setTimeout(()=>{
+      timedOut=true;
+      child.kill?.();
+      // Report at timeout even if a platform cannot terminate the process.
+      const e=new Error('Codex exec timeout');
+      e.code='ETIMEDOUT';
+      done(e);
+    },options.timeout);
+  });
+}
 export async function launchNativeCli({binary,root,prompt,sandbox='workspace-write',
-  approval=null,timeout=180000,run=execFile}={}){
+  approval=null,timeout=180000,run=execFile,onProgress=null,spawnProcess=nativeSpawn}={}){
   if(!root||!prompt||!binary)fail('Missing native CLI project, binary or prompt');
   if(!['read-only','workspace-write'].includes(sandbox))fail('Invalid CLI sandbox');
   if(approval!==null&&approval!=='never')fail('Invalid CLI approval policy');
   const args=['exec','--cd',root,'--sandbox',sandbox];
-  // Codex exec supports --config; the interactive-only --ask-for-approval
-  // flag is not consistently accepted by exec on installed versions.
+  // Codex exec accepts --config; interactive --ask-for-approval can be rejected.
   if(approval==='never')args.push('--config','approval_policy="never"');
+  if(typeof onProgress==='function')args.push('--json');
   args.push('--',prompt);
-  // stdout may contain secrets or model-generated claims. Never forward it to
-  // a remote MCP result or sandbox page; local diagnostics inspect only markers.
-  return run(binary,args,{
+  const options={
     shell:false,windowsHide:true,timeout:Math.min(180000,Math.max(1000,timeout)),
     maxBuffer:64*1024,cwd:root,env:{...process.env,MAGPIE_NATIVE_COLLAB_EXPERIMENT:'1'}
-  });
+  };
+  // Optional structured status observation is LOCAL ONLY. No prompts, item
+  // content, tokens, URLs or raw stderr are published to the options page.
+  if(typeof onProgress==='function')
+    return runObservedCli(binary,args,options,onProgress,spawnProcess);
+  return run(binary,args,options);
 }
 
 export function createNativeCollab(options={},dependencies={}){
@@ -131,7 +201,7 @@ export function createNativeCollab(options={},dependencies={}){
       if(options.nativeCollabCliExperimental===true){
         // Explicit local opt-in only. A successful CLI exit is not proof the
         // in-app browser was available or the ChatGPT pairing succeeded.
-        await cli({binary:bin(),root:ticket.localRoot,prompt});
+        await cli({binary:bin(),root:ticket.localRoot,prompt:desktopPrompt({project,goal,chatUrl:ticket.launch.chatUrl,taskId:ticket.launch.taskId,launchId,mode:'cli'})});
         chat.updateLaunch({project,launchId,status:'opened_unconfirmed'});
         return response(ticket,'cli_exited_unverified',{
           instructions:'Native Codex CLI exited. Verify the Skill actually reached PROJECT_VERIFIED in the target ChatGPT chat. CLI success alone does not confirm browser collaboration.'

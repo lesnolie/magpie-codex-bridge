@@ -58,3 +58,14 @@ test('sender cannot verify does not claim execution or auto retry',async()=>{
   assert.equal(x.first.confirmedExecution,false);
   assert.match(x.first.instructions,/press Send/i);
 });
+
+test('precise UIA failure stage persists in verified session diagnostics',async()=>{
+  const x=await runLaunch(true,'send-control-disabled');
+  assert.equal(x.opened,1);
+  assert.equal(x.sendCalls,1);
+  assert.equal(x.first.autoSubmit,'send-control-disabled');
+  assert.equal(x.launch.autoSubmit,'send-control-disabled');
+  assert.equal(x.launch.status,'opened_unconfirmed');
+  assert.equal(x.first.confirmedExecution,false);
+  assert.equal(x.repeated.reused,true);
+});

@@ -19,6 +19,14 @@ It writes `opened_unconfirmed` or a sanitized `dispatch_failed` receipt.
   that the Windows URI opened, Codex started a turn, or ChatGPT bound.
 - A later `chat_session_status` confirms actual launcher outcome. An
   `opened_unconfirmed` record is **not** verified native execution.
+
+- If the latest record is `dispatching` for over **3 minutes**, the user
+  can explicitly authorize recovery ONLY after confirming no Codex Desktop
+  thread was opened. Call the existing `codex_collab_start` with unchanged
+  project/goal/chatUrl/taskId, `retryFailed:true`, the exact
+  `failedLaunchId` of that stalled ticket, and `confirmNoDesktop:true`.
+  The state guard refuses earlier/in-progress tickets and all mismatches.
+  No confirmation is inferred; a second call is idempotent.
 - Requests still do not use independent Codex CLI exec or app-server.
 - Only one authorized launch is accepted per ID. A repeated MCP request
   is still idempotent and cannot spawn a second process.

@@ -294,6 +294,9 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     chat_verified:'Skill 已将当前测试任务与目标 ChatGPT 对话绑定（本地记录已验证）。',
     timed_out:'CLI 已超时（180 秒），没有确认会话绑定。',
     cli_failed:'CLI 启动/执行失败。',
+    session_conflict:'本地会话启动票据冲突，需检查之前的未完成任务；没有启动新的 CLI。',
+    invalid_executable_path:'手动设置的 Codex 可执行文件路径不是有效的原生文件。',
+    cli_spawn_failed:'CLI 子进程创建失败（可能是工作目录或 Windows 加载器问题），并不代表未安装 Codex。',
     spawn_failed:'本地 Node.js 或独立测试运行器启动失败。',
     rejected:'本地测试请求被拒绝：项目、URL、系统平台或授权无效。',
     stale:'测试记录超时未更新；请检查本地运行器，不会自动重试。'

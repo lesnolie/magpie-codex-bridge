@@ -225,7 +225,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
   // Invoked only in the local Skill CLI after a browser-visible workspace check.
   function linkThread({project,taskId,generation,threadId}={}){
     const p=allowed(project),file=filename(p,folder);
-    if(typeof threadId!=='string'||!/^[a-f0-9]{8}-[a-f0-9-]{27,45}$/i.test(threadId))
+    if(typeof threadId!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(threadId))
       fail('Native Codex thread UUID required');
     return locked(file,()=>{
       const s=load(file);

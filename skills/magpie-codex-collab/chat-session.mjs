@@ -327,7 +327,9 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
   }
   function recordAutoSubmit({project,launchId,result}={}){
     const p=allowed(project),record=filename(p,folder);
-    const allowedResults=new Set(['disabled','not-verified','invoked-unconfirmed','unsupported-platform']);
+    const allowedResults=new Set(['disabled','not-verified','invoked-unconfirmed','unsupported-platform',
+      'window-not-found','composer-not-readable','composer-not-matched','send-control-not-found',
+      'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error']);
     if(!allowedResults.has(result))fail('Invalid Desktop submit result');
     return locked(record,()=>{
       const s=load(record);

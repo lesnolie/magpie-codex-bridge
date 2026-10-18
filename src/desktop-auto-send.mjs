@@ -1,65 +1,136 @@
 /**
  * Native Codex Desktop one-shot, fail-closed UI Automation.
  * UIA may observe a slow launch but will never retry Invoke.
+ * Return fixed reason codes without publishing window text, prompt, or paths.
  * Button invocation is NOT proof of Codex execution or ChatGPT binding.
  */
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const exec=promisify(execFile);
+export const AUTO_SEND_RESULTS=new Set(['invoked-unconfirmed','not-verified','window-not-found',
+  'composer-not-readable','composer-not-matched','send-control-not-found',
+  'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error']);
 export function desktopAutoSendScript(){
-return String.raw`
-$ErrorActionPreference='Stop'
+return String.raw`$ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 $expected=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:MAGPIE_EXPECTED_PROMPT_B64))
 $root=[System.Windows.Automation.AutomationElement]::RootElement
 $windowCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Window)
 $buttonCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
-$controls=@([System.Windows.Automation.ControlType]::Edit,[System.Windows.Automation.ControlType]::Document)
 $deadline=[DateTime]::UtcNow.AddSeconds(12)
-function ReadComposer($edit){
-  try{
-    $vp=$edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-    return $vp.Current.Value
-  }catch{}
-  try{
-    $tp=$edit.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
-    return $tp.DocumentRange.GetText(-1)
-  }catch{}
-  return $null
-}
-while([DateTime]::UtcNow -lt $deadline){
-  $candidates=@()
-  foreach($window in $root.FindAll([System.Windows.Automation.TreeScope]::Children,$windowCondition)){
-    if($window.Current.Name -notmatch '(?i)Codex'){continue}
-    $verified=$false
-    foreach($control in $controls){
-      $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,$control)
-      foreach($edit in $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition)){
-        $value=ReadComposer $edit
-        if($null -ne $value -and (($value -replace '\r\n',[string][char]10) -ceq ($expected -replace '\r\n',[string][char]10))){$verified=$true}
-      }
-    }
-    if(-not $verified){continue}
-    foreach($button in $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$buttonCondition)){
-      if($button.Current.Name -notin @('Send','Send message','发送','发送消息')){continue}
-      if(-not $button.Current.IsEnabled){continue}
-      $candidates+=@{window=$window;button=$button}
-    }
+$reason='window-not-found'
+
+function SamePrompt($value){
+  if($null -eq $value -or $value -isnot [string]){return $false}
+  $lineBreak=([string][char]13+[string][char]10)
+  $clean=$value.Replace($lineBreak,[string][char]10).Replace([string][char]13,[string][char]10)
+  $wanted=$expected.Replace($lineBreak,[string][char]10).Replace([string][char]13,[string][char]10)
+  # Chromium TextPattern occasionally adds a single terminal newline.
+  if($clean.EndsWith([string][char]10) -and -not $wanted.EndsWith([string][char]10)){
+    $clean=$clean.Substring(0,$clean.Length-1)
   }
-  if($candidates.Count -gt 1){Write-Output 'not-verified';exit 0}
-  if($candidates.Count -eq 1){
-    try{
-      $invoke=$candidates[0].button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-      $invoke.Invoke()
-      Write-Output 'invoked-unconfirmed'
-    }catch{Write-Output 'not-verified'}
+  return $clean -ceq $wanted
+}
+
+function MatchesComposer($element){
+  # Electron/Chromium implementations vary: read every available text pattern.
+  try{
+    $pattern=$element.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    if(SamePrompt $pattern.Current.Value){return $true}
+  }catch{}
+  try{
+    $pattern=$element.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
+    if(SamePrompt $pattern.DocumentRange.GetText(-1)){return $true}
+  }catch{}
+  try{
+    $pattern=$element.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
+    if(SamePrompt $pattern.Current.Value){return $true}
+  }catch{}
+  try{
+    if($element.Current.IsKeyboardFocusable -and (SamePrompt $element.Current.Name)){return $true}
+  }catch{}
+  return $false
+}
+
+function IsSendButton($button){
+  $name=$button.Current.Name
+  $id=$button.Current.AutomationId
+  if($name -match '(?i)^(send|send message|send prompt|submit|发送|发送消息)(\s*\(.*\))?$'){return $true}
+  if($id -match '(?i)^(send|send-button|send-message|submit|composer-send|composer-submit)$'){return $true}
+  try{
+    $p=$button.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
+    if($p.Current.Name -match '(?i)^(send|send message|send prompt|发送|发送消息)$'){return $true}
+  }catch{}
+  return $false
+}
+
+function InvokeButton($button){
+  try{
+    $p=$button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+    $p.Invoke()
+    return $true
+  }catch{}
+  try{
+    $p=$button.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
+    $p.DoDefaultAction()
+    return $true
+  }catch{}
+  return $false
+}
+
+while([DateTime]::UtcNow -lt $deadline){
+  $windows=$root.FindAll([System.Windows.Automation.TreeScope]::Children,$windowCondition)
+  $codexWindows=@()
+  foreach($window in $windows){if($window.Current.Name -match '(?i)Codex'){$codexWindows+=,$window}}
+  if($codexWindows.Count -eq 0){
+    $reason='window-not-found'
+    Start-Sleep -Milliseconds 400
+    continue
+  }
+  $reason='composer-not-readable'
+  $targets=@()
+  foreach($window in $codexWindows){
+    $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+    $matched=$false
+    $readable=$false
+    $count=[Math]::Min($all.Count,1600)
+    for($i=0;$i -lt $count;$i++){
+      $element=$all.Item($i)
+      $kind=$element.Current.ControlType
+      if($kind -ne [System.Windows.Automation.ControlType]::Edit -and
+         $kind -ne [System.Windows.Automation.ControlType]::Document -and
+         $kind -ne [System.Windows.Automation.ControlType]::Custom){continue}
+      $readable=$true
+      if(MatchesComposer $element){$matched=$true;break}
+    }
+    if(-not $matched){
+      if($readable){$reason='composer-not-matched'}
+      continue
+    }
+    $reason='send-control-not-found'
+    $buttons=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$buttonCondition)
+    $found=0
+    for($j=0;$j -lt $buttons.Count;$j++){
+      $button=$buttons.Item($j)
+      if(-not (IsSendButton $button)){continue}
+      $found++
+      if($button.Current.IsEnabled){$targets+=@{window=$window;button=$button}}
+    }
+    if($found -gt 0 -and $targets.Count -eq 0){$reason='send-control-disabled'}
+  }
+  if($targets.Count -gt 1){
+    Write-Output 'ambiguous-target'
     exit 0
   }
-  Start-Sleep -Milliseconds 500
+  if($targets.Count -eq 1){
+    if(InvokeButton $targets[0].button){Write-Output 'invoked-unconfirmed'}
+    else{Write-Output 'send-invoke-unavailable'}
+    exit 0
+  }
+  Start-Sleep -Milliseconds 400
 }
-Write-Output 'not-verified'
-`;
+Write-Output $reason`;
 }
 export async function tryVerifiedDesktopAutoSend(prompt,{platform=process.platform,run=exec}={}){
   if(platform!=='win32')return 'unsupported-platform';
@@ -70,6 +141,7 @@ export async function tryVerifiedDesktopAutoSend(prompt,{platform=process.platfo
       Buffer.from(desktopAutoSendScript(),'utf16le').toString('base64')],{
       env,windowsHide:true,timeout:16000,maxBuffer:1024
     });
-    return stdout.trim()==='invoked-unconfirmed'?'invoked-unconfirmed':'not-verified';
-  }catch{return 'not-verified';}
+    const code=stdout.trim();
+    return AUTO_SEND_RESULTS.has(code)?code:'uia-error';
+  }catch{return 'uia-error';}
 }

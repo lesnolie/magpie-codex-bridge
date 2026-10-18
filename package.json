@@ -1,6 +1,6 @@
 {
   "name": "magpie-codex-bridge",
-  "version": "0.4.21-alpha.1",
+  "version": "0.4.22-alpha.1",
   "description": "Codex Desktop project review with a single local execution permission selector",
   "type": "module",
   "main": "./index.mjs",

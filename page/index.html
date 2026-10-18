@@ -41,7 +41,7 @@
       <p class="hint">在 Magpie 的 Skills 中从 GitHub 导入 <strong>magpie-codex-collab</strong> 并指定给 Codex。Skill 使用原生 Codex 执行和已有的 Magpie MCP 连接，不会新开隧道，也不会复制项目文件。</p>
       <p class="hint"><strong>首次从 ChatGPT Web 发起：</strong>提供当前对话的完整 URL，再通过 <code>codex_collab_start</code> 请求协作。尚无绑定时需要从目标 Codex Desktop 工作区先完成配对。</p>
       <label class="remote-switch" for="nativeDesktopAutoSendExperimental"><input id="nativeDesktopAutoSendExperimental" type="checkbox"><span>实验：Windows Codex Desktop 验证输入框后自动发送</span></label>
-      <p class="hint">默认关闭。仅在唯一 Codex 窗口的输入框完整匹配启动指令，且找到可用的发送按钮时尝试发送。未匹配时仍需手动发送；发送按钮被触发也不代表 Skill 已执行或对话绑定成功。可在下方“保存 Codex 设置”保存后重载插件。本功能不使用独立 CLI 或 app-server。</p>
+      <p class="hint">默认关闭。仅在唯一 Codex 窗口的输入框完整匹配启动指令，且找到可用的发送按钮时尝试发送。若不能自动发送，可通过 chat_session_status 查看 autoSubmit 的具体原因（如输入框不可读、发送按钮禁用）。无法验证时仍需手动发送；按钮被触发也不代表 Skill 已执行或对话绑定成功。可在下方“保存 Codex 设置”保存后重载插件。本功能不使用独立 CLI 或 app-server。</p>
       <details id="advancedCliDiagnostics" class="advanced-cli-diagnostics">
         <summary>高级诊断 · 独立 CLI（非日常 Desktop 协作）</summary>
         <label class="remote-switch" for="nativeCollabCliExperimental"><input id="nativeCollabCliExperimental" type="checkbox"><span>实验：首次使用原生 Codex CLI 自动发送（无需 Desktop 点击发送）</span></label>

@@ -126,7 +126,8 @@ function view(p,s){
       url:s.pending.url,requestedAt:s.pending.requestedAt}:null,
     checkpoint:s.checkpoint||null,stateGeneration:s.generation,
     nativeThreadLinked:Boolean(s.nativeThreadId&&s.linkedRoot===p.root),
-    launch:s.launch?{launchId:s.launch.launchId,taskId:s.launch.taskId,status:s.launch.status,transport:s.launch.transport,requestedAt:s.launch.requestedAt,chatUrl:s.launch.chatUrl}:null,
+    launch:s.launch?{launchId:s.launch.launchId,taskId:s.launch.taskId,status:s.launch.status,transport:s.launch.transport,requestedAt:s.launch.requestedAt,chatUrl:s.launch.chatUrl,
+      failureCategory:s.launch.failureCategory||null}:null,
     browserControl:'not-verified',
     note:'Requesting transfer does not activate it. A native Codex browser must verify the target and activate locally.'};
 }
@@ -247,7 +248,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
         nativeThreadId:matchingThread?s.nativeThreadId:null};
     });
   }
-  function updateLaunch({project,launchId,status}={}){
+  function updateLaunch({project,launchId,status,failureCategory}={}){
     const p=allowed(project),file=filename(p,folder);
     if(!['dispatching','opened_unconfirmed','queued_unconfirmed','dispatch_failed',
           'acknowledged','blocked'].includes(status))fail('Invalid launch status');
@@ -263,8 +264,44 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       };
       if(!transitions[s.launch.status]?.includes(status))fail('Invalid launch status transition');
       s.launch.status=status;
+      if(status==='dispatch_failed'){
+        // Safe enumerated diagnosis; never retain raw stderr, protocol URLs or paths.
+        const permitted=new Set(['launcher-not-found','access-denied','launcher-timeout',
+          'protocol-handler-error','command-failed','invalid-uri','unexpected-error']);
+        s.launch.failureCategory=permitted.has(failureCategory)?failureCategory:'unexpected-error';
+      }else delete s.launch.failureCategory;
       s.launch.updatedAt=new Date().toISOString();
       save(file,s);return view(p,s);
+    });
+  }
+  // A one-time, locally authorized recovery for a confirmed failed dispatch.
+  // Requires all four exact binding identifiers and resets ONLY dispatch_failed;
+  // a request still in-flight, queued, opened or acknowledged is never retried.
+  function recoverLaunch({project,launchId,taskId,chatUrl,confirm}={}){
+    if(confirm!==true&&confirm!=='true')
+      fail('Local launch recovery requires --confirm true');
+    const p=allowed(project),file=filename(p,folder),url=normalizeChatUrl(chatUrl);
+    if(typeof launchId!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(launchId))
+      fail('Expected original launch UUID');
+    const safeTask=taskName(taskId);
+    return locked(file,()=>{
+      const s=load(file),launch=s.launch;
+      if(!launch||launch.launchId!==launchId||launch.taskId!==safeTask||
+         launch.chatUrl!==url||launch.status!=='dispatch_failed')
+        fail('No matching failed launch; recovery refused');
+      if(launch.transport!=='desktop')
+        fail('Only failed native Desktop launch tickets may be recovered');
+      if(s.active&&s.active.url!==url&&
+         !['DONE','BLOCKED'].includes(s.checkpoint?.protocolState))
+        fail('Different active chat is still in progress');
+      // Issue a fresh nonce. Old launch prompts/receipts are invalid after this.
+      launch.launchId=randomUUID();
+      launch.status='prepared';
+      delete launch.failureCategory;
+      launch.requestedAt=new Date().toISOString();
+      launch.recoveredFrom=launchId;
+      save(file,s);
+      return {...view(p,s),recovered:true};
     });
   }
   // Invoked only in the local Skill CLI after a browser-visible workspace check.
@@ -314,7 +351,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       'Use only the verified Magpie workspace connector. Never re-execute completed iterations.'];
     return {project:s.project,active:a,checkpoint:c,handoff:lines.join('\n')};
   }
-  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,linkThread,unlinkThread,findLinkedProject};
+  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,recoverLaunch,linkThread,unlinkThread,findLinkedProject};
 }
 function argsOf(argv){
   const [command,...rest]=argv,opts={};
@@ -334,8 +371,9 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
       command==='checkpoint'?api.checkpoint(opts):
       command==='handoff'?api.handoff(opts):
       command==='link-thread'?api.linkThread(opts):
-      command==='unlink-thread'?api.unlinkThread(opts):null;
-    if(!result)fail('Usage: node chat-session.mjs status|prepare|activate|checkpoint|handoff|link-thread|unlink-thread [--project NAME|auto] [--task-id ID] [--url HTTPS] [--new-task true] [--request-id UUID] [--observed-url HTTPS] [--verified-project NAME] [--thread-id UUID]');
+      command==='unlink-thread'?api.unlinkThread(opts):
+      command==='recover-launch'?api.recoverLaunch(opts):null;
+    if(!result)fail('Usage: node chat-session.mjs status|prepare|activate|checkpoint|handoff|link-thread|unlink-thread|recover-launch [--project NAME|auto] [--task-id ID] [--url HTTPS] [--new-task true] [--request-id UUID] [--observed-url HTTPS] [--verified-project NAME] [--thread-id UUID] [--launch-id UUID] [--chat-url HTTPS] [--confirm true]');
     process.stdout.write(JSON.stringify(result,null,2)+'\n');
   }catch(e){process.stderr.write('Chat handoff: '+e.message+'\n');process.exitCode=1;}
 }

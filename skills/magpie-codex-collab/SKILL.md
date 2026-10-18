@@ -47,6 +47,59 @@ A task ID must be unique, 2-96 safe alphanumeric/dot/underscore/hyphen/colon
 characters. Generate a new task ID for a new task; do not invent an ID for a
 continuing checkpoint.
 
+## First launch initiated from ChatGPT Web (v0.4.9)
+
+ChatGPT may now request a native start via **codex_collab_start** in the
+connected Magpie Local Review MCP. This action is remotely gated by the same
+local Codex enable/write-permission opt-in, and is distinct from
+codex_submit_task (which launches app-server instead of the native Desktop).
+
+ChatGPT's MCP tools cannot read the current conversation URL. NEVER infer a
+URL from the chat title, old binding, or another open browser tab. The user
+must supply the exact current https://chatgpt.com/c/... URL once per new
+conversation. Without it, the tool returns needs_chat_url and does nothing.
+
+With a URL, the MCP tool either:
+- asks Windows to open **Codex Desktop's composer** via codex://threads/new,
+  with a prefilled Skill prompt; the user must press Send ONCE. A successful
+  URI handler request is not proof Codex accepted or executed it; or
+- when a native Codex thread ID was previously verified and registered
+  locally for the SAME project and SAME ChatGPT conversation URL, sends a
+  message via codex queue. Successful queue means STORED, not delivered;
+  do not retry automatically. A sleeping/unloaded thread may require the
+  user to open it in Desktop. Do not fall back to creating a second thread.
+
+When you (native Codex) receive a prompt containing START MODE, TASK_ID,
+LAUNCH_ID and TARGET_CHAT:
+
+1. Read local \`chat-session.mjs status --project "<PROJECT>"\`. Require the
+   \`launch.taskId\`, \`launch.launchId\` and \`launch.chatUrl\` to match all
+   three values in your prompt, and \`launch.status\` to be
+   opened_unconfirmed or queued_unconfirmed. If mismatch STOP (it may be an
+   outdated/duplicate launch).
+2. Use ONE managed IAB tab, open exactly TARGET_CHAT. Ask that ChatGPT chat to
+   call the project list and harmless source read using the intended Magpie
+   MCP connector and reply PROJECT_VERIFIED with the exact project name.
+   Verify it is the browser-observed chat URL, not a guessed chat title.
+3. Run local \`prepare --project ... --task-id ... --url ...\`. If the
+   previous chat task completed/blocked and the launch is a new task, use
+   \`--new-task true\`. Read its requestId. Activate with actual observed URL,
+   requestId and verified project as usual. Do not start coding if the
+   project/URL verification did not pass.
+4. Once active, when native Codex reliably knows ITS OWN thread UUID
+   (\`CODEX_THREAD_ID\`/\`CODEX_SESSION_ID\` or the current supported
+   Codex session view), run:
+   \`node <skill-dir>/chat-session.mjs link-thread --project "<PROJECT>" --task-id "<TASK_ID>" --generation "<GENERATION>" --thread-id "<NATIVE-CODEX-UUID>"\`
+   Do NOT invent the UUID or reuse a different thread. This enables the
+   queue fast path for a future ChatGPT-initiated task. If thread ID is
+   unavailable, skip queue binding; later launches will open a Desktop composer.
+5. Only AFTER pairing, execute the requested goal and run the normal
+   ChatGPT Web PLAN / EXECUTED / REVIEW loop. Mark checkpoints and keep
+   the single managed browser tab.
+
+Never claim an unopened URI composer, a stored queue message or an MCP
+receipt means a task was executed.
+
 ## One-tab workflow
 
 1. Read local state:

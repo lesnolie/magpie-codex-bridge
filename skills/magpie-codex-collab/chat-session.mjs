@@ -130,7 +130,8 @@ function view(p,s){
       failureCategory:s.launch.failureCategory||null,
       failureStage:s.launch.failureStage||null,failureCode:s.launch.failureCode||null,
       exitStatus:s.launch.exitStatus??null,failureKind:s.launch.failureKind||null,
-      recoveredFrom:s.launch.recoveredFrom||null}:null,
+      recoveredFrom:s.launch.recoveredFrom||null,
+      autoSubmit:s.launch.autoSubmit||'disabled'}:null,
     browserControl:'not-verified',
     note:'Requesting transfer does not activate it. A native Codex browser must verify the target and activate locally.'};
 }
@@ -180,6 +181,11 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
     return locked(file,()=>{
       const s=load(file),id=taskId?taskName(taskId):s.active?.taskId;
       if(!id)fail('taskId required for first binding');
+      // Fence off delayed responses from a superseded Desktop prompt.
+      if(!s.active&&s.launch?.transport==='desktop'&&
+         s.launch.taskId!==id&&
+         ['prepared','dispatching','opened_unconfirmed','acknowledged'].includes(s.launch.status))
+        fail('Stale Desktop launch task; cannot bind superseded task');
       if(s.active&&s.active.taskId!==id){
         if(!localNewTask || !['DONE','BLOCKED'].includes(s.checkpoint?.protocolState))
           fail('Different active task; only a completed/blocked task can be replaced locally');
@@ -234,6 +240,9 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
   }
   // Remote invocation may stage a future native Codex start, but cannot
   // activate chat binding. Idempotency prevents duplicate launches on retry.
+  // A different explicit new task may supersede an unbound Desktop ticket
+  // after its safety window; identical requests never auto-retry.
+  const ORPHAN_DESKTOP_TTL_MS = 10 * 60 * 1000;
   function prepareLaunch({project,goal,chatUrl,taskId}={}){
     const p=allowed(project),file=filename(p,folder);
     const normalized=normalizeChatUrl(chatUrl);
@@ -243,9 +252,21 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
     return locked(file,()=>{
       const s=load(file),clean=goal.trim();
       if(s.launch&&['prepared','dispatching','opened_unconfirmed','queued_unconfirmed','dispatch_failed'].includes(s.launch.status)){
-        if(s.launch.chatUrl===normalized&&s.launch.goal===clean&&(!taskId||taskId===s.launch.taskId))
+        const previous=s.launch;
+        const identical=previous.chatUrl===normalized&&previous.goal===clean&&
+          (!taskId||taskId===previous.taskId);
+        if(identical)
           return {...view(p,s),reused:true,localRoot:p.root,nativeThreadId:s.nativeThreadId||null};
-        fail('A different native Codex launch is pending; resolve it locally before starting another');
+        const age=Date.now()-Date.parse(previous.updatedAt||previous.requestedAt);
+        const newTaskIdentity=!taskId||taskId!==previous.taskId;
+        const orphaned=previous.status==='opened_unconfirmed'&&previous.transport==='desktop'&&
+          Number.isFinite(age)&&age>=ORPHAN_DESKTOP_TTL_MS&&newTaskIdentity&&
+          !s.active&&!s.pending&&!s.nativeThreadId;
+        if(!orphaned)
+          fail('A different native Codex launch is pending; resolve it locally before starting another');
+        // Preserve only safe metadata about the superseded ticket.
+        s.lastSupersededLaunch={launchId:previous.launchId,taskId:previous.taskId,
+          at:new Date().toISOString(),reason:'unbound-desktop-timeout'};
       }
       if(s.active&&s.active.url!==normalized&&s.checkpoint?.protocolState!=='DONE'&&
          s.checkpoint?.protocolState!=='BLOCKED')
@@ -302,6 +323,19 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       }
       s.launch.updatedAt=new Date().toISOString();
       save(file,s);return view(p,s);
+    });
+  }
+  function recordAutoSubmit({project,launchId,result}={}){
+    const p=allowed(project),record=filename(p,folder);
+    const allowedResults=new Set(['disabled','not-verified','invoked-unconfirmed','unsupported-platform']);
+    if(!allowedResults.has(result))fail('Invalid Desktop submit result');
+    return locked(record,()=>{
+      const s=load(record);
+      if(s.launch?.launchId!==launchId||s.launch.status!=='opened_unconfirmed')
+        fail('Auto-submit receipt no longer matches a current Desktop launch');
+      s.launch.autoSubmit=result;
+      s.launch.updatedAt=new Date().toISOString();
+      save(record,s);return view(p,s);
     });
   }
   // A one-time, locally authorized recovery for a confirmed failed dispatch.
@@ -383,7 +417,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       'Use only the verified Magpie workspace connector. Never re-execute completed iterations.'];
     return {project:s.project,active:a,checkpoint:c,handoff:lines.join('\n')};
   }
-  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,recoverLaunch,linkThread,unlinkThread,findLinkedProject,inspectLaunch};
+  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,recordAutoSubmit,recoverLaunch,linkThread,unlinkThread,findLinkedProject,inspectLaunch};
 }
 function argsOf(argv){
   const [command,...rest]=argv,opts={};

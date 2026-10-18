@@ -20,6 +20,10 @@ export function categorizeDesktopLaunchFailure(error){
   const code=String(error?.code??'').toUpperCase();
   const stderr=typeof error?.stderr==='string'?error.stderr.slice(0,2500):'';
   if(code==='ENOENT')return 'launcher-not-found';
+  if(code==='DESKTOP_URL_TOO_LONG')return 'url-too-long';
+  if(code==='DESKTOP_BAD_ROOT')return 'invalid-project-root';
+  if(code==='DESKTOP_BAD_PROMPT')return 'invalid-prompt';
+  if(code==='DESKTOP_URI_ENCODING_FAILED')return 'uri-construction-error';
   if(code==='E2BIG'||code==='ENAMETOOLONG')return 'launcher-argument-too-long';
   if(code==='ERR_CHILD_PROCESS_STDIO_MAXBUFFER')return 'launcher-output-overflow';
   if(['EACCES','EPERM'].includes(code))return 'access-denied';
@@ -44,7 +48,8 @@ function response(ticket,status,extra={}){
 /** Safe, fixed-schema launcher diagnostic; no raw shell output or process args. */
 export function safeDesktopFailureDetails(error,stage='windows-launcher'){
   const allowedCodes=new Set(['ENOENT','EACCES','EPERM','ETIMEDOUT','E2BIG',
-    'ENAMETOOLONG','ERR_CHILD_PROCESS_STDIO_MAXBUFFER','ERR_CHILD_PROCESS_FAILED']);
+    'ENAMETOOLONG','ERR_CHILD_PROCESS_STDIO_MAXBUFFER','ERR_CHILD_PROCESS_FAILED',
+    'DESKTOP_URL_TOO_LONG','DESKTOP_BAD_ROOT','DESKTOP_BAD_PROMPT','DESKTOP_URI_ENCODING_FAILED']);
   const raw=String(error?.code??'').toUpperCase();
   const failureCode=allowedCodes.has(raw)?raw:(/^\d{1,3}$/.test(raw)?raw:null);
   const exitStatus=Number.isInteger(error?.code)&&error.code>=0&&error.code<=255
@@ -84,13 +89,47 @@ export function desktopPrompt({project,goal,chatUrl,taskId,launchId,mode='deskto
   ];
   return instructions.join('\n');
 }
+const MAX_DESKTOP_URI_LENGTH=8500;
+function codedUriError(code){
+  const error=new Error('Native Desktop URI validation failed');
+  error.code=code;
+  return error;
+}
+function buildDesktopUri(projectRoot,prompt){
+  if(typeof projectRoot!=='string'||!projectRoot)
+    throw codedUriError('DESKTOP_BAD_ROOT');
+  if(typeof prompt!=='string'||!prompt)
+    throw codedUriError('DESKTOP_BAD_PROMPT');
+  try{
+    const u=new URL('codex://threads/new');
+    u.searchParams.set('path',projectRoot);
+    u.searchParams.set('prompt',prompt);
+    return u.toString();
+  }catch{
+    // Never preserve an exception possibly containing a private encoded URL.
+    throw codedUriError('DESKTOP_URI_ENCODING_FAILED');
+  }
+}
+/** Read-only, privacy-safe preview of the EXACT URI builder used at dispatch.
+ * No URL, project directory, goal, prompt, or URL fragments are returned.
+ */
+export function describeDesktopUri(projectRoot,prompt){
+  const base={limit:MAX_DESKTOP_URI_LENGTH,
+    rootLength:typeof projectRoot==='string'?projectRoot.length:null,
+    promptLength:typeof prompt==='string'?prompt.length:null};
+  try{
+    const uri=buildDesktopUri(projectRoot,prompt);
+    return {...base,valid:uri.length<=MAX_DESKTOP_URI_LENGTH,
+      reason:uri.length>MAX_DESKTOP_URI_LENGTH?'url-too-long':'ready',
+      uriLength:uri.length};
+  }catch(error){
+    return {...base,valid:false,reason:categorizeDesktopLaunchFailure(error),uriLength:null};
+  }
+}
 export function desktopUrl(projectRoot,prompt){
-  if(typeof projectRoot!=='string'||!projectRoot||typeof prompt!=='string')fail('Invalid native Codex launch');
-  const u=new URL('codex://threads/new');
-  u.searchParams.set('path',projectRoot);
-  u.searchParams.set('prompt',prompt);
-  if(u.toString().length>8500)fail('Desktop deep link exceeds safe length');
-  return u.toString();
+  const uri=buildDesktopUri(projectRoot,prompt);
+  if(uri.length>MAX_DESKTOP_URI_LENGTH)throw codedUriError('DESKTOP_URL_TOO_LONG');
+  return uri;
 }
 // Windows uses the already registered codex:// URI handler. Windows may open
 // only the prompt composer, not submit it. Shell=false and no string interpolation
@@ -203,6 +242,18 @@ export function createNativeCollab(options={},dependencies={}){
   const bin=dependencies.binary||(()=>resolveCodexBinary(options));
   const cli=dependencies.launchCli||launchNativeCli;
 
+  function diagnose({project}={}){
+    // Never export the launch source fields to MCP; the inspector callback
+    // returns ONLY safe lengths and allowlisted reason labels.
+    return chat.inspectLaunch(project,({project:registered,root,launch})=>{
+      if(launch.transport!=='desktop')
+        return {transport:launch.transport,valid:null,reason:'not-desktop'};
+      const prompt=desktopPrompt({project:registered,goal:launch.goal,
+        chatUrl:launch.chatUrl,taskId:launch.taskId,launchId:launch.launchId});
+      return {transport:'desktop',...describeDesktopUri(root,prompt)};
+    });
+  }
+
   async function start({project,goal,chatUrl,taskId,retryFailed=false,failedLaunchId}={}){
     if(options.codexEnabled!==true)fail('Native Codex remote startup requires local Codex permission to be enabled in Magpie');
     if(resolveCodexPermissionMode(options)==='read-only')
@@ -294,5 +345,5 @@ export function createNativeCollab(options={},dependencies={}){
       });
     }
   }
-  return {start};
+  return {start,diagnose};
 }

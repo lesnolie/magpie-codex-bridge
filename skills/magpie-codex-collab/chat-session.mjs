@@ -163,6 +163,18 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
     return matches[0]||null;
   }
   function status(project){const p=allowed(project);return view(p,load(filename(p,folder)));}
+  /** Local code callback only. Sensitive goal and path must never be included
+   * in a directly serialized MCP result. This is a read-only snapshot.
+   */
+  function inspectLaunch(project,inspector){
+    if(typeof inspector!=='function')fail('Local launch inspector required');
+    const p=allowed(project),s=load(filename(p,folder)),launch=s.launch;
+    if(!launch)return null;
+    return inspector({project:p.name,root:p.root,launch:{
+      transport:launch.transport,goal:launch.goal,chatUrl:launch.chatUrl,
+      taskId:launch.taskId,launchId:launch.launchId,status:launch.status
+    }});
+  }
   function request({project,taskId,url,reason}={},localNewTask=false){
     const p=allowed(project),file=filename(p,folder);
     return locked(file,()=>{
@@ -271,11 +283,14 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
         // Safe enumerated diagnosis; never retain raw stderr, protocol URLs or paths.
         const permitted=new Set(['launcher-not-found','access-denied','launcher-timeout',
           'protocol-handler-error','command-failed','invalid-uri','unexpected-error',
-          'launcher-argument-too-long','launcher-output-overflow']);
+          'launcher-argument-too-long','launcher-output-overflow','url-too-long',
+          'invalid-project-root','invalid-prompt','uri-construction-error']);
         s.launch.failureCategory=permitted.has(failureCategory)?failureCategory:'unexpected-error';
         s.launch.failureStage=['building-uri','windows-launcher'].includes(failureStage)?failureStage:null;
         const codes=new Set(['ENOENT','EACCES','EPERM','ETIMEDOUT','E2BIG','ENAMETOOLONG',
-          'ERR_CHILD_PROCESS_STDIO_MAXBUFFER','ERR_CHILD_PROCESS_FAILED']);
+          'ERR_CHILD_PROCESS_STDIO_MAXBUFFER','ERR_CHILD_PROCESS_FAILED',
+          'DESKTOP_URL_TOO_LONG','DESKTOP_BAD_ROOT','DESKTOP_BAD_PROMPT',
+          'DESKTOP_URI_ENCODING_FAILED']);
         s.launch.failureCode=(typeof failureCode==='string'&&
           (codes.has(failureCode)||/^\d{1,3}$/.test(failureCode)))?failureCode:null;
         s.launch.exitStatus=(Number.isInteger(exitStatus)&&exitStatus>=0&&exitStatus<=255)?exitStatus:null;
@@ -368,7 +383,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       'Use only the verified Magpie workspace connector. Never re-execute completed iterations.'];
     return {project:s.project,active:a,checkpoint:c,handoff:lines.join('\n')};
   }
-  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,recoverLaunch,linkThread,unlinkThread,findLinkedProject};
+  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,recoverLaunch,linkThread,unlinkThread,findLinkedProject,inspectLaunch};
 }
 function argsOf(argv){
   const [command,...rest]=argv,opts={};

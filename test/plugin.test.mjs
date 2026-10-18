@@ -104,7 +104,7 @@ test('Magpie MCP tools still register without granting Codex execution', async (
   assert.equal(result.ok,false);
   assert.match(result.error,/Codex is disabled/);
   const listing=JSON.parse(await plugin.tool.projects.execute({}));
-  assert.equal(listing.codex.integrationVersion,'0.4.21-alpha.1');
+  assert.equal(listing.codex.integrationVersion,'0.4.22-alpha.1');
   assert.equal(listing.codex.toolCount,17);
   assert.equal(listing.codex.allowWrites,false);
   assert.equal(listing.projects[0].name,'TMN');

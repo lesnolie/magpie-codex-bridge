@@ -47,11 +47,6 @@ export async function dispatchPendingDesktop({
   }
 }
 
-if(process.argv[1]&&path.resolve(process.argv[1])===new URL(import.meta.url).pathname.replace(/^\/(\w:)/,'$1').replaceAll('/','\\')){
-  // On Windows convert file: URL to the OS path via fileURLToPath in the
-  // final check below; do not attempt to infer arguments from stdin.
-}
-
 import {fileURLToPath} from 'node:url';
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   const [project,launchId,...extra]=process.argv.slice(2);

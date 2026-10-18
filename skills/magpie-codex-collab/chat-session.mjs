@@ -142,6 +142,10 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       if(q.baseGeneration!==s.generation)fail('Stale transfer; prepare again');
       if(q.url&&q.url!==url)fail('Browser-observed chat URL differs from requested chat');
       const old=s.active?.url||null;
+      // A new conversation or fresh Desktop composer may create a new Codex
+      // thread. Never keep a stale thread ID that would queue to the wrong agent.
+      if(old!==url || (s.launch?.taskId===q.taskId && s.launch.transport==='desktop'))
+        s.nativeThreadId=null;
       s.generation+=1;s.active={url,taskId:q.taskId,generation:s.generation,
         activatedAt:new Date().toISOString()};
       s.pending=null;
@@ -177,7 +181,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       fail('Goal must contain 1-1200 safe characters');
     return locked(file,()=>{
       const s=load(file),clean=goal.trim();
-      if(s.launch&&['prepared','dispatching','opened_unconfirmed','queued_unconfirmed'].includes(s.launch.status)){
+      if(s.launch&&['prepared','dispatching','opened_unconfirmed','queued_unconfirmed','dispatch_failed'].includes(s.launch.status)){
         if(s.launch.chatUrl===normalized&&s.launch.goal===clean&&(!taskId||taskId===s.launch.taskId))
           return {...view(p,s),reused:true,localRoot:p.root,nativeThreadId:s.nativeThreadId||null};
         fail('A different native Codex launch is pending; resolve it locally before starting another');

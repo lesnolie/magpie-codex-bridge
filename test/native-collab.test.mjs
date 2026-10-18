@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createChatSessions } from '../skills/magpie-codex-collab/chat-session.mjs';
-import { createNativeCollab, desktopUrl, desktopPrompt, openCodexDesktop, queueToNativeThread } from '../src/native-collab.mjs';
+import { createNativeCollab, desktopUrl, desktopPrompt, openCodexDesktop, queueToNativeThread, launchNativeCli } from '../src/native-collab.mjs';
 
 const base=mkdtempSync(path.join(tmpdir(),'native-collab-'));
 const root=path.join(base,'project');mkdirSync(root);
@@ -157,6 +157,20 @@ test('new ChatGPT conversation invalidates a previous queue-linked Codex thread'
 
 test.after(()=>rmSync(base,{recursive:true,force:true}));
 
+
+test('codex exec read-only launch uses config approval_policy, not unsupported approval flag',async()=>{
+  let binary,args,config;
+  await launchNativeCli({binary:'C:/native/codex.exe',root,prompt:'Readonly test',
+    sandbox:'read-only',approval:'never',
+    run:async(b,a,c)=>{binary=b;args=a;config=c;return {stdout:''};}
+  });
+  assert.equal(binary,'C:/native/codex.exe');
+  assert.deepEqual(args.slice(0,5),['exec','--cd',root,'--sandbox','read-only']);
+  assert.ok(args.includes('approval_policy="never"'));
+  assert.ok(!args.includes('--ask-for-approval'));
+  assert.equal(config.shell,false);
+  assert.equal(config.cwd,root);
+});
 
 test('experimental CLI executes native Codex with no Desktop Send or app-server',async()=>{
  const store=createChatSessions({projectRoots:projects,folder:path.join(base,'cli-test')});

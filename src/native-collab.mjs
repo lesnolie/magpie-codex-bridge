@@ -79,13 +79,15 @@ export async function launchNativeCli({binary,root,prompt,sandbox='workspace-wri
   if(!['read-only','workspace-write'].includes(sandbox))fail('Invalid CLI sandbox');
   if(approval!==null&&approval!=='never')fail('Invalid CLI approval policy');
   const args=['exec','--cd',root,'--sandbox',sandbox];
-  if(approval==='never')args.push('--ask-for-approval','never');
+  // Codex exec supports --config; the interactive-only --ask-for-approval
+  // flag is not consistently accepted by exec on installed versions.
+  if(approval==='never')args.push('--config','approval_policy="never"');
   args.push('--',prompt);
   // stdout may contain secrets or model-generated claims. Never forward it to
   // a remote MCP result or sandbox page; local diagnostics inspect only markers.
   return run(binary,args,{
     shell:false,windowsHide:true,timeout:Math.min(180000,Math.max(1000,timeout)),
-    maxBuffer:64*1024,env:{...process.env,MAGPIE_NATIVE_COLLAB_EXPERIMENT:'1'}
+    maxBuffer:64*1024,cwd:root,env:{...process.env,MAGPIE_NATIVE_COLLAB_EXPERIMENT:'1'}
   });
 }
 

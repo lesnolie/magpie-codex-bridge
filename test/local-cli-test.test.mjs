@@ -26,6 +26,20 @@ function fakeSpawner(calls){
   };
 }
 function readState(name){return JSON.parse(readFileSync(path.join(dir(name),'native-cli-test.json'),'utf8'));}
+function fakeSession(active=null){
+  let launch=null;
+  return {
+    prepareLaunch:({taskId,chatUrl})=>{
+      launch={launchId:randomUUID(),taskId,chatUrl,status:'prepared'};
+      return {launch,reused:false};
+    },
+    updateLaunch:({launchId,status})=>{
+      assert.equal(launchId,launch.launchId);
+      launch.status=status;
+    },
+    status:()=>({active,launch})
+  };
+}
 const config=(name,spawns,extra={})=>({
   dir:dir(name),target:target(name),roots:projects,platform:'win32',
   getNode:async()=>'/fake/node.exe',spawnWorker:fakeSpawner(spawns),...extra
@@ -74,7 +88,7 @@ test('runner enforces read-only / no approvals and does not equate exit 0 with c
   await runLocalCliTestWorker(dir('exit'),req.id,{
     roots:projects,target:target('exit'),binary:()=>'/fake/codex.exe',
     cli:async params=>{calls.push(params);return {stdout:'All done'};},
-    sessions:()=>({status:()=>({active:null})})
+    sessions:()=>fakeSession(null)
   });
   assert.equal(calls.length,1);
   assert.equal(calls[0].sandbox,'read-only');
@@ -92,9 +106,7 @@ test('verified chat requires matching test task ID AND exact URL',async()=>{
   await startLocalCliTest({...opts,nativeCliLocalTestRequest:req},config('verified',spawns));
   await runLocalCliTestWorker(dir('verified'),req.id,{
     roots:projects,target:target('verified'),binary:()=>'/fake/codex.exe',
-    cli:async()=>({stdout:''}),sessions:()=>({status:()=>({
-      active:{url,taskId:'localtest-'+req.id}
-    })})
+    cli:async()=>({stdout:''}),sessions:()=>fakeSession({url,taskId:'localtest-'+req.id})
   });
   assert.equal(readState('verified').status,'chat_verified');
 });
@@ -105,7 +117,7 @@ test('browser unavailable self-report does not masquerade as verified',async()=>
   await runLocalCliTestWorker(dir('browser'),req.id,{
     roots:projects,target:target('browser'),binary:()=>'/fake/codex.exe',
     cli:async()=>({stdout:'MAGPIE_BROWSER_UNAVAILABLE'}),
-    sessions:()=>({status:()=>({active:null})})
+    sessions:()=>fakeSession(null)
   });
   assert.equal(readState('browser').status,'browser_unavailable_reported');
 });
@@ -120,7 +132,8 @@ test('CLI failure returns redacted category and exit code, timeout distinct',asy
     await startLocalCliTest({...opts,nativeCliLocalTestRequest:req},config(name,spawns));
     await runLocalCliTestWorker(dir(name),req.id,{
       roots:projects,target:target(name),binary:()=>'/fake/codex.exe',
-      cli:async()=>{throw Object.assign(new Error('unsafe path'),{code,stderr});}
+      cli:async()=>{throw Object.assign(new Error('unsafe path'),{code,stderr});},
+      sessions:()=>fakeSession(null)
     });
     const result=readState(name);
     assert.equal(result.status,status);
@@ -129,5 +142,40 @@ test('CLI failure returns redacted category and exit code, timeout distinct',asy
     assert.ok(!readFileSync(target(name),'utf8').includes('MY_SUPER_SECRET_TOKEN'));
     assert.ok(!JSON.stringify(result).includes('unsafe path'));
   }
+});
+test('diagnostic worker forwards only the locally saved codexExecutable',async()=>{
+  const req=request(),spawns=[];
+  const explicit='C:/Tools/Native/codex.exe';
+  await startLocalCliTest({...opts,codexExecutable:explicit,nativeCliLocalTestRequest:{
+    ...req,codexExecutable:'C:/Attacker/other.exe'
+  }},config('explicit',spawns));
+  let passed,selected;
+  await runLocalCliTestWorker(dir('explicit'),req.id,{
+    roots:projects,target:target('explicit'),
+    sessions:()=>fakeSession(null),
+    binary:settings=>{passed=settings;return settings.codexExecutable;},
+    cli:async args=>{selected=args;return {stdout:'not verified'};}
+  });
+  assert.equal(passed.codexExecutable,explicit);
+  assert.equal(selected.binary,explicit);
+  assert.equal(readState('explicit').status,'cli_exited_unverified');
+});
+test('valid local session ticket is present before CLI sees START MODE prompt',async()=>{
+  const req=request(),spawns=[],session=fakeSession(null);
+  await startLocalCliTest({...opts,nativeCliLocalTestRequest:req},config('ticket',spawns));
+  let saw=false;
+  await runLocalCliTestWorker(dir('ticket'),req.id,{
+    roots:projects,target:target('ticket'),sessions:()=>session,
+    binary:()=>'/fake/native.exe',
+    cli:async ({prompt})=>{
+      const current=session.status().launch;
+      saw=current.status==='opened_unconfirmed' &&
+        prompt.includes('LAUNCH_ID: '+current.launchId)&&
+        prompt.includes('TASK_ID: '+current.taskId);
+      return {stdout:'unverified'};
+    }
+  });
+  assert.equal(saw,true);
+  assert.equal(session.status().launch.status,'blocked');
 });
 test.after(()=>rmSync(base,{recursive:true,force:true}));

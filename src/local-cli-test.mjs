@@ -30,7 +30,11 @@ export function localTestFolder(env=process.env){
 }
 function errorCategory(error){
   if(error?.killed||error?.code==='ETIMEDOUT')return 'timeout';
-  if(error?.code==='ENOENT')return 'codex-not-found';
+  if(error?.code==='CODEX_BINARY_NOT_FOUND')return 'codex-not-found';
+  if(error?.code==='CODEX_BINARY_INVALID')return 'invalid-executable-path';
+  // A verified native path can still produce ENOENT at spawn (e.g. cwd or
+  // loader issues). This does not prove Codex itself was not installed.
+  if(error?.code==='ENOENT')return 'cli-spawn-failed';
   if(error?.code==='EACCES'||error?.code==='EPERM')return 'access-denied';
   const classified=classifyCodexStderr(error?.stderr||'');
   if(classified?.includes('arguments incompatible'))return 'cli-arguments-incompatible';
@@ -54,7 +58,8 @@ function cleanRequest(input,roots){
   if(!project||!path.isAbsolute(project.root)||!existsSync(project.root))
     throw Error('Project is not registered in Codex Desktop');
   return {id:input.id,project:project.name,root:project.root,chatUrl:normalizeChatUrl(input.chatUrl),
-    createdAt:input.createdAt};
+    createdAt:input.createdAt,
+    codexExecutable:typeof input.codexExecutable==='string'?input.codexExecutable:undefined};
 }
 async function jsonFile(file){
   try{return JSON.parse(await readFile(file,'utf8'));}
@@ -161,7 +166,11 @@ export async function startLocalCliTest(options={},{
   try{
     // Keep request PRIVATE; only the trusted worker reads it from this folder.
     await atomicJson(path.join(dir,REQUEST),{id:selected.id,project:selected.project,
-      chatUrl:selected.chatUrl,createdAt:request.createdAt});
+      chatUrl:selected.chatUrl,createdAt:request.createdAt,
+      // Only locally saved plugin configuration is copied to the private worker
+      // request. Never accept an executable path from the one-time UI nonce.
+      codexExecutable:typeof options.codexExecutable==='string'
+        ? options.codexExecutable:undefined});
     await atomicJson(path.join(dir,STATE),state);
     await publish(dir,listed,target).catch(()=>{});
     const node=await getNode();
@@ -194,34 +203,61 @@ export async function runLocalCliTestWorker(dir,id,{
   const project=cleanRequest(req,roots());
   if(project.id!==id)throw Error('Test request mismatch');
   const taskId='localtest-'+id;
+  const state={id,project:project.project,status:'running',startedAt:new Date().toISOString()};
+  let chat;
+  let launchId;
+  try{
+    chat=sessions();
+    const ticket=chat.prepareLaunch({
+      project:project.project,taskId,chatUrl:project.chatUrl,
+      goal:'Local read-only native Codex CLI diagnostic and verified ChatGPT binding'
+    });
+    if(ticket.reused)throw Error('Existing launch receipt cannot be reused for a new diagnostic');
+    launchId=ticket.launch.launchId;
+    chat.updateLaunch({project:project.project,launchId,status:'dispatching'});
+    // Skill START MODE reads this exact receipt at the moment CLI starts.
+    chat.updateLaunch({project:project.project,launchId,status:'opened_unconfirmed'});
+  }catch{
+    await atomicJson(path.join(dir,STATE),{...state,status:'session_conflict',
+      category:'session-conflict',finishedAt:new Date().toISOString()});
+    await rm(path.join(dir,REQUEST),{force:true}).catch(()=>{});
+    await release(dir,id);
+    await publish(dir,roots(),target).catch(()=>{});
+    return;
+  }
   const prompt=desktopPrompt({
-    project:project.project,chatUrl:project.chatUrl,taskId,launchId:id,
+    project:project.project,chatUrl:project.chatUrl,taskId,launchId,
     goal:'READ-ONLY diagnostic of Codex CLI and the installed magpie-codex-collab Skill. '+
       'Read project metadata only. Do NOT edit or generate project files, run builds, commit, publish, or create a PR. '+
       'Try the official Codex in-app browser to verify the EXACT target chat through Magpie MCP; '+
       'only then prepare/activate the chat binding locally. If the browser tool is unavailable, '+
       'report MAGPIE_BROWSER_UNAVAILABLE and do not claim a binding.'
   });
-  const state={id,project:project.project,status:'running',startedAt:new Date().toISOString()};
   try{
-    const result=await cli({binary:binary(),root:project.root,prompt,sandbox:'read-only',
+    const result=await cli({binary:binary({codexExecutable:project.codexExecutable}),
+      root:project.root,prompt,sandbox:'read-only',
       approval:'never',timeout:TIMEOUT});
     // The local Skill is authoritative for the chat session. CLI's exit code
     // or its LLM-produced text alone never constitutes binding proof.
     let verified=false;
     try{
-      const active=sessions().status(project.project).active;
+      const active=chat.status(project.project).active;
       verified=active?.taskId===taskId&&active?.url===project.chatUrl;
     }catch{}
     let reportedUnavailable=false;
     // Self-report is diagnostic only, not verification of the browser.
     if(typeof result?.stdout==='string')
       reportedUnavailable=result.stdout.includes('MAGPIE_BROWSER_UNAVAILABLE');
+    // A successful CLI exit is never browser verification. Close unverified
+    // launch receipts so an ordinary future startup cannot reuse a stale task.
+    try{chat.updateLaunch({project:project.project,launchId,
+      status:verified?'acknowledged':'blocked'});}catch{}
     await atomicJson(path.join(dir,STATE),{...state,
       status:verified?'chat_verified':reportedUnavailable?'browser_unavailable_reported':'cli_exited_unverified',
       category:verified?null:reportedUnavailable?'browser-unavailable-self-report':'browser-unverified',
       exitCode:0,finishedAt:new Date().toISOString()});
   }catch(e){
+    try{chat.updateLaunch({project:project.project,launchId,status:'blocked'});}catch{}
     await atomicJson(path.join(dir,STATE),{...state,
       status:errorCategory(e)==='timeout'?'timed_out':'cli_failed',
       category:errorCategory(e),exitCode:Number.isInteger(e?.code)?e.code:null,

@@ -59,6 +59,29 @@ export function nativeCodexProjectRoots(){
   }
   return roots;
 }
+/**
+ * Resolve the ONLY Codex Desktop registered workspace containing the native
+ * Codex process' current directory. Never guess by a project label, another
+ * conversation's state, or an arbitrary user-supplied path.
+ */
+export function resolveCurrentProject(roots,workspace=process.cwd()){
+  if(typeof workspace!=='string'||!path.isAbsolute(workspace))return null;
+  let actual;
+  try{
+    actual=fs.realpathSync(workspace);
+    if(!fs.statSync(actual).isDirectory())return null;
+  }catch{return null;}
+  const matches=roots.filter(p=>{
+    if(p?.source!=='codex'||typeof p.root!=='string'||!path.isAbsolute(p.root))return false;
+    let root;
+    try{root=fs.realpathSync(p.root);}catch{return false;}
+    const relative=path.relative(root,actual);
+    return relative==='' || (relative!=='..'&&!relative.startsWith('..'+path.sep)&&!path.isAbsolute(relative));
+  }).sort((a,b)=>b.root.length-a.root.length);
+  if(matches.length>1&&matches[0].root.length===matches[1].root.length)
+    fail('Ambiguous Codex workspace; select a unique registered workspace');
+  return matches[0]||null;
+}
 function filename(p,folder){
   return path.join(folder,createHash('sha256').update(p.root).digest('hex').slice(0,40)+'.json');
 }
@@ -102,16 +125,38 @@ function view(p,s){
     pending:s.pending?{requestId:s.pending.requestId,taskId:s.pending.taskId,
       url:s.pending.url,requestedAt:s.pending.requestedAt}:null,
     checkpoint:s.checkpoint||null,stateGeneration:s.generation,
-    nativeThreadLinked:Boolean(s.nativeThreadId),
+    nativeThreadLinked:Boolean(s.nativeThreadId&&s.linkedRoot===p.root),
     launch:s.launch?{launchId:s.launch.launchId,taskId:s.launch.taskId,status:s.launch.status,transport:s.launch.transport,requestedAt:s.launch.requestedAt,chatUrl:s.launch.chatUrl}:null,
     browserControl:'not-verified',
     note:'Requesting transfer does not activate it. A native Codex browser must verify the target and activate locally.'};
 }
-export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=sessionFolder()}={}){
-  function allowed(name){
-    const p=typeof name==='string'?projectRoots().find(x=>x.name===name&&x.source==='codex'):null;
-    if(!p||!path.isAbsolute(p.root))fail('Project is not registered in Codex Desktop');
+export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=sessionFolder(),
+  currentWorkspace=()=>process.cwd()}={}){
+  function allowed(name,requireLocalWorkspace=false){
+    const projects=projectRoots();
+    const workspace=resolveCurrentProject(projects,currentWorkspace());
+    const automatic=name===undefined||name===null||name===''||name==='auto';
+    const p=automatic?workspace:projects.find(x=>x.name===name&&x.source==='codex');
+    if(!p||!path.isAbsolute(p.root))
+      fail(automatic?'No unique Codex Desktop project matches the current workspace':
+        'Project is not registered in Codex Desktop');
+    if(requireLocalWorkspace&&(!workspace||workspace.root!==p.root))
+      fail('Codex workspace mismatch; cannot bind another project from this Desktop session');
     return p;
+  }
+  // Remote callers cannot inspect the active Codex Desktop window. Resolve
+  // automatically only when an exact ChatGPT URL has ONE locally verified,
+  // workspace-pinned native thread; otherwise require Desktop initiation.
+  function findLinkedProject({chatUrl}={}){
+    const url=normalizeChatUrl(chatUrl),matches=[];
+    for(const p of projectRoots()){
+      if(p?.source!=='codex'||!path.isAbsolute(p.root))continue;
+      const s=load(filename(p,folder));
+      if(s.active?.url===url&&s.nativeThreadId&&s.linkedRoot===p.root)
+        matches.push(p.name);
+    }
+    if(matches.length>1)fail('Multiple native Codex workspaces are bound to this chat; project confirmation required');
+    return matches[0]||null;
   }
   function status(project){const p=allowed(project);return view(p,load(filename(p,folder)));}
   function request({project,taskId,url,reason}={},localNewTask=false){
@@ -132,7 +177,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
     });
   }
   function activate({project,requestId,observedUrl,verifiedProject}={}){
-    const p=allowed(project),file=filename(p,folder);
+    const p=allowed(project,true),file=filename(p,folder);
     if(verifiedProject!==p.name)fail('Native Codex must verify connected MCP project name');
     if(typeof requestId!=='string'|| !/^[a-f0-9-]{36}$/i.test(requestId))fail('Invalid requestId');
     const url=normalizeChatUrl(observedUrl);
@@ -145,7 +190,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       // A new conversation or fresh Desktop composer may create a new Codex
       // thread. Never keep a stale thread ID that would queue to the wrong agent.
       if(old!==url || (s.launch?.taskId===q.taskId && s.launch.transport==='desktop'))
-        s.nativeThreadId=null;
+        {s.nativeThreadId=null;s.linkedRoot=null;}
       s.generation+=1;s.active={url,taskId:q.taskId,generation:s.generation,
         activatedAt:new Date().toISOString()};
       s.pending=null;
@@ -192,7 +237,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       if(s.active&&s.checkpoint&& !['DONE','BLOCKED'].includes(s.checkpoint.protocolState))
         fail('A different task is already active; finish or block it before starting again');
       const id=taskId?taskName(taskId):'native-'+randomUUID();
-      const matchingThread=Boolean(s.nativeThreadId&&s.active?.url===normalized);
+      const matchingThread=Boolean(s.nativeThreadId&&s.linkedRoot===p.root&&s.active?.url===normalized);
       s.launch={launchId:randomUUID(),taskId:id,goal:clean,chatUrl:normalized,
         status:'prepared',transport:matchingThread?'queue':'desktop',
         requestedAt:new Date().toISOString()};
@@ -224,7 +269,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
   }
   // Invoked only in the local Skill CLI after a browser-visible workspace check.
   function linkThread({project,taskId,generation,threadId}={}){
-    const p=allowed(project),file=filename(p,folder);
+    const p=allowed(project,true),file=filename(p,folder);
     if(typeof threadId!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(threadId))
       fail('Native Codex thread UUID required');
     return locked(file,()=>{
@@ -232,9 +277,27 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       if(!s.active||s.active.taskId!==taskName(taskId)||
          s.active.generation!==Number(generation))fail('Stale chat or task binding');
       s.nativeThreadId=threadId;
+      s.linkedRoot=p.root;
       if(s.launch?.taskId===taskId&&['opened_unconfirmed','queued_unconfirmed'].includes(s.launch.status))
         s.launch.status='acknowledged';
       save(file,s);return view(p,s);
+    });
+  }
+  // Repair a mistaken legacy association without editing project source or
+  // changing the verified chat. Requires the exact registered UUID as proof
+  // of which association the user intends to clear.
+  function unlinkThread({project,threadId}={}){
+    const p=allowed(project),file=filename(p,folder);
+    if(typeof threadId!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(threadId))
+      fail('Expected native Codex thread UUID required');
+    return locked(file,()=>{
+      const s=load(file);
+      if(s.nativeThreadId!==threadId)fail('Thread ID mismatch; cannot clear another association');
+      delete s.nativeThreadId;
+      delete s.linkedRoot;
+      // Do not change active chat or any queued launch receipt.
+      save(file,s);
+      return {...view(p,s),unlinked:true};
     });
   }
   function handoff({project,taskId}={}){
@@ -251,7 +314,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       'Use only the verified Magpie workspace connector. Never re-execute completed iterations.'];
     return {project:s.project,active:a,checkpoint:c,handoff:lines.join('\n')};
   }
-  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,linkThread};
+  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,linkThread,unlinkThread,findLinkedProject};
 }
 function argsOf(argv){
   const [command,...rest]=argv,opts={};
@@ -270,8 +333,9 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
       command==='activate'?api.activate(opts):
       command==='checkpoint'?api.checkpoint(opts):
       command==='handoff'?api.handoff(opts):
-      command==='link-thread'?api.linkThread(opts):null;
-    if(!result)fail('Usage: node chat-session.mjs status|prepare|activate|checkpoint|handoff|link-thread --project NAME [--task-id ID] [--url HTTPS] [--new-task true] [--request-id UUID] [--observed-url HTTPS] [--verified-project NAME]');
+      command==='link-thread'?api.linkThread(opts):
+      command==='unlink-thread'?api.unlinkThread(opts):null;
+    if(!result)fail('Usage: node chat-session.mjs status|prepare|activate|checkpoint|handoff|link-thread|unlink-thread [--project NAME|auto] [--task-id ID] [--url HTTPS] [--new-task true] [--request-id UUID] [--observed-url HTTPS] [--verified-project NAME] [--thread-id UUID]');
     process.stdout.write(JSON.stringify(result,null,2)+'\n');
   }catch(e){process.stderr.write('Chat handoff: '+e.message+'\n');process.exitCode=1;}
 }

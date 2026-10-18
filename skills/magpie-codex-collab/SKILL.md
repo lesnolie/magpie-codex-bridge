@@ -34,9 +34,42 @@ running node. Node 20+ is required. This file has no external dependencies,
 network requests, or browser automation. It uses the same per-user session
 directory as the Magpie plugin, not any project files.
 
+## Automatic project selection from native Desktop
+
+**Do not ask the user to select a Magpie project when already working inside
+a Codex Desktop workspace.** Native session operations use
+`chat-session.mjs status` / `prepare` / `activate` / `link-thread`
+without `--project`: the local CLI identifies the currently registered
+Codex Desktop workspace from the native process working directory.
+
+Before binding any thread, verify the current native workspace path matches
+**exactly one** Codex Desktop registered workspace (or lies within its
+verified tree). The local CLI rejects linking a different project's thread.
+Never infer project identity from the thread UUID, an unrelated title, or a
+previous ChatGPT conversation. For multiple workspaces, use the exact detected
+workspace entry, not a guessed display label.
+
+To inspect the current project: `node <skill-dir>/chat-session.mjs status`
+(from the actual Codex workspace directory). The result supplies the exact
+registered project name for MCP verification. The matching browser-observed
+ChatGPT URL and task ID are still required before activation.
+
+**Existing wrong bindings are not migrated automatically.** A historical
+thread association without a validated workspace pin is ineligible for
+automatic queue selection. If an operator explicitly identifies an erroneous
+legacy association, the local CLI can clear only that exact UUID:
+`node <skill-dir>/chat-session.mjs unlink-thread --project "<wrong project>" --thread-id "<exact old UUID>"`.
+This does not change project source, Git, or the active chat record. Never
+run it for a guessed UUID.
+
+From ChatGPT Web, omitting the project works only when the exact supplied
+chat URL already maps to ONE workspace-verified native thread. A brand-new
+ChatGPT chat cannot reveal the focused Codex Desktop project to MCP and must
+first be paired from native Desktop; never silently select the last project.
+
 ## Project validation
 
-Use the exact project name from the Magpie MCP projects tool (it is also the
+Resolve the exact project name from the current native workspace when available, then verify it exists in the Magpie MCP projects tool (it is also the
 name Codex Desktop registered locally). A project name is not a ChatGPT title.
 Before creating or moving a binding, ask the new ChatGPT conversation to
 call the Magpie connector's projects tool and verify the intended project

@@ -180,6 +180,15 @@ export function createNativeCollab(options={},dependencies={}){
       return {status:'needs_chat_url',project,confirmedExecution:false,
         instructions:'Paste the exact URL of THIS ChatGPT conversation (chatgpt.com/c/...) and call codex_collab_start again. No task was launched or created.'};
     }
+    // Without an explicit project, resolve ONLY an exact, unique, workspace-
+    // verified ChatGPT URL binding. The remote side cannot inspect Desktop's
+    // currently focused project, so an unrelated/legacy match is never guessed.
+    if(project===undefined||project===null||project===''||project==='auto'){
+      const linked=chat.findLinkedProject?.({chatUrl});
+      if(!linked)return {status:'needs_project_context',confirmedExecution:false,
+        instructions:'No uniquely verified native Desktop workspace is bound to this exact ChatGPT URL. Start pairing from the intended Codex Desktop project; do not reuse another project binding.'};
+      project=linked;
+    }
     const ticket=chat.prepareLaunch({project,goal,chatUrl,taskId});
     if(ticket.reused&&ticket.launch.status!=='prepared')
       return response(ticket,ticket.launch.status,{reused:true,

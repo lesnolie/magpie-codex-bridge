@@ -11,7 +11,7 @@ import { createNativeCollab, desktopUrl, desktopPrompt, openCodexDesktop, queueT
 const base=mkdtempSync(path.join(tmpdir(),'native-collab-'));
 const root=path.join(base,'project');mkdirSync(root);
 const projects=()=>[{name:'tmn-updater',root,source:'codex'}];
-const chat=createChatSessions({projectRoots:projects,folder:path.join(base,'states')});
+const chat=createChatSessions({projectRoots:projects,currentWorkspace:()=>root,folder:path.join(base,'states')});
 const opts={codexEnabled:true,codexPermissionMode:'workspace-write'};
 const chatUrl='https://chatgpt.com/c/ffffffff-1111-2222-3333-0123456789ab';
 const nextUrl='https://chatgpt.com/c/abcdefab-1111-2222-3333-abcdefabcdef';
@@ -21,6 +21,35 @@ const native=createNativeCollab(opts,{
   projectRoots:projects,chatSessions:chat,
   platform:'win32',openDesktop:async url=>{opened.push(url);},
   queueMessage:async(id,msg)=>{queued.push({id,msg});},binary:()=> 'C:\\native\\codex.exe',
+});
+
+test('without a selected project, Web start needs a unique verified chat-to-workspace link',async()=>{
+  const fresh=createChatSessions({projectRoots:projects,currentWorkspace:()=>root,
+    folder:path.join(base,'auto-web-sessions')});
+  const auto=createNativeCollab(opts,{
+    projectRoots:projects,chatSessions:fresh,platform:'win32',
+    openDesktop:async()=>{throw new Error('Should not open unrelated Desktop thread');}
+  });
+  const empty=await auto.start({goal,chatUrl});
+  assert.equal(empty.status,'needs_project_context');
+  assert.equal(fresh.status('tmn-updater').launch,null);
+  const req=fresh.request({taskId:'autobind-001',url:chatUrl});
+  const linked=fresh.activate({requestId:req.pending.requestId,observedUrl:chatUrl,verifiedProject:'tmn-updater'});
+  fresh.linkThread({taskId:'autobind-001',generation:linked.active.generation,
+    threadId:'12345678-1234-4234-8234-123456789abc'});
+  const queuedEntries=[];
+  const bound=createNativeCollab(opts,{
+    projectRoots:projects,chatSessions:fresh,platform:'win32',
+    queueMessage:async(id,prompt)=>{queuedEntries.push({id,prompt});},
+    binary:()=>'/fake/codex.exe'
+  });
+  fresh.checkpoint({taskId:'autobind-001',generation:linked.active.generation,
+    iteration:1,protocolState:'DONE',waitingFor:'none'});
+  const response=await bound.start({goal:'Read-only Desktop queue test',chatUrl});
+  assert.equal(response.transport,'queue');
+  assert.equal(response.status,'queued_unconfirmed');
+  assert.equal(response.project,'tmn-updater');
+  assert.equal(queuedEntries.length,1);
 });
 
 test('no guessed ChatGPT URL: no launch, no local ticket, no side effects',async()=>{
@@ -127,7 +156,7 @@ test('desktop URL and process launcher use encoded protocol without shell inject
 
 
 test('failed Desktop opening is recorded and never automatically relaunched',async()=>{
-  const store=createChatSessions({projectRoots:projects,folder:path.join(base,'failing-sessions')});
+  const store=createChatSessions({projectRoots:projects,currentWorkspace:()=>root,folder:path.join(base,'failing-sessions')});
   let attempts=0;
   const failing=createNativeCollab(opts,{projectRoots:projects,chatSessions:store,
     platform:'win32',openDesktop:async()=>{attempts++;throw new Error('no local handler');}});
@@ -144,7 +173,7 @@ test('failed Desktop opening is recorded and never automatically relaunched',asy
 });
 
 test('new ChatGPT conversation invalidates a previous queue-linked Codex thread',()=>{
-  const store=createChatSessions({projectRoots:projects,folder:path.join(base,'switch-sessions')});
+  const store=createChatSessions({projectRoots:projects,currentWorkspace:()=>root,folder:path.join(base,'switch-sessions')});
   const first=store.request({project:'tmn-updater',taskId:'task-1',url:chatUrl});
   const active=store.activate({project:'tmn-updater',requestId:first.pending.requestId,
     observedUrl:chatUrl,verifiedProject:'tmn-updater'});
@@ -215,7 +244,7 @@ test('codex exec read-only launch uses config approval_policy, not unsupported a
 });
 
 test('experimental CLI executes native Codex with no Desktop Send or app-server',async()=>{
- const store=createChatSessions({projectRoots:projects,folder:path.join(base,'cli-test')});
+ const store=createChatSessions({projectRoots:projects,currentWorkspace:()=>root,folder:path.join(base,'cli-test')});
  let args=null;
  const experiment=createNativeCollab({...opts,nativeCollabCliExperimental:true},{
   projectRoots:projects,chatSessions:store,binary:()=> 'codex.exe',

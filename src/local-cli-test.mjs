@@ -230,6 +230,6 @@ export async function runLocalCliTestWorker(dir,id,{
     // Never return raw process output to the iframe or MCP.
     await rm(path.join(dir,REQUEST),{force:true}).catch(()=>{});
     await release(dir,id);
-    await publish(dir,roots(),target).catch(()=>{});
+    try{await publish(dir,roots(),target);}catch{}
   }
 }

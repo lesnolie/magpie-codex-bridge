@@ -65,7 +65,7 @@ export async function openCodexDesktop(url,{platform=process.platform,run=execFi
   });
 }
 export async function queueToNativeThread(threadId,prompt,{binary='codex.exe',run=execFile}={}){
-  if(!/^[a-f0-9]{8}-[a-f0-9-]{27,45}$/i.test(threadId||''))fail('Invalid verified Codex thread ID');
+  if(!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(threadId||''))fail('Invalid verified Codex thread ID');
   await run(binary,['queue','--thread',threadId,'--message',prompt],{
     shell:false,windowsHide:true,timeout:16000,maxBuffer:8*1024
   });

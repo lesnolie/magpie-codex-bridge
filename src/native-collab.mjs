@@ -240,7 +240,8 @@ export function createNativeCollab(options={},dependencies={}){
   const queue=dependencies.queueMessage||queueToNativeThread;
   const platform=dependencies.platform||process.platform;
   const bin=dependencies.binary||(()=>resolveCodexBinary(options));
-  const cli=dependencies.launchCli||launchNativeCli;
+  // Remote codex_collab_start is always Desktop (or a verified Desktop queue).
+  // Standalone CLI diagnostics have a separate local-only entry point.
 
   function diagnose({project}={}){
     // Never export the launch source fields to MCP; the inspector callback
@@ -308,7 +309,7 @@ export function createNativeCollab(options={},dependencies={}){
       taskId:ticket.launch.taskId,launchId});
     // Mark BEFORE side effects to prevent duplicate execution on MCP retry.
     chat.updateLaunch({project,launchId,status:'dispatching'});
-    let dispatchStage='building-uri';
+    let dispatchStage=ticket.launch.transport==='queue'?'native-queue':'building-uri';
     try{
       if(ticket.launch.transport==='queue'){
         const executable=bin();
@@ -316,15 +317,6 @@ export function createNativeCollab(options={},dependencies={}){
         chat.updateLaunch({project,launchId,status:'queued_unconfirmed'});
         return response(ticket,'queued_unconfirmed',{
           instructions:'Codex queue acknowledged STORAGE, not delivery/execution. Check the linked native Codex Desktop thread; do not start another thread automatically.'
-        });
-      }
-      if(options.nativeCollabCliExperimental===true){
-        // Explicit local opt-in only. A successful CLI exit is not proof the
-        // in-app browser was available or the ChatGPT pairing succeeded.
-        await cli({binary:bin(),root:ticket.localRoot,prompt:desktopPrompt({project,goal,chatUrl:ticket.launch.chatUrl,taskId:ticket.launch.taskId,launchId,mode:'cli'})});
-        chat.updateLaunch({project,launchId,status:'opened_unconfirmed'});
-        return response(ticket,'cli_exited_unverified',{
-          instructions:'Native Codex CLI exited. Verify the Skill actually reached PROJECT_VERIFIED in the target ChatGPT chat. CLI success alone does not confirm browser collaboration.'
         });
       }
       const url=desktopUrl(ticket.localRoot,prompt);
@@ -340,7 +332,7 @@ export function createNativeCollab(options={},dependencies={}){
       return response(ticket,'dispatch_failed',{...detail,
         error:ticket.launch.transport==='queue'
           ?'Codex CLI queue failed; no automatic fallback to a second Desktop thread'
-          :options.nativeCollabCliExperimental===true?'Native Codex CLI experiment failed or timed out':'Codex Desktop URL handler could not be launched',
+          :'Codex Desktop URL handler could not be launched',
         instructions:'Check the local Codex installation and Magpie logs. A failed launch is not confirmation of execution.'
       });
     }

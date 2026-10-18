@@ -67,6 +67,18 @@ chat URL already maps to ONE workspace-verified native thread. A brand-new
 ChatGPT chat cannot reveal the focused Codex Desktop project to MCP and must
 first be paired from native Desktop; never silently select the last project.
 
+## Read-only Desktop URI preflight (v0.4.19)
+
+Before explicitly retrying an existing native Desktop launch stuck at
+`dispatch_failed`, call Magpie's `chat_session_status` for its exact
+project. Read `desktopUriPreflight`, which reconstructs the saved goal's
+Desktop URI **only locally** and returns safe character counts plus a
+validation category. It never starts Codex, updates a ticket or changes
+the conversation. If the URI is too long or invalid, fix the builder
+before asking for another retry. If preflight is ready but the previous
+record failed at `building-uri`, investigate runtime parity first.
+Never copy the full URI or saved goal to a remote diagnostic.
+
 ## Windows startup diagnosis (v0.4.18)
 
 If `codex_collab_start` returns `dispatch_failed`, read the current

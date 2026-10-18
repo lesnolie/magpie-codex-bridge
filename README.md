@@ -1,4 +1,15 @@
-# Magpie Local Project Review (v0.4.19 alpha)
+# Magpie Local Project Review (v0.4.21 alpha)
+
+## v0.4.21 alpha: native Desktop launch lifecycle and Project Review cleanup
+
+- A previous `opened_unconfirmed` Desktop launch is never automatically replayed. An explicitly requested **different** task can replace it only after 10 minutes without an active native thread or pending chat transfer. Repeated identical requests remain idempotent.
+- A late pairing request for a superseded task is rejected.
+- Experimental Desktop auto-submit observes the Windows UI accessibility tree for up to 12 seconds and only invokes a single verified Send button after the exact prompt matches. It supports ValuePattern and TextPattern; absence of a safe match leaves the prompt for manual submission. An invoked button is not proof of Codex execution.
+- The per-launch `autoSubmit` diagnostic is persisted and available through `chat_session_status`.
+- Removes the obsolete reload-only Project Review project/session-preview panel, generated preview asset and related tests. Native project and session MCP tools remain intact.
+
+This release requires a real Windows Codex Desktop validation before claiming zero-click success. No CLI or app-server fallback is enabled by this change.
+
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 

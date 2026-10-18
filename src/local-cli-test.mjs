@@ -45,10 +45,16 @@ function cleanRequest(input,roots){
     throw Error('Invalid one-time test request');
   if(typeof input.project!=='string'||input.project.length>96)
     throw Error('Invalid project');
+  // Persisted plugin options are not permanent execution grants. A saved
+  // request expires quickly even if its receipt is deleted or reinstalled.
+  if(!Number.isSafeInteger(input.createdAt)||
+     Math.abs(Date.now()-input.createdAt)>120000)
+    throw Error('Expired one-time test request');
   const project=roots.find(p=>p.name===input.project&&p.source==='codex');
   if(!project||!path.isAbsolute(project.root)||!existsSync(project.root))
     throw Error('Project is not registered in Codex Desktop');
-  return {id:input.id,project:project.name,root:project.root,chatUrl:normalizeChatUrl(input.chatUrl)};
+  return {id:input.id,project:project.name,root:project.root,chatUrl:normalizeChatUrl(input.chatUrl),
+    createdAt:input.createdAt};
 }
 async function jsonFile(file){
   try{return JSON.parse(await readFile(file,'utf8'));}
@@ -126,6 +132,11 @@ export async function startLocalCliTest(options={},{
     await publish(dir,listed,target).catch(()=>{});
     return {status:old.status,reused:true};
   }
+  // Do not allow even malformed settings to overwrite an active test receipt.
+  if(existsSync(lockPath(dir))){
+    await publish(dir,listed,target).catch(()=>{});
+    return {status:'busy'};
+  }
   let selected;
   try{
     if(platform!=='win32')throw Error('Windows-only local test');
@@ -149,7 +160,8 @@ export async function startLocalCliTest(options={},{
     startedAt:new Date().toISOString()};
   try{
     // Keep request PRIVATE; only the trusted worker reads it from this folder.
-    await atomicJson(path.join(dir,REQUEST),{id:selected.id,project:selected.project,chatUrl:selected.chatUrl});
+    await atomicJson(path.join(dir,REQUEST),{id:selected.id,project:selected.project,
+      chatUrl:selected.chatUrl,createdAt:request.createdAt});
     await atomicJson(path.join(dir,STATE),state);
     await publish(dir,listed,target).catch(()=>{});
     const node=await getNode();

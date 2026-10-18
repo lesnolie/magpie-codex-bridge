@@ -7,6 +7,9 @@
  */
 import { execFile as nativeExecFile, spawn as nativeSpawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import {nodeBinary} from './remote-service.mjs';
 import { createChatSessions } from '../skills/magpie-codex-collab/chat-session.mjs';
 import { projectRoots } from './projects.mjs';
 import { resolveCodexBinary, resolveCodexPermissionMode } from './codex-tasks.mjs';
@@ -53,7 +56,7 @@ export function safeDesktopFailureDetails(error,stage='windows-launcher'){
   const failureKind=['Error','TypeError','RangeError','SystemError','AbortError'].includes(n)
     ?n:'unknown';
   return {failureCategory:categorizeDesktopLaunchFailure(error),
-    failureStage:stage==='building-uri'?'building-uri':'windows-launcher',
+    failureStage:['building-uri','windows-launcher','worker-spawn'].includes(stage)?stage:'windows-launcher',
     failureCode,exitStatus,failureKind};
 }
 export function desktopPrompt({project,goal,chatUrl,taskId,launchId,mode='desktop'}){
@@ -102,6 +105,41 @@ export async function openCodexDesktop(url,{platform=process.platform,run=execFi
   await run('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',
     Buffer.from(script,'utf16le').toString('base64')],{
     windowsHide:true,timeout:15000,maxBuffer:16*1024
+  });
+}
+/**
+ * Start a separate one-shot, locally authorized Node worker. This waits ONLY
+ * for OS process creation, not the PowerShell deep link or Desktop execution.
+ * A tool timeout/disconnect no longer kills an in-flight PowerShell launch.
+ */
+export async function dispatchDesktopWorker({project,launchId},{
+  getNode=nodeBinary,spawnProcess=nativeSpawn,
+  worker=fileURLToPath(new URL('../scripts/native-desktop-launch-worker.mjs',import.meta.url)),
+  platform=process.platform
+}={}){
+  if(platform!=='win32')fail('Windows Desktop worker only');
+  if(typeof project!=='string'||!project||project.length>96||
+    !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(launchId||''))
+    fail('Invalid Desktop worker launch receipt');
+  const node=await getNode();
+  await new Promise((resolve,reject)=>{
+    let child;
+    try{
+      child=spawnProcess(node,[worker,project,launchId],{
+        cwd:path.dirname(worker),detached:true,stdio:'ignore',
+        windowsHide:true,shell:false
+      });
+    }catch(error){reject(error);return;}
+    let finished=false;
+    const done=(error)=>{
+      if(finished)return;
+      finished=true;
+      child.removeListener?.('error',onError);
+      if(error)reject(error);else{child.unref?.();resolve();}
+    };
+    const onError=error=>done(error);
+    child.once('error',onError);
+    child.once('spawn',()=>done(null));
   });
 }
 export async function queueToNativeThread(threadId,prompt,{binary='codex.exe',run=execFile}={}){
@@ -197,7 +235,8 @@ export async function launchNativeCli({binary,root,prompt,sandbox='workspace-wri
 export function createNativeCollab(options={},dependencies={}){
   const roots=dependencies.projectRoots||(()=>projectRoots(options));
   const chat=dependencies.chatSessions||createChatSessions({projectRoots:roots});
-  const open=dependencies.openDesktop||openCodexDesktop;
+  const open=dependencies.openDesktop||null;
+  const worker=dependencies.dispatchDesktopWorker||dispatchDesktopWorker;
   const queue=dependencies.queueMessage||queueToNativeThread;
   const platform=dependencies.platform||process.platform;
   const bin=dependencies.binary||(()=>resolveCodexBinary(options));
@@ -276,12 +315,25 @@ export function createNativeCollab(options={},dependencies={}){
           instructions:'Native Codex CLI exited. Verify the Skill actually reached PROJECT_VERIFIED in the target ChatGPT chat. CLI success alone does not confirm browser collaboration.'
         });
       }
-      const url=desktopUrl(ticket.localRoot,prompt);
-      dispatchStage='windows-launcher';
-      await open(url,{platform});
-      chat.updateLaunch({project,launchId,status:'opened_unconfirmed'});
-      return response(ticket,'opened_unconfirmed',{
-        instructions:'Codex Desktop was asked to open the project with a prefilled $magpie-codex-collab prompt. Press Send once in Codex Desktop. Only native Codex can verify and activate this ChatGPT chat.'
+      if(open){
+        // Narrow compatibility seam for existing synchronous launcher tests.
+        // Production always uses the detached worker below.
+        const url=desktopUrl(ticket.localRoot,prompt);
+        dispatchStage='windows-launcher';
+        await open(url,{platform});
+        chat.updateLaunch({project,launchId,status:'opened_unconfirmed'});
+        return response(ticket,'opened_unconfirmed',{
+          instructions:'Codex Desktop was asked to open the project with a prefilled Skill prompt. Sending and execution are not confirmed.'
+        });
+      }
+      dispatchStage='worker-spawn';
+      await worker({project,launchId},{platform});
+      // The independent worker will update launch to opened_unconfirmed or
+      // dispatch_failed. Neither process spawn nor this MCP receipt is proof
+      // that a Codex Desktop window opened or started executing.
+      return response(ticket,'dispatching',{
+        workerStarted:true,
+        instructions:'A local one-shot Desktop launcher process was started. Query chat_session_status for the final dispatch result. Do not re-dispatch while status remains dispatching.'
       });
     }catch(error){
       const detail=safeDesktopFailureDetails(error,dispatchStage);

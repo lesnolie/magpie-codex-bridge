@@ -12,7 +12,7 @@ const root=path.join(base,'TMN'),other=path.join(base,'Other');
 fs.mkdirSync(root);fs.mkdirSync(other);
 const entries=[{name:'TMN',root,source:'codex'},{name:'Other',root:other,source:'codex'}];
 const stateDir=path.join(base,'sessions');
-const api=createChatSessions({folder:stateDir,projectRoots:()=>entries});
+const api=createChatSessions({folder:stateDir,projectRoots:()=>entries,currentWorkspace:()=>root});
 const chat1='https://chatgpt.com/c/abcdefab-1111-2222-3333-abcdefabcdef';
 const chat2='https://chatgpt.com/c/abcdefab-aaaa-bbbb-cccc-abcdefabcdef';
 const id='tmn.task_001';

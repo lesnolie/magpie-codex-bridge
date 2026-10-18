@@ -17,7 +17,7 @@ $root=[System.Windows.Automation.AutomationElement]::RootElement
 $windowCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Window)
 $editCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Edit)
 $buttonCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
-$matches=@()
+$candidates=@()
 foreach($window in $root.FindAll([System.Windows.Automation.TreeScope]::Children,$windowCondition)){
   $title=$window.Current.Name
   if($title -notmatch '(?i)Codex'){continue}
@@ -30,13 +30,13 @@ foreach($window in $root.FindAll([System.Windows.Automation.TreeScope]::Children
     if($value -cne $expected){continue}
     foreach($button in $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$buttonCondition)){
       if($button.Current.Name -cne 'Send' -or -not $button.Current.IsEnabled){continue}
-      $matches+=@{window=$window;button=$button}
+      $candidates+=@{window=$window;button=$button}
     }
   }
 }
-if($matches.Count -ne 1){Write-Output 'not-verified';exit 0}
+if($candidates.Count -ne 1){Write-Output 'not-verified';exit 0}
 try{
-  $invoke=$matches[0].button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+  $invoke=$candidates[0].button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
   $invoke.Invoke()
   Write-Output 'invoked-unconfirmed'
 }catch{Write-Output 'not-verified'}

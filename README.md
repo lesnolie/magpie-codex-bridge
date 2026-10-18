@@ -1,8 +1,66 @@
-# Magpie Local Project Review (v0.4.8 alpha)
+# Magpie Local Project Review (v0.4.9 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.9 alpha: ChatGPT Web initiates native Codex collaboration
+
+**New authenticated MCP tool:** \`codex_collab_start\` (17 tools total). It
+opens a first-time **native Codex Desktop** conversation or, only when the
+Skill has registered a verified native thread UUID for the same project and
+ChatGPT conversation, queues a new instruction to that thread. It does
+**not** require \`codex app-server\`; the old task tools are unchanged.
+
+### The critical ChatGPT URL pairing rule
+
+A custom MCP server **does not receive the current ChatGPT Web conversation
+URL**. ChatGPT must ask you once for the exact URL of the chat that should
+receive the response. The server will NEVER guess this from the ChatGPT title,
+another tab, last-used chat URL, or previous project binding. If omitted,
+\`codex_collab_start\` returns \`needs_chat_url\` without saving or launching
+anything. Only an exact HTTPS \`chatgpt.com/c/...\` conversation URL (or the
+supported Project-conversation form) is accepted.
+
+On the FIRST task in a Codex Desktop workspace:
+
+1. Make sure local Magpie → Project Review → **启用 Codex** is enabled and
+   its native execution permission is **not read-only**. Cloudflare Access
+   and the remote MCP manager must already be connected.
+2. In ChatGPT Web, request: "Use Magpie's codex_collab_start for
+   tmn-updater, goal: ..., chatUrl: <copy this exact chat link>." This tool
+   never accepts a project root path from ChatGPT: only Codex Desktop's
+   registered project name.
+3. A **Windows** deep link opens Codex Desktop's new-thread composer with
+   the installed \`$magpie-codex-collab\` Skill invocation prefilled.
+   **Click Send once in Codex Desktop**. The deep link itself DOES NOT
+   run the agent, nor does MCP claiming \`opened_unconfirmed\` mean it ran.
+4. Native Codex opens exactly the supplied ChatGPT URL in its one managed
+   in-app browser tab; ChatGPT verifies the project over Magpie MCP (projects
+   + read_file). Only after \`PROJECT_VERIFIED\` may native Codex locally
+   activate the chat binding and execute the goal. The old chat is unchanged
+   until that verified activation.
+5. If native Codex exposes its own thread UUID, the Skill links it locally
+   with \`chat-session.mjs link-thread\`. Later ChatGPT starts in the **same
+   verified ChatGPT chat** may dispatch \`codex queue --thread ...\` instead
+   of opening a new Desktop composer. A successful queue exit means queued,
+   NOT received/executed; an unloaded/busy Desktop task might not consume it
+   until manually opened. Never automatically retry and start a duplicate.
+
+**Duplicate protection:** Every launch has a persisted local launchId,
+taskId, matching ChatGPT URL, goal and state. A retry returns the existing
+receipt, not another open/queue action. Different goals/chats cannot overwrite
+an in-flight start. Failed dispatches are not retried automatically. Use
+native Codex's existing Skill to inspect the pending status and resolve it.
+
+**Limits:** Native Desktop deep-link opening currently targets Windows and
+is only verified by mocked CI tests. Actual Codex and browser behavior
+requires a Windows machine test. The CLI queue may return success even if
+a thread is unloaded or busy; the response deliberately says
+\`queued_unconfirmed\`. A fresh task in a different ChatGPT conversation must
+first use the existing verified conversation-transfer protocol; a title or
+URL guess is not safe. The feature does not automate ChatGPT's private APIs,
+bypass Cloudflare Access, or elevate filesystem permissions.
 
 ## v0.4.8 alpha: native Codex Skill and verified ChatGPT chat transfer
 

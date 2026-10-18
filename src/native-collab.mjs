@@ -186,7 +186,7 @@ export function createNativeCollab(options={},dependencies={}){
   const bin=dependencies.binary||(()=>resolveCodexBinary(options));
   const cli=dependencies.launchCli||launchNativeCli;
 
-  async function start({project,goal,chatUrl,taskId}={}){
+  async function start({project,goal,chatUrl,taskId,retryFailed=false,failedLaunchId}={}){
     if(options.codexEnabled!==true)fail('Native Codex remote startup requires local Codex permission to be enabled in Magpie');
     if(resolveCodexPermissionMode(options)==='read-only')
       fail('Codex permission is read-only; change it locally before requesting a coding task');
@@ -205,10 +205,33 @@ export function createNativeCollab(options={},dependencies={}){
         instructions:'No uniquely verified native Desktop workspace is bound to this exact ChatGPT URL. Start pairing from the intended Codex Desktop project; do not reuse another project binding.'};
       project=linked;
     }
-    const ticket=chat.prepareLaunch({project,goal,chatUrl,taskId});
+    let ticket=chat.prepareLaunch({project,goal,chatUrl,taskId});
+    if(retryFailed===true){
+      // A normal retry remains fully idempotent. Explicit recovery is allowed
+      // ONLY for the exact failed Desktop ticket the user named, never for a
+      // queued/opened/dispatching ticket. The original goal was also checked
+      // by prepareLaunch above; the target and task cannot change.
+      if(ticket.launch.status==='dispatch_failed'&&ticket.launch.transport==='desktop'){
+        if(typeof failedLaunchId!=='string'||ticket.launch.launchId!==failedLaunchId)
+          fail('Explicit Desktop retry requires the exact failedLaunchId from chat_session_status');
+        if(typeof taskId!=='string'||ticket.launch.taskId!==taskId)
+          fail('Explicit Desktop retry requires the exact original taskId');
+        chat.recoverLaunch({project,launchId:failedLaunchId,taskId,chatUrl,confirm:true});
+        // Fetch the new prepared ticket with its internally validated localRoot;
+        // recoverLaunch deliberately does not expose a project root to MCP.
+        ticket=chat.prepareLaunch({project,goal,chatUrl,taskId});
+      }else if(ticket.launch.recoveredFrom===failedLaunchId){
+        // The same explicit request was already dispatched; do not launch twice.
+        return response(ticket,ticket.launch.status,{reused:true,
+          instructions:'The launch was already dispatched or is in progress. No second dispatch was attempted.'});
+      }else{
+        fail('Explicit Desktop retry refused: no matching failed native Desktop launch');
+      }
+    }
     if(ticket.reused&&ticket.launch.status!=='prepared')
       return response(ticket,ticket.launch.status,{reused:true,
-        instructions:'Previous launch request was already sent or attempted. Do not retry automatically; check Codex Desktop and session status.'});
+        failureCategory:ticket.launch.failureCategory||null,
+        instructions:'Previous launch request was already sent or attempted. For a confirmed dispatch_failed Desktop ticket, explicitly supply retryFailed=true, failedLaunchId and the original taskId with the unchanged goal and chat URL; otherwise do not retry.'});
     const launchId=ticket.launch.launchId;
     const prompt=desktopPrompt({project,goal,chatUrl:ticket.launch.chatUrl,
       taskId:ticket.launch.taskId,launchId});

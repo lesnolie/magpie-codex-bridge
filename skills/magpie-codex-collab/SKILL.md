@@ -67,6 +67,20 @@ chat URL already maps to ONE workspace-verified native thread. A brand-new
 ChatGPT chat cannot reveal the focused Codex Desktop project to MCP and must
 first be paired from native Desktop; never silently select the last project.
 
+## Explicit recovery from ChatGPT Web (v0.4.17)
+
+After a **confirmed `dispatch_failed` native Desktop launch**, ChatGPT Web
+can now retry at the user's explicit request by calling `codex_collab_start`
+with the exact original `project`, `goal`, `taskId`, `chatUrl`,
+`failedLaunchId` plus `retryFailed:true`. Never invent identifiers or
+change the destination. The bridge rotates the nonce and performs exactly
+one new Desktop dispatch. Ordinary retries and other launch states remain
+strictly idempotent. This does NOT auto-press Send in Desktop: verify the
+actual native message and browser handshake separately.
+
+The local-only recovery CLI below remains available as a fallback if the
+Web remote action is unavailable.
+
 ## Safely recovering a failed Desktop launch (local only)
 
 A successful `codex://threads/new?path=...` experiment in interactive

@@ -127,7 +127,7 @@ function view(p,s){
     checkpoint:s.checkpoint||null,stateGeneration:s.generation,
     nativeThreadLinked:Boolean(s.nativeThreadId&&s.linkedRoot===p.root),
     launch:s.launch?{launchId:s.launch.launchId,taskId:s.launch.taskId,status:s.launch.status,transport:s.launch.transport,requestedAt:s.launch.requestedAt,chatUrl:s.launch.chatUrl,
-      failureCategory:s.launch.failureCategory||null}:null,
+      failureCategory:s.launch.failureCategory||null,recoveredFrom:s.launch.recoveredFrom||null}:null,
     browserControl:'not-verified',
     note:'Requesting transfer does not activate it. A native Codex browser must verify the target and activate locally.'};
 }

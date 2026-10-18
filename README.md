@@ -1,8 +1,31 @@
-# Magpie Local Project Review (v0.4.15 alpha)
+# Magpie Local Project Review (v0.4.16 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.16 alpha: native Desktop launch failure diagnostics and local recovery
+
+A passing Windows PowerShell `Start-Process codex://threads/new` test proves
+only that the URI scheme is installed in the interactive user session.
+Magpie now stores a **sanitized categorical failure reason** for native
+Desktop dispatch and exposes that category in `chat_session_status`.
+No private ChatGPT URL, CLI arguments, stderr or local filesystem path is
+included in the diagnostic category.
+
+A `dispatch_failed` ticket is never silently retried from ChatGPT Web.
+The user can explicitly rearm **exactly that failed Desktop ticket** locally:
+
+```
+node <skill-dir>/chat-session.mjs recover-launch --project "<registered name>" --launch-id "<failed launch UUID>" --task-id "<original task ID>" --chat-url "<exact conversation URL>" --confirm true
+```
+
+This rotates the launch UUID, preserves the same task/goal/URL, resets status
+to `prepared` and does NOT launch Codex. A single matching
+`codex_collab_start` call can then dispatch it. Requests not in
+`dispatch_failed`, queue tickets, stale tickets, and conflicting IDs/URL
+are rejected. This remains a *recovery and diagnosability improvement*, not
+proof that unattended Desktop launch is fixed on a specific host.
 
 ## v0.4.15 alpha: native Desktop collaboration overview
 

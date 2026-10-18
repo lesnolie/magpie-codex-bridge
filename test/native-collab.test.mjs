@@ -181,10 +181,11 @@ test('local observed exec emits only safe lifecycle labels, never model text',as
     queueMicrotask(()=>{
       child.emit('spawn');
       for(const type of ['thread.started','turn.started','item.completed','turn.completed']){
-        child.stdout.write(JSON.stringify({type,secret:privateText})+'\\n');
+        child.stdout.write(JSON.stringify({type,secret:privateText})+'\n');
       }
       child.stderr.write('unsafe local path and auth data');
-      child.emit('close',0);
+      child.stdout.once('end',()=>child.emit('close',0));
+      child.stdout.end();
     });
     return child;
   };

@@ -5,8 +5,9 @@
  */
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { isAbsolute, join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
+import { resolveCodexBinary } from './codex-binary.mjs';
+export { resolveCodexBinary };
 import { projectRoots } from './projects.mjs';
 import { gitBaseline, reviewFolder, saveReviewReceipt, readReviewReceipt, reviewInbox, reviewChanges, acknowledgeReview } from './codex-review.mjs';
 
@@ -48,8 +49,12 @@ class RpcProcess {
     child.stderr?.on('data', part => {
       this.stderrTail = (this.stderrTail + String(part)).slice(-2048);
     }); // Never expose potentially sensitive raw stderr.
-    child.once('error', err => this.fail(err));
-    child.once('exit', (code, signal) => this.fail(new Error('Codex exited (' + (code ?? signal ?? 'unknown') + ')')));
+    child.once('error', err => this.fail(new Error('Codex process spawn failed (' +
+      (/^[A-Z0-9_]{2,36}$/.test(err?.code||'') ? err.code : 'unknown') + ')')));
+    child.once('exit', (code, signal) => this.fail(new Error('Codex process exited (' +
+      (Number.isInteger(code) ? 'code '+code : signal ? 'signal' : 'unknown') + ')')));
+    child.stdin?.once('error', err => this.fail(new Error('Codex stdin closed (' +
+      (/^[A-Z0-9_]{2,36}$/.test(err?.code||'') ? err.code : 'unknown') + ')')));
   }
   consume(part) {
     this.buffer += part;
@@ -66,7 +71,7 @@ class RpcProcess {
         if (!request) continue;
         this.pending.delete(msg.id);
         clearTimeout(request.timer);
-        if (msg.error) request.reject(new Error(bounded(msg.error.message || 'Codex RPC rejected request', 500)));
+        if (msg.error) request.reject(new Error('Codex RPC rejected request (' + (Number.isInteger(msg.error.code) ? msg.error.code : 'unknown') + ')'));
         else request.resolve(msg.result);
       } else if (msg.method && msg.id != null) {
         // Never automatically approve escalation or other server-initiated requests.
@@ -75,7 +80,8 @@ class RpcProcess {
     }
   }
   send(payload) {
-    if (this.closed || !this.child.stdin.writable) throw new Error(this.closeReason?.message || 'Codex connection closed before sending a request');
+    if (this.closed) throw this.closeReason || new Error('Codex process already closed');
+    if (!this.child.stdin.writable) throw new Error('Codex stdin unavailable before RPC request');
     this.child.stdin.write(JSON.stringify(payload) + '\n');
   }
   notify(method, params = {}) { this.send({ jsonrpc: '2.0', method, params }); }
@@ -103,23 +109,6 @@ class RpcProcess {
     this.fail(new Error('Codex process stopped'));
     if (!this.child.killed) this.child.kill();
   }
-}
-
-export function resolveCodexBinary(options = {}) {
-  if (options.codexExecutable) {
-    const exe = String(options.codexExecutable).trim();
-    if (!isAbsolute(exe) || (process.platform === 'win32' && !/\.exe$/i.test(exe))) {
-      throw new Error('Codex executable must be an absolute path to codex.exe');
-    }
-    return exe;
-  }
-  if (process.platform === 'win32') {
-    const target = process.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc';
-    const npmBinary = join(process.env.APPDATA || '', 'npm', 'node_modules', '@openai', 'codex', 'vendor', target, 'codex', 'codex.exe');
-    if (existsSync(npmBinary)) return npmBinary;
-    return 'codex.exe'; // Prefer native binary; Node cannot spawn npm .cmd shims without a shell.
-  }
-  return 'codex';
 }
 
 /**
@@ -236,9 +225,8 @@ export function createCodexTasks(options = {}, dependencies = {}) {
       // An unexpected child exit must also settle the task, not leave it running.
       child.once('error', err => {
         if (job.state !== 'running') return;
-        job.error = err.code === 'ENOENT'
-          ? 'Codex executable not found by Magpie. Configure an absolute native codex.exe path in Codex settings.'
-          : 'Codex startup failed (' + bounded(err.code || err.message, 120) + ')';
+        job.error = 'Codex child process failed to start (' +
+          (/^[A-Z0-9_]{2,36}$/.test(err?.code||'') ? err.code : 'unknown') + ')';
         finish({ status: 'failed' });
       });
       child.once('exit', (code, signal) => {
@@ -275,8 +263,12 @@ export function createCodexTasks(options = {}, dependencies = {}) {
     } catch (error) {
       job.state = job.cancelRequested ? 'cancelled' : 'failed';
       const diagnosis = classifyCodexStderr(rpc?.stderrTail);
+      const resolution = error?.code === 'CODEX_BINARY_NOT_FOUND' ? 'native-executable-not-found'
+        : error?.code === 'CODEX_BINARY_INVALID' ? 'invalid-executable-path' : null;
+      const safeMessage = error?.message?.startsWith('Codex ') ? error.message
+        : 'Codex startup or RPC failed';
       job.error = bounded('Codex failed during ' + (job.phase || 'startup') + ': ' +
-        (diagnosis || job.error || error?.message || error), 500);
+        (resolution || diagnosis || job.error || rpc?.closeReason?.message || safeMessage), 500);
     } finally {
       clearTimeout(timeout);
       if (job.cancelRequested) job.state = 'cancelled';

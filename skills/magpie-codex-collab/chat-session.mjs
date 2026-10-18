@@ -127,7 +127,10 @@ function view(p,s){
     checkpoint:s.checkpoint||null,stateGeneration:s.generation,
     nativeThreadLinked:Boolean(s.nativeThreadId&&s.linkedRoot===p.root),
     launch:s.launch?{launchId:s.launch.launchId,taskId:s.launch.taskId,status:s.launch.status,transport:s.launch.transport,requestedAt:s.launch.requestedAt,chatUrl:s.launch.chatUrl,
-      failureCategory:s.launch.failureCategory||null,recoveredFrom:s.launch.recoveredFrom||null}:null,
+      failureCategory:s.launch.failureCategory||null,
+      failureStage:s.launch.failureStage||null,failureCode:s.launch.failureCode||null,
+      exitStatus:s.launch.exitStatus??null,failureKind:s.launch.failureKind||null,
+      recoveredFrom:s.launch.recoveredFrom||null}:null,
     browserControl:'not-verified',
     note:'Requesting transfer does not activate it. A native Codex browser must verify the target and activate locally.'};
 }
@@ -248,7 +251,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
         nativeThreadId:matchingThread?s.nativeThreadId:null};
     });
   }
-  function updateLaunch({project,launchId,status,failureCategory}={}){
+  function updateLaunch({project,launchId,status,failureCategory,failureStage,failureCode,exitStatus,failureKind}={}){
     const p=allowed(project),file=filename(p,folder);
     if(!['dispatching','opened_unconfirmed','queued_unconfirmed','dispatch_failed',
           'acknowledged','blocked'].includes(status))fail('Invalid launch status');
@@ -267,9 +270,21 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       if(status==='dispatch_failed'){
         // Safe enumerated diagnosis; never retain raw stderr, protocol URLs or paths.
         const permitted=new Set(['launcher-not-found','access-denied','launcher-timeout',
-          'protocol-handler-error','command-failed','invalid-uri','unexpected-error']);
+          'protocol-handler-error','command-failed','invalid-uri','unexpected-error',
+          'launcher-argument-too-long','launcher-output-overflow']);
         s.launch.failureCategory=permitted.has(failureCategory)?failureCategory:'unexpected-error';
-      }else delete s.launch.failureCategory;
+        s.launch.failureStage=['building-uri','windows-launcher'].includes(failureStage)?failureStage:null;
+        const codes=new Set(['ENOENT','EACCES','EPERM','ETIMEDOUT','E2BIG','ENAMETOOLONG',
+          'ERR_CHILD_PROCESS_STDIO_MAXBUFFER','ERR_CHILD_PROCESS_FAILED']);
+        s.launch.failureCode=(typeof failureCode==='string'&&
+          (codes.has(failureCode)||/^\d{1,3}$/.test(failureCode)))?failureCode:null;
+        s.launch.exitStatus=(Number.isInteger(exitStatus)&&exitStatus>=0&&exitStatus<=255)?exitStatus:null;
+        s.launch.failureKind=['Error','TypeError','RangeError','SystemError','AbortError'].includes(failureKind)
+          ?failureKind:'unknown';
+      }else{
+        delete s.launch.failureCategory;delete s.launch.failureStage;
+        delete s.launch.failureCode;delete s.launch.exitStatus;delete s.launch.failureKind;
+      }
       s.launch.updatedAt=new Date().toISOString();
       save(file,s);return view(p,s);
     });
@@ -298,6 +313,8 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       launch.launchId=randomUUID();
       launch.status='prepared';
       delete launch.failureCategory;
+      delete launch.failureStage;delete launch.failureCode;
+      delete launch.exitStatus;delete launch.failureKind;
       launch.requestedAt=new Date().toISOString();
       launch.recoveredFrom=launchId;
       save(file,s);

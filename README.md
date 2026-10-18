@@ -1,8 +1,42 @@
-# Magpie Local Project Review (v0.4.18 alpha)
+# Magpie Local Project Review (v0.4.19 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.19 alpha: one-shot detached native Desktop dispatcher
+
+The Magpie MCP action **no longer waits for PowerShell in the same remote
+request**. It validates and saves the unchanged project / goal / ChatGPT URL /
+task + launch nonce, sets `dispatching`, then starts a **detached, one-shot
+local Node launcher** with only the registered project name and launch UUID.
+The worker reloads that exact authorized pending ticket from the existing
+chat-session state, checks the local Codex permission flag, builds the
+`codex://` URI, and launches native Codex Desktop through Windows.
+It writes `opened_unconfirmed` or a sanitized `dispatch_failed` receipt.
+
+- `workerStarted:true` confirms the local launcher process spawned, **not**
+  that the Windows URI opened, Codex started a turn, or ChatGPT bound.
+- A later `chat_session_status` confirms actual launcher outcome. An
+  `opened_unconfirmed` record is **not** verified native execution.
+
+- If the latest record is `dispatching` for over **3 minutes**, the user
+  can explicitly authorize recovery ONLY after confirming no Codex Desktop
+  thread was opened. Call the existing `codex_collab_start` with unchanged
+  project/goal/chatUrl/taskId, `retryFailed:true`, the exact
+  `failedLaunchId` of that stalled ticket, and `confirmNoDesktop:true`.
+  The state guard refuses earlier/in-progress tickets and all mismatches.
+  No confirmation is inferred; a second call is idempotent.
+- Requests still do not use independent Codex CLI exec or app-server.
+- Only one authorized launch is accepted per ID. A repeated MCP request
+  is still idempotent and cannot spawn a second process.
+- A `dispatching` record older than 60 seconds is flagged
+  `dispatchStalled:true` without modifying the record or automatically
+  retrying. The user should inspect the Desktop window before any new retry.
+
+This is a targeted fix for interrupted/hanging MCP tool calls. It requires
+real Windows acceptance: the local worker may also encounter launcher
+limitations. No full unattended native execution claim is made.
 
 ## v0.4.18 alpha: diagnosable Windows Desktop dispatch failures
 

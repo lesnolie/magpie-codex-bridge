@@ -126,11 +126,14 @@ function view(p,s){
       url:s.pending.url,requestedAt:s.pending.requestedAt}:null,
     checkpoint:s.checkpoint||null,stateGeneration:s.generation,
     nativeThreadLinked:Boolean(s.nativeThreadId&&s.linkedRoot===p.root),
+    dispatchStalled:Boolean(s.launch?.status==='dispatching'&&
+      Date.now()-Date.parse(s.launch.updatedAt||s.launch.requestedAt)>60000),
     launch:s.launch?{launchId:s.launch.launchId,taskId:s.launch.taskId,status:s.launch.status,transport:s.launch.transport,requestedAt:s.launch.requestedAt,chatUrl:s.launch.chatUrl,
       failureCategory:s.launch.failureCategory||null,
       failureStage:s.launch.failureStage||null,failureCode:s.launch.failureCode||null,
       exitStatus:s.launch.exitStatus??null,failureKind:s.launch.failureKind||null,
-      recoveredFrom:s.launch.recoveredFrom||null}:null,
+      recoveredFrom:s.launch.recoveredFrom||null,
+      recoveredFromStatus:s.launch.recoveredFromStatus||null}:null,
     browserControl:'not-verified',
     note:'Requesting transfer does not activate it. A native Codex browser must verify the target and activate locally.'};
 }
@@ -251,6 +254,19 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
         nativeThreadId:matchingThread?s.nativeThreadId:null};
     });
   }
+  /**
+   * One-shot native Desktop worker may read ONLY its own dispatching ticket,
+   * already approved and stored by the authenticated Magpie tool. This is not
+   * exposed as a remote MCP tool.
+   */
+  function readDesktopDispatch({project,launchId}={}){
+    const p=allowed(project),s=load(filename(p,folder));
+    if(typeof launchId!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(launchId)||
+       s.launch?.launchId!==launchId||s.launch.status!=='dispatching'||
+       s.launch.transport!=='desktop')fail('No matching pending Desktop dispatch');
+    return {project:p.name,root:p.root,goal:s.launch.goal,
+      taskId:s.launch.taskId,chatUrl:s.launch.chatUrl,launchId};
+  }
   function updateLaunch({project,launchId,status,failureCategory,failureStage,failureCode,exitStatus,failureKind}={}){
     const p=allowed(project),file=filename(p,folder);
     if(!['dispatching','opened_unconfirmed','queued_unconfirmed','dispatch_failed',
@@ -292,7 +308,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
   // A one-time, locally authorized recovery for a confirmed failed dispatch.
   // Requires all four exact binding identifiers and resets ONLY dispatch_failed;
   // a request still in-flight, queued, opened or acknowledged is never retried.
-  function recoverLaunch({project,launchId,taskId,chatUrl,confirm}={}){
+  function recoverLaunch({project,launchId,taskId,chatUrl,confirm,confirmNoDesktop=false}={}){
     if(confirm!==true&&confirm!=='true')
       fail('Local launch recovery requires --confirm true');
     const p=allowed(project),file=filename(p,folder),url=normalizeChatUrl(chatUrl);
@@ -302,7 +318,14 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
     return locked(file,()=>{
       const s=load(file),launch=s.launch;
       if(!launch||launch.launchId!==launchId||launch.taskId!==safeTask||
-         launch.chatUrl!==url||launch.status!=='dispatch_failed')
+         launch.chatUrl!==url)
+        fail('No matching failed launch; recovery refused');
+      const stalled=launch.status==='dispatching'&&
+        Date.now()-Date.parse(launch.updatedAt||launch.requestedAt)>=180000;
+      // An in-flight launch may have reached Windows despite an MCP timeout.
+      // Only user-confirmed, long-stalled dispatches may be rearmed.
+      if(launch.status!=='dispatch_failed'&&
+         !(stalled&&confirmNoDesktop===true))
         fail('No matching failed launch; recovery refused');
       if(launch.transport!=='desktop')
         fail('Only failed native Desktop launch tickets may be recovered');
@@ -317,6 +340,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       delete launch.exitStatus;delete launch.failureKind;
       launch.requestedAt=new Date().toISOString();
       launch.recoveredFrom=launchId;
+      launch.recoveredFromStatus=stalled?'dispatching':'dispatch_failed';
       save(file,s);
       return {...view(p,s),recovered:true};
     });
@@ -368,7 +392,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       'Use only the verified Magpie workspace connector. Never re-execute completed iterations.'];
     return {project:s.project,active:a,checkpoint:c,handoff:lines.join('\n')};
   }
-  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,recoverLaunch,linkThread,unlinkThread,findLinkedProject};
+  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,recoverLaunch,readDesktopDispatch,linkThread,unlinkThread,findLinkedProject};
 }
 function argsOf(argv){
   const [command,...rest]=argv,opts={};

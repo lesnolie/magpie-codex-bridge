@@ -216,7 +216,10 @@ export function createNativeCollab(options={},dependencies={}){
           fail('Explicit Desktop retry requires the exact failedLaunchId from chat_session_status');
         if(typeof taskId!=='string'||ticket.launch.taskId!==taskId)
           fail('Explicit Desktop retry requires the exact original taskId');
-        ticket=chat.recoverLaunch({project,launchId:failedLaunchId,taskId,chatUrl,confirm:true});
+        chat.recoverLaunch({project,launchId:failedLaunchId,taskId,chatUrl,confirm:true});
+        // Fetch the new prepared ticket with its internally validated localRoot;
+        // recoverLaunch deliberately does not expose a project root to MCP.
+        ticket=chat.prepareLaunch({project,goal,chatUrl,taskId});
       }else if(ticket.launch.launchId===failedLaunchId){
         // The same explicit request was already dispatched; do not launch twice.
         return response(ticket,ticket.launch.status,{reused:true,

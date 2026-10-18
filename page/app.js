@@ -361,12 +361,20 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     }catch{
       localCliTestStatus.textContent='请输入完整且不含参数的 chatgpt.com/c/... 对话 URL。';return;
     }
-    if(!globalThis.crypto?.randomUUID){
+    if(!globalThis.crypto?.getRandomValues){
       localCliTestStatus.textContent='当前页面缺少安全随机数接口，无法生成一次性测试 ID。';return;
+    }
+    function secureNonce(){
+      const bytes=new Uint8Array(16);
+      globalThis.crypto.getRandomValues(bytes);
+      bytes[6]=(bytes[6]&0x0f)|0x40;
+      bytes[8]=(bytes[8]&0x3f)|0x80;
+      const h=Array.from(bytes,n=>n.toString(16).padStart(2,'0')).join('');
+      return [h.slice(0,8),h.slice(8,12),h.slice(12,16),h.slice(16,20),h.slice(20)].join('-');
     }
     cliTestBusy=true;render();
     try{
-      const request={id:globalThis.crypto.randomUUID(),project,chatUrl,createdAt:Date.now()};
+      const request={id:secureNonce(),project,chatUrl,createdAt:Date.now()};
       const next=cleanOptions({...options,nativeCliLocalTestRequest:request});
       // Only this physical, locally-authorized button emits a request.
       const saved=await magpie.options.set(next);

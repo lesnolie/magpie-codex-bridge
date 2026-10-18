@@ -77,7 +77,14 @@ Desktop open, native Codex execution, or verified chat binding.
 
 After the action, check `chat_session_status`: the standalone local launcher
 sets `opened_unconfirmed` or `dispatch_failed` with bounded diagnostic
-fields. A `dispatchStalled:true` receipt means the handoff was not
+fields. A stale `dispatching` receipt can be rearmed only after **3 minutes**
+and ONLY with an explicit user confirmation that no native Desktop window
+opened. With the original matching goal/task/project/ChatGPT URL, pass
+`retryFailed:true`, `failedLaunchId` equal to the exact stale launch
+UUID and `confirmNoDesktop:true` to `codex_collab_start`. Ordinary calls
+never rearm, and an early/incomplete launch is always refused.
+
+A `dispatchStalled:true` receipt means the handoff was not
 completed in the expected interval; do NOT automatically retry.
 A native Codex turn and browser-observed ChatGPT verification are still
 required for the subsequent two-way handshake.

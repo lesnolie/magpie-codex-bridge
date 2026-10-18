@@ -15,4 +15,8 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
+        if: runner.os != 'Windows'
+      # Windows integration tests share one HKCU Run key; serialize test files.
+      - run: node --test --test-concurrency=1 test/*.test.mjs
+        if: runner.os == 'Windows'
       - run: npm run check

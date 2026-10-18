@@ -2,7 +2,6 @@ import { createProjectTools, projectRoots } from './src/projects.mjs';
 import { createChatSessions } from './skills/magpie-codex-collab/chat-session.mjs';
 import { createNativeCollab } from './src/native-collab.mjs';
 import { startLocalCliTest } from './src/local-cli-test.mjs';
-import { publishNativeSessionPreview } from './src/native-session-preview.mjs';
 import { existsSync } from 'node:fs';
 import { createCodexTasks, resolveCodexPermissionMode } from './src/codex-tasks.mjs';
 import { startModelCatalogSync } from './src/model-catalog.mjs';
@@ -39,9 +38,6 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   // locally managed permission flag.
   const codex = createCodexTasks(options);
   const chat = createChatSessions({projectRoots:()=>projectRoots(options)});
-  // Only a privacy-safe point-in-time summary; the iframe cannot inspect Desktop focus.
-  try { await publishNativeSessionPreview({roots:()=>projectRoots(options),sessions:chat}); }
-  catch { console.warn('[magpie-local-review] Native collaboration preview unavailable'); }
   const nativeCollab = createNativeCollab(options,{chatSessions:chat,projectRoots:()=>projectRoots(options)});
   const codexTools = {
     codex_submit_task: { description: 'Submit a task to local Codex for a Codex Desktop registered project. Only Codex may modify files, and only if separately enabled in Magpie.', args: { project: arg('Allowed project name'), prompt: arg('Task instruction'), continueThread: { type: 'boolean', description: 'Continue the last successful Codex thread for this project, default false' } }, execute: wrap(codex.submit) },

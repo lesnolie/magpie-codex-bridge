@@ -37,10 +37,9 @@ test('wrong failedLaunchId / original taskId / goal / ChatGPT URL refuse without
   await assert.rejects(launcher.start({...args,taskId:'wrong-task'}),/task|retry/i);
   await assert.rejects(launcher.start({...args,goal:'a different goal'}),/different native Codex launch/i);
   await assert.rejects(launcher.start({...args,chatUrl:otherUrl}),/different native Codex launch/i);
-  await assert.rejects(launcher.start({...args,retryFailed:false}),/NEVER_MATCH_THIS_ERROR/).catch(e=>{
-    // Normal repeat is expected to return reused without launching.
-    assert.match(e.message,/Missing expected rejection/);
-  });
+  const normal=await launcher.start({...args,retryFailed:false});
+  assert.equal(normal.status,'dispatch_failed');
+  assert.equal(normal.reused,true);
   assert.equal(session.status(project).launch.launchId,first.launchId);
   assert.equal(requests,1);
 });

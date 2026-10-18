@@ -123,4 +123,36 @@ test('desktop URL and process launcher use encoded protocol without shell inject
   await assert.rejects(queueToNativeThread('bad','hello',{run:async()=>{}}),/Invalid verified/);
 });
 
+
+test('failed Desktop opening is recorded and never automatically relaunched',async()=>{
+  const store=createChatSessions({projectRoots:projects,folder:path.join(base,'failing-sessions')});
+  let attempts=0;
+  const failing=createNativeCollab(opts,{projectRoots:projects,chatSessions:store,
+    platform:'win32',openDesktop:async()=>{attempts++;throw new Error('no local handler');}});
+  const first=await failing.start({project:'tmn-updater',goal:'Check build',chatUrl});
+  assert.equal(first.status,'dispatch_failed');
+  assert.equal(first.confirmedExecution,false);
+  assert.equal(attempts,1);
+  const retried=await failing.start({project:'tmn-updater',goal:'Check build',chatUrl});
+  assert.equal(retried.reused,true);
+  assert.equal(retried.status,'dispatch_failed');
+  assert.equal(attempts,1);
+  await assert.rejects(failing.start({project:'tmn-updater',goal:'Different build',chatUrl}),
+    /different native Codex launch/i);
+});
+
+test('new ChatGPT conversation invalidates a previous queue-linked Codex thread',()=>{
+  const store=createChatSessions({projectRoots:projects,folder:path.join(base,'switch-sessions')});
+  const first=store.request({project:'tmn-updater',taskId:'task-1',url:chatUrl});
+  const active=store.activate({project:'tmn-updater',requestId:first.pending.requestId,
+    observedUrl:chatUrl,verifiedProject:'tmn-updater'});
+  store.linkThread({project:'tmn-updater',taskId:'task-1',generation:active.active.generation,
+    threadId:'aabbccdd-1234-4abc-8abc-abcdefabcdef'});
+  assert.equal(store.status('tmn-updater').nativeThreadLinked,true);
+  const next=store.request({project:'tmn-updater',taskId:'task-1',url:nextUrl});
+  store.activate({project:'tmn-updater',requestId:next.pending.requestId,
+    observedUrl:nextUrl,verifiedProject:'tmn-updater'});
+  assert.equal(store.status('tmn-updater').nativeThreadLinked,false);
+});
+
 test.after(()=>rmSync(base,{recursive:true,force:true}));

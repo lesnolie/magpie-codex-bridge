@@ -49,6 +49,20 @@ test('mocked app-server handshake, turn and result over stdio', async () => {
   assert.throws(() => jobs.status({ project: 'Safe', taskId: 'invented' }), /Unknown task/);
 });
 
+test('app-server early exit keeps exit code and safe stderr category, never raw secrets',async()=>{
+  const fixture=fileURLToPath(new URL('./mock-codex-early-exit.mjs',import.meta.url));
+  const tasks=createCodexTasks({codexEnabled:true},{
+    projectRoots:()=>[{name:'Safe',root}],binary:process.execPath,
+    args:[fixture],reviewDir:false
+  });
+  const created=JSON.parse(tasks.submit({project:'Safe',prompt:'readonly'}));
+  const result=JSON.parse(await tasks.wait({project:'Safe',taskId:created.taskId,waitMs:6000}));
+  assert.equal(result.state,'failed');
+  assert.equal(result.phase,'initialize');
+  assert.match(result.error,/authentication failed|code 23/i);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_SUPER_TOKEN|invalid api key: PRIVATE/);
+});
+
 test('startup diagnostics classify errors without echoing credentials or provider URL', () => {
   assert.match(classifyCodexStderr('error: unrecognized subcommand app-server'), /arguments incompatible/);
   assert.match(classifyCodexStderr('API_KEY=top-secret invalid api key'), /authentication failed/);

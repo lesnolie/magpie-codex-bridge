@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import {EventEmitter} from 'node:events';
+import {PassThrough} from 'node:stream';
 import { createChatSessions } from '../skills/magpie-codex-collab/chat-session.mjs';
 import { createNativeCollab, desktopUrl, desktopPrompt, openCodexDesktop, queueToNativeThread, launchNativeCli } from '../src/native-collab.mjs';
 
@@ -157,6 +159,45 @@ test('new ChatGPT conversation invalidates a previous queue-linked Codex thread'
 
 test.after(()=>rmSync(base,{recursive:true,force:true}));
 
+
+test('CLI exec uses correct START MODE, unlike Desktop composer',()=>{
+  const common={project:'tmn-updater',goal:'read only',chatUrl,taskId:'localtest-1',launchId:'launch-1'};
+  assert.match(desktopPrompt(common),/Native Codex Desktop/);
+  const cli=desktopPrompt({...common,mode:'cli'});
+  assert.match(cli,/Standalone Codex CLI exec/);
+  assert.match(cli,/MAGPIE_BROWSER_UNAVAILABLE/);
+  assert.doesNotMatch(cli,/START MODE: Native Codex Desktop/);
+});
+
+test('local observed exec emits only safe lifecycle labels, never model text',async()=>{
+  const seen=[],privateText='PRIVATE_API_KEY_DO_NOT_SHOW';
+  let capturedArgs;
+  const spawnProcess=(_binary,args,_opts)=>{
+    capturedArgs=args;
+    const child=new EventEmitter();
+    child.stdout=new PassThrough();
+    child.stderr=new PassThrough();
+    child.kill=()=>{};
+    queueMicrotask(()=>{
+      child.emit('spawn');
+      for(const type of ['thread.started','turn.started','item.completed','turn.completed']){
+        child.stdout.write(JSON.stringify({type,secret:privateText})+'\\n');
+      }
+      child.stderr.write('unsafe local path and auth data');
+      child.emit('close',0);
+    });
+    return child;
+  };
+  const result=await launchNativeCli({
+    binary:'C:/native/codex.exe',root,prompt:'Read only',
+    sandbox:'read-only',approval:'never',
+    onProgress:phase=>seen.push(phase),spawnProcess
+  });
+  assert.ok(capturedArgs.includes('--json'));
+  assert.deepEqual(seen,['cli-process-started','cli-thread-started','cli-turn-started','cli-turn-finished']);
+  assert.ok(!seen.join(',').includes(privateText));
+  assert.equal(result.exitCode,0);
+});
 
 test('codex exec read-only launch uses config approval_policy, not unsupported approval flag',async()=>{
   let binary,args,config;

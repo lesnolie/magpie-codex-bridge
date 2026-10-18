@@ -73,11 +73,19 @@ export async function queueToNativeThread(threadId,prompt,{binary='codex.exe',ru
 
 // Experimental native Codex CLI backend. Does not use app-server.
 // CLI stdout/stderr are deliberately not returned to remote MCP clients.
-export async function launchNativeCli({binary,root,prompt,run=execFile}){
-  if(!root||!prompt)fail('Missing native CLI project or prompt');
-  await run(binary,['exec','--cd',root,'--sandbox','workspace-write','--',prompt],{
-    shell:false,windowsHide:true,timeout:180000,maxBuffer:64*1024,
-    env:{...process.env,MAGPIE_NATIVE_COLLAB_EXPERIMENT:'1'}
+export async function launchNativeCli({binary,root,prompt,sandbox='workspace-write',
+  approval=null,timeout=180000,run=execFile}={}){
+  if(!root||!prompt||!binary)fail('Missing native CLI project, binary or prompt');
+  if(!['read-only','workspace-write'].includes(sandbox))fail('Invalid CLI sandbox');
+  if(approval!==null&&approval!=='never')fail('Invalid CLI approval policy');
+  const args=['exec','--cd',root,'--sandbox',sandbox];
+  if(approval==='never')args.push('--ask-for-approval','never');
+  args.push('--',prompt);
+  // stdout may contain secrets or model-generated claims. Never forward it to
+  // a remote MCP result or sandbox page; local diagnostics inspect only markers.
+  return run(binary,args,{
+    shell:false,windowsHide:true,timeout:Math.min(180000,Math.max(1000,timeout)),
+    maxBuffer:64*1024,env:{...process.env,MAGPIE_NATIVE_COLLAB_EXPERIMENT:'1'}
   });
 }
 

@@ -1,6 +1,7 @@
 import { createProjectTools, projectRoots } from './src/projects.mjs';
 import { createChatSessions } from './skills/magpie-codex-collab/chat-session.mjs';
 import { createNativeCollab } from './src/native-collab.mjs';
+import { startLocalCliTest } from './src/local-cli-test.mjs';
 import { existsSync } from 'node:fs';
 import { createCodexTasks, resolveCodexPermissionMode } from './src/codex-tasks.mjs';
 import { startModelCatalogSync } from './src/model-catalog.mjs';
@@ -25,6 +26,10 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   // Never blocks the six read-only tools when the gateway is unavailable.
   try { await startModelCatalogSync(options); }
   catch (error) { console.warn('[magpie-local-review] Catalog:', error?.message || String(error)); }
+  // Local Magpie options are an explicit user action, not a remote MCP call.
+  // Dispatch one trusted nonce on host reload; NEVER register an action tool.
+  try { await startLocalCliTest(options); }
+  catch { console.warn('[magpie-local-review] Local CLI diagnostic could not initialize'); }
   const tools = createProjectTools(options);
   // Always register the four Codex tool schemas so the upstream Magpie MCP
   // discovery catalog is stable even when local options are changed later.
@@ -61,7 +66,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     return JSON.stringify({
       ...data,
       codex: {
-        integrationVersion: '0.4.10-alpha.1',
+        integrationVersion: '0.4.11-alpha.1',
         toolsRegistered: true,
         toolCount: 17,
         pendingReviewCount,

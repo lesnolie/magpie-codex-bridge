@@ -72,6 +72,16 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const codexLegacyModel = document.getElementById('codexLegacyModel');
   const codexModelProvider = document.getElementById('codexModelProvider');
   const saveCodexConfig = document.getElementById('saveCodexConfig');
+  const localCliTestProject = document.getElementById('localCliTestProject');
+  const localCliTestChatUrl = document.getElementById('localCliTestChatUrl');
+  const localCliTestRun = document.getElementById('localCliTestRun');
+  const localCliTestStatus = document.getElementById('localCliTestStatus');
+  let cliTestBusy = false;
+  let cliTestRunning = false;
+  let cliTestPolling = null;
+  let cliTestReload = 0;
+  let cliProjects = [];
+
   let busy = false;
   let pendingMode = null;
   let modelCatalog = [];
@@ -112,6 +122,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     cancelCodexPermission.disabled = busy;
     saveCodexConfig.disabled = busy;
     refreshModels.disabled = busy;
+    localCliTestRun.disabled = busy || cliTestBusy || cliTestRunning || options.codexEnabled !== true || !cliProjects.length;
   }
   async function saveOptions(next, success) {
     if (busy) return;
@@ -275,6 +286,120 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
         '。可检查 Magpie Gateway 是否在运行，或暂时使用高级配置。';
     }
   }
+
+  const cliLabels = {
+    running:'本地 CLI 正在运行。等待只读测试完成…',
+    cli_exited_unverified:'CLI 正常退出，但尚未验证 ChatGPT 会话绑定。',
+    browser_unavailable_reported:'CLI 正常退出；Skill 报告内置浏览器不可用（自报，未独立验证）。',
+    chat_verified:'Skill 已将当前测试任务与目标 ChatGPT 对话绑定（本地记录已验证）。',
+    timed_out:'CLI 已超时（180 秒），没有确认会话绑定。',
+    cli_failed:'CLI 启动/执行失败。',
+    spawn_failed:'本地 Node.js 或独立测试运行器启动失败。',
+    rejected:'本地测试请求被拒绝：项目、URL、系统平台或授权无效。',
+    stale:'测试记录超时未更新；请检查本地运行器，不会自动重试。'
+  };
+  async function refreshLocalCliSnapshot() {
+    // Same data-only script pattern as model-catalog.js. No fetch, HTTP or
+    // new iframe capability. Never load a remote URL or execute options as JS.
+    const script=document.createElement('script');
+    script.src='native-cli-test-status.js?refresh='+(++cliTestReload);
+    await new Promise((resolve,reject)=>{
+      script.onload=resolve;
+      script.onerror=()=>reject(new Error('无法读取本地测试状态快照'));
+      document.head.append(script);
+    }).finally(()=>script.remove());
+    const snap=globalThis.__magpieLocalCliTest;
+    if(!snap||!Array.isArray(snap.projects))throw new Error('状态快照格式无效');
+    cliProjects=snap.projects.filter(p=>typeof p==='string'&&p.length<=96);
+    const chosen=localCliTestProject.value;
+    localCliTestProject.replaceChildren();
+    const placeholder=document.createElement('option');
+    placeholder.value='';placeholder.textContent='请选择已登记的 Codex 项目';
+    localCliTestProject.append(placeholder);
+    for(const p of cliProjects){
+      const option=document.createElement('option');option.value=p;option.textContent=p;
+      localCliTestProject.append(option);
+    }
+    if(cliProjects.includes(chosen))localCliTestProject.value=chosen;
+    else if(cliProjects.includes('tmn-updater'))localCliTestProject.value='tmn-updater';
+    const test=snap.test;
+    const requested=options.nativeCliLocalTestRequest;
+    const freshRequest=requested?.id && Number.isSafeInteger(requested.createdAt) &&
+      Date.now()-requested.createdAt>=0 && Date.now()-requested.createdAt<120000;
+    const awaiting=Boolean(freshRequest && requested.id!==test?.id);
+    cliTestRunning=awaiting||test?.status==='running';
+    if(awaiting){
+      localCliTestStatus.textContent='等待本机插件接收新测试请求；请勿重复点击。';
+      render();
+      return;
+    }
+    if(test){
+      const label=cliLabels[test.status]||'等待本机状态…';
+      const suffix=test.exitCode!==null?' 退出码：'+test.exitCode+'。':'';
+      const category=test.category?' 诊断类别：'+test.category+'。':'';
+      localCliTestStatus.textContent=label+suffix+category;
+      localCliTestStatus.classList.toggle('error',['cli_failed','timed_out','spawn_failed','rejected','stale'].includes(test.status));
+      if(test.status!=='running'&&cliTestPolling){
+        clearInterval(cliTestPolling);cliTestPolling=null;
+      }
+    } else {
+      localCliTestStatus.textContent='尚未开始本机测试。';
+    }
+    render();
+  }
+  function beginCliTestPolling(){
+    if(cliTestPolling)return;
+    cliTestPolling=setInterval(()=>{void refreshLocalCliSnapshot().catch(err=>{
+      localCliTestStatus.textContent='状态刷新失败：'+(err?.message||'未知错误');
+    });},3500);
+  }
+  localCliTestRun.addEventListener('click',async()=>{
+    if(busy||cliTestBusy||cliTestRunning||!cliProjects.length||options.codexEnabled!==true)return;
+    const project=localCliTestProject.value;
+    const chatUrl=localCliTestChatUrl.value.trim();
+    if(!cliProjects.includes(project)){
+      localCliTestStatus.textContent='请先选择已登记的项目。';return;
+    }
+    let url;
+    try{
+      url=new URL(chatUrl);
+      if(url.protocol!=='https:'||url.hostname!=='chatgpt.com'||url.search||url.hash||
+        !/^\/(?:g\/g-p-[\w-]+\/)?c\/[\w-]{8,}\/?$/.test(url.pathname))
+        throw new Error('地址无效');
+    }catch{
+      localCliTestStatus.textContent='请输入完整且不含参数的 chatgpt.com/c/... 对话 URL。';return;
+    }
+    if(!globalThis.crypto?.getRandomValues){
+      localCliTestStatus.textContent='当前页面缺少安全随机数接口，无法生成一次性测试 ID。';return;
+    }
+    function secureNonce(){
+      const bytes=new Uint8Array(16);
+      globalThis.crypto.getRandomValues(bytes);
+      bytes[6]=(bytes[6]&0x0f)|0x40;
+      bytes[8]=(bytes[8]&0x3f)|0x80;
+      const h=Array.from(bytes,n=>n.toString(16).padStart(2,'0')).join('');
+      return [h.slice(0,8),h.slice(8,12),h.slice(12,16),h.slice(16,20),h.slice(20)].join('-');
+    }
+    cliTestBusy=true;render();
+    try{
+      const request={id:secureNonce(),project,chatUrl,createdAt:Date.now()};
+      const next=cleanOptions({...options,nativeCliLocalTestRequest:request});
+      // Only this physical, locally-authorized button emits a request.
+      const saved=await magpie.options.set(next);
+      options=cleanOptions(saved||next);
+      cliTestRunning=true;
+      localCliTestStatus.textContent='测试已提交至本机 Magpie；正在等待插件重载并启动。';
+      localCliTestStatus.classList.remove('error');
+      beginCliTestPolling();
+    }catch(err){
+      localCliTestStatus.textContent='本地测试提交失败：'+(err?.message||err);
+      localCliTestStatus.classList.add('error');
+    }finally{cliTestBusy=false;render();}
+  });
+  void refreshLocalCliSnapshot().then(()=>{
+    if(globalThis.__magpieLocalCliTest?.test?.status==='running')beginCliTestPolling();
+  }).catch(err=>{localCliTestStatus.textContent='无法加载本机项目/状态：'+(err?.message||err);});
+
   codexExecutable.value = options.codexExecutable || '';
   nativeCollabCliExperimental.checked = options.nativeCollabCliExperimental === true;
   codexModel.value = options.codexModel || '';

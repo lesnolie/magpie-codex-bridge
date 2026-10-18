@@ -36,3 +36,10 @@
 #codexPermissionMode{display:block;width:100%;min-width:0;padding:12px 14px;border-radius:10px;font:inherit;font-size:13px;color:var(--magpie-fg,#111);background:var(--magpie-bg,#fff);border:1px solid color-mix(in srgb,var(--magpie-fg,#111) 22%,transparent);margin-bottom:8px}
 #codexPermissionMode:focus-visible{outline:2px solid var(--magpie-accent,#007aff);outline-offset:2px}
 #codexPermissionMode:disabled{opacity:.6}
+
+.local-cli-test{margin:18px 0;padding:17px;border:1px solid color-mix(in srgb,var(--magpie-fg,#111) 14%,transparent);border-radius:12px}
+.local-cli-test h3{font-size:14px;margin:0 0 10px}
+.local-cli-test label{margin:14px 0 7px;font-size:12px}
+.local-cli-test input,.local-cli-test select{display:block;width:100%;min-width:0;padding:11px 12px;border-radius:9px;font:inherit;font-size:13px;background:var(--magpie-bg,#fff);color:var(--magpie-fg,#111);border:1px solid color-mix(in srgb,var(--magpie-fg,#111) 22%,transparent)}
+.local-cli-test button{margin-top:13px}
+.local-cli-test .remote-status{white-space:pre-line;overflow-wrap:anywhere}

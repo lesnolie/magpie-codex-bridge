@@ -34,7 +34,7 @@ test('wrong failedLaunchId / original taskId / goal / ChatGPT URL refuse without
   const launcher=createNativeCollab(opts,{chatSessions:session,platform:'win32',openDesktop:async()=>{requests++;}});
   const args={project,goal,chatUrl,taskId:first.taskId,retryFailed:true,failedLaunchId:first.launchId};
   await assert.rejects(launcher.start({...args,failedLaunchId:'99999999-9999-4999-8999-999999999999'}),/failedLaunchId/);
-  await assert.rejects(launcher.start({...args,taskId:'wrong-task'}),/task|retry/i);
+  await assert.rejects(launcher.start({...args,taskId:'wrong-task'}),/different native Codex launch/i);
   await assert.rejects(launcher.start({...args,goal:'a different goal'}),/different native Codex launch/i);
   await assert.rejects(launcher.start({...args,chatUrl:otherUrl}),/different native Codex launch/i);
   const normal=await launcher.start({...args,retryFailed:false});

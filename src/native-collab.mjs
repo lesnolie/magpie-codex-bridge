@@ -338,6 +338,9 @@ export function createNativeCollab(options={},dependencies={}){
       const autoSubmit=options.nativeDesktopAutoSendExperimental===true
         ?await autoSend(prompt,{platform})
         :'disabled';
+      // Durable diagnostic only. UIA invocation never confirms Codex execution.
+      try { chat.recordAutoSubmit?.({project,launchId,result:autoSubmit}); }
+      catch { /* Native pairing may have advanced; never re-dispatch. */ }
       return response(ticket,'opened_unconfirmed',{
         autoSubmit,
         instructions:autoSubmit==='invoked-unconfirmed'

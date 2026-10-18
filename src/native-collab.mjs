@@ -20,13 +20,15 @@ export function categorizeDesktopLaunchFailure(error){
   const code=String(error?.code??'').toUpperCase();
   const stderr=typeof error?.stderr==='string'?error.stderr.slice(0,2500):'';
   if(code==='ENOENT')return 'launcher-not-found';
+  if(code==='E2BIG'||code==='ENAMETOOLONG')return 'launcher-argument-too-long';
+  if(code==='ERR_CHILD_PROCESS_STDIO_MAXBUFFER')return 'launcher-output-overflow';
   if(['EACCES','EPERM'].includes(code))return 'access-denied';
   if(['ETIMEDOUT','ESRCH'].includes(code))return 'launcher-timeout';
   if(/invalid native codex launch|invalid codex desktop link|exceeds safe length/i.test(error?.message||''))
     return 'invalid-uri';
   if(/Start-Process|No application is associated|The specified file was not found|没有与之关联的应用/i.test(stderr))
     return 'protocol-handler-error';
-  if(typeof error?.code==='number'||code==='ERR_CHILD_PROCESS_STDIO_MAXBUFFER'||code==='ERR_CHILD_PROCESS_FAILED')
+  if(typeof error?.code==='number'||/^\d{1,4}$/.test(code)||code==='ERR_CHILD_PROCESS_FAILED')
     return 'command-failed';
   return 'unexpected-error';
 }
@@ -38,6 +40,21 @@ function response(ticket,status,extra={}){
     activeChatUnchanged:true,confirmedExecution:false,
     ...extra
   };
+}
+/** Safe, fixed-schema launcher diagnostic; no raw shell output or process args. */
+export function safeDesktopFailureDetails(error,stage='windows-launcher'){
+  const allowedCodes=new Set(['ENOENT','EACCES','EPERM','ETIMEDOUT','E2BIG',
+    'ENAMETOOLONG','ERR_CHILD_PROCESS_STDIO_MAXBUFFER','ERR_CHILD_PROCESS_FAILED']);
+  const raw=String(error?.code??'').toUpperCase();
+  const failureCode=allowedCodes.has(raw)?raw:(/^\d{1,3}$/.test(raw)?raw:null);
+  const exitStatus=Number.isInteger(error?.code)&&error.code>=0&&error.code<=255
+    ?error.code:null;
+  const n=typeof error?.name==='string'?error.name:'';
+  const failureKind=['Error','TypeError','RangeError','SystemError','AbortError'].includes(n)
+    ?n:'unknown';
+  return {failureCategory:categorizeDesktopLaunchFailure(error),
+    failureStage:stage==='building-uri'?'building-uri':'windows-launcher',
+    failureCode,exitStatus,failureKind};
 }
 export function desktopPrompt({project,goal,chatUrl,taskId,launchId,mode='desktop'}){
   const cliMode=mode==='cli';
@@ -231,12 +248,16 @@ export function createNativeCollab(options={},dependencies={}){
     if(ticket.reused&&ticket.launch.status!=='prepared')
       return response(ticket,ticket.launch.status,{reused:true,
         failureCategory:ticket.launch.failureCategory||null,
+        failureStage:ticket.launch.failureStage||null,
+        failureCode:ticket.launch.failureCode||null,
+        exitStatus:ticket.launch.exitStatus??null,
         instructions:'Previous launch request was already sent or attempted. For a confirmed dispatch_failed Desktop ticket, explicitly supply retryFailed=true, failedLaunchId and the original taskId with the unchanged goal and chat URL; otherwise do not retry.'});
     const launchId=ticket.launch.launchId;
     const prompt=desktopPrompt({project,goal,chatUrl:ticket.launch.chatUrl,
       taskId:ticket.launch.taskId,launchId});
     // Mark BEFORE side effects to prevent duplicate execution on MCP retry.
     chat.updateLaunch({project,launchId,status:'dispatching'});
+    let dispatchStage='building-uri';
     try{
       if(ticket.launch.transport==='queue'){
         const executable=bin();
@@ -255,15 +276,17 @@ export function createNativeCollab(options={},dependencies={}){
           instructions:'Native Codex CLI exited. Verify the Skill actually reached PROJECT_VERIFIED in the target ChatGPT chat. CLI success alone does not confirm browser collaboration.'
         });
       }
-      await open(desktopUrl(ticket.localRoot,prompt),{platform});
+      const url=desktopUrl(ticket.localRoot,prompt);
+      dispatchStage='windows-launcher';
+      await open(url,{platform});
       chat.updateLaunch({project,launchId,status:'opened_unconfirmed'});
       return response(ticket,'opened_unconfirmed',{
         instructions:'Codex Desktop was asked to open the project with a prefilled $magpie-codex-collab prompt. Press Send once in Codex Desktop. Only native Codex can verify and activate this ChatGPT chat.'
       });
     }catch(error){
-      const failureCategory=categorizeDesktopLaunchFailure(error);
-      chat.updateLaunch({project,launchId,status:'dispatch_failed',failureCategory});
-      return response(ticket,'dispatch_failed',{failureCategory,
+      const detail=safeDesktopFailureDetails(error,dispatchStage);
+      chat.updateLaunch({project,launchId,status:'dispatch_failed',...detail});
+      return response(ticket,'dispatch_failed',{...detail,
         error:ticket.launch.transport==='queue'
           ?'Codex CLI queue failed; no automatic fallback to a second Desktop thread'
           :options.nativeCollabCliExperimental===true?'Native Codex CLI experiment failed or timed out':'Codex Desktop URL handler could not be launched',

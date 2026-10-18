@@ -156,3 +156,21 @@ test('new ChatGPT conversation invalidates a previous queue-linked Codex thread'
 });
 
 test.after(()=>rmSync(base,{recursive:true,force:true}));
+
+
+test('experimental CLI executes native Codex with no Desktop Send or app-server',async()=>{
+ const store=createChatSessions({projectRoots:projects,folder:path.join(base,'cli-test')});
+ let args=null;
+ const experiment=createNativeCollab({...opts,nativeCollabCliExperimental:true},{
+  projectRoots:projects,chatSessions:store,binary:()=> 'codex.exe',
+  launchCli:async data=>{args=data;}
+ });
+ const result=await experiment.start({project:'tmn-updater',goal:'Read source only',chatUrl});
+ assert.equal(result.status,'cli_exited_unverified');
+ assert.equal(result.confirmedExecution,false);
+ assert.equal(args.binary,'codex.exe');
+ assert.equal(args.root,root);
+ assert.match(args.prompt,/\$magpie-codex-collab/);
+ const repeat=await experiment.start({project:'tmn-updater',goal:'Read source only',chatUrl});
+ assert.equal(repeat.reused,true);
+});

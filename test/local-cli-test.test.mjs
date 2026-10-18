@@ -15,7 +15,7 @@ const url='https://chatgpt.com/c/ffffffff-1111-2222-3333-0123456789ab';
 const opts={codexEnabled:true};
 function dir(name){return path.join(base,name);}
 function target(name){return path.join(base,name+'.js');}
-function request(extra={}){return {id:randomUUID(),project:'tmn-updater',chatUrl:url,...extra};}
+function request(extra={}){return {id:randomUUID(),project:'tmn-updater',chatUrl:url,createdAt:Date.now(),...extra};}
 function fakeSpawner(calls){
   return (...params)=>{
     calls.push(params);
@@ -56,7 +56,8 @@ test('unknown project, malformed URLs and disabled flag cannot start CLI',async(
     ['unknown',{...opts,nativeCliLocalTestRequest:request({project:'not-allowed'})}],
     ['url',{...opts,nativeCliLocalTestRequest:request({chatUrl:'https://evil.example/c/abcdefgh'})}],
     ['urlquery',{...opts,nativeCliLocalTestRequest:request({chatUrl:url+'?token=secret'})}],
-    ['disabled',{codexEnabled:false,nativeCliLocalTestRequest:request()}]
+    ['disabled',{codexEnabled:false,nativeCliLocalTestRequest:request()}],
+    ['expired',{...opts,nativeCliLocalTestRequest:request({createdAt:Date.now()-3600000})}]
   ]){
     const spawns=[];
     const result=await startLocalCliTest(badSettings,config(name,spawns));

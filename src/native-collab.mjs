@@ -70,6 +70,17 @@ export async function queueToNativeThread(threadId,prompt,{binary='codex.exe',ru
     shell:false,windowsHide:true,timeout:16000,maxBuffer:8*1024
   });
 }
+
+// Experimental native Codex CLI backend. Does not use app-server.
+// CLI stdout/stderr are deliberately not returned to remote MCP clients.
+export async function launchNativeCli({binary,root,prompt,run=execFile}){
+  if(!root||!prompt)fail('Missing native CLI project or prompt');
+  await run(binary,['exec','--cd',root,'--sandbox','workspace-write','--',prompt],{
+    shell:false,windowsHide:true,timeout:180000,maxBuffer:64*1024,
+    env:{...process.env,MAGPIE_NATIVE_COLLAB_EXPERIMENT:'1'}
+  });
+}
+
 export function createNativeCollab(options={},dependencies={}){
   const roots=dependencies.projectRoots||(()=>projectRoots(options));
   const chat=dependencies.chatSessions||createChatSessions({projectRoots:roots});
@@ -77,6 +88,7 @@ export function createNativeCollab(options={},dependencies={}){
   const queue=dependencies.queueMessage||queueToNativeThread;
   const platform=dependencies.platform||process.platform;
   const bin=dependencies.binary||(()=>resolveCodexBinary(options));
+  const cli=dependencies.launchCli||launchNativeCli;
 
   async function start({project,goal,chatUrl,taskId}={}){
     if(options.codexEnabled!==true)fail('Native Codex remote startup requires local Codex permission to be enabled in Magpie');
@@ -106,6 +118,15 @@ export function createNativeCollab(options={},dependencies={}){
           instructions:'Codex queue acknowledged STORAGE, not delivery/execution. Check the linked native Codex Desktop thread; do not start another thread automatically.'
         });
       }
+      if(options.nativeCollabCliExperimental===true){
+        // Explicit local opt-in only. A successful CLI exit is not proof the
+        // in-app browser was available or the ChatGPT pairing succeeded.
+        await cli({binary:bin(),root:ticket.localRoot,prompt});
+        chat.updateLaunch({project,launchId,status:'opened_unconfirmed'});
+        return response(ticket,'cli_exited_unverified',{
+          instructions:'Native Codex CLI exited. Verify the Skill actually reached PROJECT_VERIFIED in the target ChatGPT chat. CLI success alone does not confirm browser collaboration.'
+        });
+      }
       await open(desktopUrl(ticket.localRoot,prompt),{platform});
       chat.updateLaunch({project,launchId,status:'opened_unconfirmed'});
       return response(ticket,'opened_unconfirmed',{
@@ -116,7 +137,7 @@ export function createNativeCollab(options={},dependencies={}){
       return response(ticket,'dispatch_failed',{
         error:ticket.launch.transport==='queue'
           ?'Codex CLI queue failed; no automatic fallback to a second Desktop thread'
-          :'Codex Desktop URL handler could not be launched',
+          :options.nativeCollabCliExperimental===true?'Native Codex CLI experiment failed or timed out':'Codex Desktop URL handler could not be launched',
         instructions:'Check the local Codex installation and Magpie logs. A failed launch is not confirmation of execution.'
       });
     }

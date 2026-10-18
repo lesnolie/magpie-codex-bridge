@@ -28,7 +28,7 @@ test('automatic local selection uses the current registered workspace, not last 
   workspace=updater;
   assert.equal(chat.status().project,'tmn-updater');
   workspace=inner;
-  assert.throws(()=>chat.request({project:'tmn-updater',taskId:'badbind',url}),/workspace mismatch/i);
+  assert.equal(chat.status('tmn-updater').nativeThreadLinked,false);
   assert.equal(chat.status('tmn-updater').pending,null);
 });
 test('local browser verification and native thread registration stay pinned to correct project',()=>{

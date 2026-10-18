@@ -323,7 +323,7 @@ export function createNativeCollab(options={},dependencies={}){
         await open(url,{platform});
         chat.updateLaunch({project,launchId,status:'opened_unconfirmed'});
         return response(ticket,'opened_unconfirmed',{
-          instructions:'Codex Desktop was asked to open the project with a prefilled Skill prompt. Sending and execution are not confirmed.'
+          instructions:'Codex Desktop was asked to open the project with a prefilled Skill prompt. Press Send once in Codex Desktop if it opened. Neither sending nor execution is confirmed.'
         });
       }
       dispatchStage='worker-spawn';

@@ -14,6 +14,22 @@ import { resolveCodexBinary, resolveCodexPermissionMode } from './codex-tasks.mj
 const execFile=promisify(nativeExecFile);
 
 function fail(reason){throw new Error(reason);}
+// Never expose raw stderr/stdout. PowerShell may echo the launch URI, including
+// the private ChatGPT URL, into its error output.
+export function categorizeDesktopLaunchFailure(error){
+  const code=String(error?.code??'').toUpperCase();
+  const stderr=typeof error?.stderr==='string'?error.stderr.slice(0,2500):'';
+  if(code==='ENOENT')return 'launcher-not-found';
+  if(['EACCES','EPERM'].includes(code))return 'access-denied';
+  if(['ETIMEDOUT','ESRCH'].includes(code))return 'launcher-timeout';
+  if(/invalid native codex launch|invalid codex desktop link|exceeds safe length/i.test(error?.message||''))
+    return 'invalid-uri';
+  if(/Start-Process|No application is associated|The specified file was not found|没有与之关联的应用/i.test(stderr))
+    return 'protocol-handler-error';
+  if(typeof error?.code==='number'||code==='ERR_CHILD_PROCESS_STDIO_MAXBUFFER'||code==='ERR_CHILD_PROCESS_FAILED')
+    return 'command-failed';
+  return 'unexpected-error';
+}
 function response(ticket,status,extra={}){
   return {
     project:ticket.project,taskId:ticket.launch?.taskId,
@@ -222,8 +238,9 @@ export function createNativeCollab(options={},dependencies={}){
         instructions:'Codex Desktop was asked to open the project with a prefilled $magpie-codex-collab prompt. Press Send once in Codex Desktop. Only native Codex can verify and activate this ChatGPT chat.'
       });
     }catch(error){
-      chat.updateLaunch({project,launchId,status:'dispatch_failed'});
-      return response(ticket,'dispatch_failed',{
+      const failureCategory=categorizeDesktopLaunchFailure(error);
+      chat.updateLaunch({project,launchId,status:'dispatch_failed',failureCategory});
+      return response(ticket,'dispatch_failed',{failureCategory,
         error:ticket.launch.transport==='queue'
           ?'Codex CLI queue failed; no automatic fallback to a second Desktop thread'
           :options.nativeCollabCliExperimental===true?'Native Codex CLI experiment failed or timed out':'Codex Desktop URL handler could not be launched',

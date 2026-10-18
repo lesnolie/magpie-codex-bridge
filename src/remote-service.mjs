@@ -119,7 +119,7 @@ async function cleanupOldTask() {
   } catch { /* No old task or task cleanup denied: never touch other tasks. */ }
 }
 
-async function nodeBinary(env = process.env) {
+export async function nodeBinary(env = process.env) {
   const candidate = [];
   if (env.MAGPIE_REVIEW_NODE_PATH) candidate.push(env.MAGPIE_REVIEW_NODE_PATH);
   if (path.basename(process.execPath).toLowerCase() === 'node.exe') candidate.push(process.execPath);

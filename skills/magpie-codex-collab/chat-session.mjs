@@ -126,6 +126,8 @@ function view(p,s){
       url:s.pending.url,requestedAt:s.pending.requestedAt}:null,
     checkpoint:s.checkpoint||null,stateGeneration:s.generation,
     nativeThreadLinked:Boolean(s.nativeThreadId&&s.linkedRoot===p.root),
+    dispatchStalled:Boolean(s.launch?.status==='dispatching'&&
+      Date.now()-Date.parse(s.launch.updatedAt||s.launch.requestedAt)>60000),
     launch:s.launch?{launchId:s.launch.launchId,taskId:s.launch.taskId,status:s.launch.status,transport:s.launch.transport,requestedAt:s.launch.requestedAt,chatUrl:s.launch.chatUrl,
       failureCategory:s.launch.failureCategory||null,
       failureStage:s.launch.failureStage||null,failureCode:s.launch.failureCode||null,
@@ -251,6 +253,19 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
         nativeThreadId:matchingThread?s.nativeThreadId:null};
     });
   }
+  /**
+   * One-shot native Desktop worker may read ONLY its own dispatching ticket,
+   * already approved and stored by the authenticated Magpie tool. This is not
+   * exposed as a remote MCP tool.
+   */
+  function readDesktopDispatch({project,launchId}={}){
+    const p=allowed(project),s=load(filename(p,folder));
+    if(typeof launchId!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(launchId)||
+       s.launch?.launchId!==launchId||s.launch.status!=='dispatching'||
+       s.launch.transport!=='desktop')fail('No matching pending Desktop dispatch');
+    return {project:p.name,root:p.root,goal:s.launch.goal,
+      taskId:s.launch.taskId,chatUrl:s.launch.chatUrl,launchId};
+  }
   function updateLaunch({project,launchId,status,failureCategory,failureStage,failureCode,exitStatus,failureKind}={}){
     const p=allowed(project),file=filename(p,folder);
     if(!['dispatching','opened_unconfirmed','queued_unconfirmed','dispatch_failed',
@@ -368,7 +383,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       'Use only the verified Magpie workspace connector. Never re-execute completed iterations.'];
     return {project:s.project,active:a,checkpoint:c,handoff:lines.join('\n')};
   }
-  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,recoverLaunch,linkThread,unlinkThread,findLinkedProject};
+  return {status,request,activate,checkpoint,handoff,prepareLaunch,updateLaunch,recoverLaunch,readDesktopDispatch,linkThread,unlinkThread,findLinkedProject};
 }
 function argsOf(argv){
   const [command,...rest]=argv,opts={};

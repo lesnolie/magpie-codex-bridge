@@ -10,7 +10,7 @@ test('sender is never invoked on unsupported platforms', async()=>{
 test('PowerShell implementation requires exact prompt, a unique window and InvokePattern',()=>{
   const s=desktopAutoSendScript();
   assert.match(s,/\-cne \$expected/);
-  assert.match(s,/\$matches\.Count \-ne 1/);
+  assert.match(s,/\$candidates\.Count \-ne 1/);
   assert.match(s,/InvokePattern/);
   assert.doesNotMatch(s,/SendKeys|keybd_event|SendInput/);
 });

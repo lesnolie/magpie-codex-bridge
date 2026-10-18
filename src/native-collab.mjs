@@ -263,6 +263,12 @@ export function createNativeCollab(options={},dependencies={}){
     }
     let ticket=chat.prepareLaunch({project,goal,chatUrl,taskId});
     if(retryFailed===true){
+      if(ticket.launch.recoveredFrom===failedLaunchId){
+        // An already recovered ticket must never be dispatched twice,
+        // even when the original user confirmation is repeated verbatim.
+        return response(ticket,ticket.launch.status,{reused:true,
+          instructions:'This exact recovery was already submitted. No second dispatch was attempted.'});
+      }
       // A normal retry remains fully idempotent. Explicit recovery is allowed
       // ONLY for the exact failed Desktop ticket the user named, never for a
       // queued/opened/dispatching ticket. The original goal was also checked

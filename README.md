@@ -1,8 +1,27 @@
-# Magpie Local Project Review (v0.4.16 alpha)
+# Magpie Local Project Review (v0.4.17 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.17 alpha: explicitly retry a failed native Desktop launch from ChatGPT Web
+
+Users no longer need to enter Codex Desktop merely to rearm a recorded
+`dispatch_failed` ticket. On an explicit user request to retry the SAME
+failed startup, invoke `codex_collab_start` with the original
+`project`, `goal`, `chatUrl`, `taskId`, and two new fields:
+`retryFailed:true` plus `failedLaunchId:"<exact failed UUID>"`.
+
+The backend compares the original task, goal, exact ChatGPT URL, project and
+failed Desktop launch ID against the saved local ticket, rotates the launch
+UUID under its existing local file lock, and dispatches exactly once.
+A normal tool retry remains inert; in-flight, opened, queue and unrelated
+tickets cannot be remotely rearmed. A repeated explicit call is idempotent
+and does not open another Desktop composer.
+
+This restores **Web control over a confirmed failed dispatch**; it still
+does not bypass a native Desktop composer requiring a first manual Send, or
+prove automatic GUI execution. Follow the browser-verified Skill handshake.
 
 ## v0.4.16 alpha: native Desktop launch failure diagnostics and local recovery
 

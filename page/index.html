@@ -40,6 +40,8 @@
       </div>
       <p class="hint">在 Magpie 的 Skills 中从 GitHub 导入 <strong>magpie-codex-collab</strong> 并指定给 Codex。Skill 使用原生 Codex 执行和已有的 Magpie MCP 连接，不会新开隧道，也不会复制项目文件。</p>
       <p class="hint"><strong>ChatGPT Web 首次发起：</strong>在当前对话提供这条聊天的完整 URL，然后让 ChatGPT 调用 <code>codex_collab_start</code>。它会为已登记的项目打开原生 Codex Desktop，并预填 Skill 指令；第一次需要在 Codex 里点一次发送。MCP 不会自动获得当前聊天 URL，也不会猜测旧窗口。</p>
+      <label class="remote-switch" for="nativeCollabCliExperimental"><input id="nativeCollabCliExperimental" type="checkbox"><span>实验：首次使用原生 Codex CLI 自动发送（无需 Desktop 点击发送）</span></label>
+      <p class="hint">默认关闭。CLI 会在本地运行，最多等待 3 分钟；CLI 退出不代表 ChatGPT 浏览器协作成功。请先用只读测试目标验证。保存按钮位于下方 Codex 配置。</p>
       <p class="hint">如果已经安全绑定原生 Codex 线程，同一对话的后续任务可使用 Codex Queue 投递，但入队并不等于已执行。每个请求都会防止自动重复派发。</p>
       <p class="hint">专用 ChatGPT 标签页由 Codex 内置浏览器管理；只有该环境提供 control-in-app-browser 时才能自动发送审核消息。不同对话通过任务 ID、真实聊天 URL、MCP 项目验证后安全切换。</p>
       <p class="hint">Skill 路径：<code>skills/magpie-codex-collab</code>。GitHub：<a href="https://github.com/lesnolie/magpie-codex-bridge/tree/main/skills/magpie-codex-collab" target="_blank" rel="noopener noreferrer">查看安装源</a>。</p>

@@ -342,7 +342,7 @@ export function createNativeCollab(options={},dependencies={}){
         autoSubmit,
         instructions:autoSubmit==='invoked-unconfirmed'
           ?'A uniquely verified native Codex Send button was invoked. Actual turn execution and chat binding remain unconfirmed.'
-          :'Codex Desktop was asked to open the project with a prefilled $magpie-codex-collab prompt. If present, press Send once in Codex Desktop. Only native Codex can verify and activate this ChatGPT chat.'
+          :'Codex Desktop was asked to open the project with a prefilled $magpie-codex-collab prompt. Press Send once in Codex Desktop if the composer is still populated. Only native Codex can verify and activate this ChatGPT chat.'
       });
     }catch(error){
       const detail=safeDesktopFailureDetails(error,dispatchStage);

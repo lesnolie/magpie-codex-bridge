@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="style.css">
   <!-- Self-contained app.js also implements Magpie's documented postMessage bridge. -->
   <script src="model-catalog.js" defer></script>
+  <script src="native-session-preview.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -39,13 +40,29 @@
         <span class="tag">Skill</span>
       </div>
       <p class="hint">在 Magpie 的 Skills 中从 GitHub 导入 <strong>magpie-codex-collab</strong> 并指定给 Codex。Skill 使用原生 Codex 执行和已有的 Magpie MCP 连接，不会新开隧道，也不会复制项目文件。</p>
-      <p class="hint"><strong>ChatGPT Web 首次发起：</strong>在当前对话提供这条聊天的完整 URL，然后让 ChatGPT 调用 <code>codex_collab_start</code>。它会为已登记的项目打开原生 Codex Desktop，并预填 Skill 指令；第一次需要在 Codex 里点一次发送。MCP 不会自动获得当前聊天 URL，也不会猜测旧窗口。</p>
-      <label class="remote-switch" for="nativeCollabCliExperimental"><input id="nativeCollabCliExperimental" type="checkbox"><span>实验：首次使用原生 Codex CLI 自动发送（无需 Desktop 点击发送）</span></label>
+      <div class="collab-overview" aria-label="原生会话绑定概览">
+        <div class="collab-overview-heading">
+          <strong>自动匹配当前 Codex 工作区</strong>
+          <span class="tag">Desktop · 推荐</span>
+        </div>
+        <p class="hint">从 Codex Desktop 发起协作时，Skill 根据当前工作目录识别已登记项目，不用在 Magpie 手动选择。首次绑定或切换 ChatGPT 对话仍需提供准确的聊天 URL，并通过浏览器验证。</p>
+        <div class="collab-metrics">
+          <div><strong id="collabProjectCount">—</strong><span>已登记项目</span></div>
+          <div><strong id="collabBoundCount">—</strong><span>已验证线程绑定</span></div>
+        </div>
+        <p id="collabPreviewStatus" class="remote-status" role="status" aria-live="polite">正在读取本地会话快照…</p>
+        <ul id="collabBoundList" class="collab-bound-list" aria-label="已验证绑定项目"></ul>
+        <p class="hint">这里是插件重载时的只读快照，不能判断此刻正在聚焦哪个 Desktop 窗口。ChatGPT Web 仅在聊天 URL 唯一对应已验证线程时才自动匹配，不会猜测项目。</p>
+      </div>
+      <p class="hint"><strong>首次从 ChatGPT Web 发起：</strong>提供当前对话的完整 URL，再通过 <code>codex_collab_start</code> 请求协作。尚无绑定时需要从目标 Codex Desktop 工作区先完成配对；首次打开 Desktop 预填消息仍可能需要点击发送。</p>
+      <details id="advancedCliDiagnostics" class="advanced-cli-diagnostics">
+        <summary>高级诊断 · 独立 CLI（非日常 Desktop 协作）</summary>
+        <label class="remote-switch" for="nativeCollabCliExperimental"><input id="nativeCollabCliExperimental" type="checkbox"><span>实验：首次使用原生 Codex CLI 自动发送（无需 Desktop 点击发送）</span></label>
       <p class="hint">默认关闭。CLI 会在本地运行，最多等待 3 分钟；CLI 退出不代表 ChatGPT 浏览器协作成功。请先用只读测试目标验证。保存按钮位于下方 Codex 配置。</p>
       <div class="local-cli-test" aria-labelledby="localCliTestHeading">
         <h3 id="localCliTestHeading">本机只读诊断</h3>
         <p class="hint">只有在此页面点击按钮，才会通过本地配置重载请求一次原生 CLI 测试；不会从远程 MCP 触发。始终使用 read-only 沙盒，不修改项目、提交或发布。</p>
-        <label for="localCliTestProject">Codex Desktop 已登记项目</label>
+        <label for="localCliTestProject">仅限独立 CLI 诊断：选择被测项目</label>
         <select id="localCliTestProject" aria-label="选择本机测试项目"><option value="">正在加载项目…</option></select>
         <label for="localCliTestChatUrl">当前 ChatGPT 对话完整 URL</label>
         <input id="localCliTestChatUrl" type="url" spellcheck="false" autocomplete="off" placeholder="https://chatgpt.com/c/..." aria-label="当前 ChatGPT 对话 URL">
@@ -53,6 +70,7 @@
         <p id="localCliTestStatus" class="remote-status" role="status" aria-live="polite"></p>
         <p class="hint">最多运行 3 分钟。同一时间只允许一次测试。退出码为 0 仅表示 CLI 正常退出；只有 Skill 完成项目与目标对话验证并写入本机会话绑定后，才显示绑定成功。</p>
       </div>
+      </details>
       <p class="hint">如果已经安全绑定原生 Codex 线程，同一对话的后续任务可使用 Codex Queue 投递，但入队并不等于已执行。每个请求都会防止自动重复派发。</p>
       <p class="hint">专用 ChatGPT 标签页由 Codex 内置浏览器管理；只有该环境提供 control-in-app-browser 时才能自动发送审核消息。不同对话通过任务 ID、真实聊天 URL、MCP 项目验证后安全切换。</p>
       <p class="hint">Skill 路径：<code>skills/magpie-codex-collab</code>。GitHub：<a href="https://github.com/lesnolie/magpie-codex-bridge/tree/main/skills/magpie-codex-collab" target="_blank" rel="noopener noreferrer">查看安装源</a>。</p>

@@ -323,8 +323,17 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     if(cliProjects.includes(chosen))localCliTestProject.value=chosen;
     else if(cliProjects.includes('tmn-updater'))localCliTestProject.value='tmn-updater';
     const test=snap.test;
+    const requested=options.nativeCliLocalTestRequest;
+    const freshRequest=requested?.id && Number.isSafeInteger(requested.createdAt) &&
+      Date.now()-requested.createdAt>=0 && Date.now()-requested.createdAt<120000;
+    const awaiting=Boolean(freshRequest && requested.id!==test?.id);
+    cliTestRunning=awaiting||test?.status==='running';
+    if(awaiting){
+      localCliTestStatus.textContent='等待本机插件接收新测试请求；请勿重复点击。';
+      render();
+      return;
+    }
     if(test){
-      cliTestRunning=test.status==='running';
       const label=cliLabels[test.status]||'等待本机状态…';
       const suffix=test.exitCode!==null?' 退出码：'+test.exitCode+'。':'';
       const category=test.category?' 诊断类别：'+test.category+'。':'';
@@ -334,7 +343,6 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
         clearInterval(cliTestPolling);cliTestPolling=null;
       }
     } else {
-      cliTestRunning=false;
       localCliTestStatus.textContent='尚未开始本机测试。';
     }
     render();

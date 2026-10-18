@@ -77,6 +77,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const localCliTestRun = document.getElementById('localCliTestRun');
   const localCliTestStatus = document.getElementById('localCliTestStatus');
   let cliTestBusy = false;
+  let cliTestRunning = false;
   let cliTestPolling = null;
   let cliTestReload = 0;
   let cliProjects = [];
@@ -121,7 +122,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     cancelCodexPermission.disabled = busy;
     saveCodexConfig.disabled = busy;
     refreshModels.disabled = busy;
-    localCliTestRun.disabled = busy || cliTestBusy || options.codexEnabled !== true || !cliProjects.length;
+    localCliTestRun.disabled = busy || cliTestBusy || cliTestRunning || options.codexEnabled !== true || !cliProjects.length;
   }
   async function saveOptions(next, success) {
     if (busy) return;
@@ -323,6 +324,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     else if(cliProjects.includes('tmn-updater'))localCliTestProject.value='tmn-updater';
     const test=snap.test;
     if(test){
+      cliTestRunning=test.status==='running';
       const label=cliLabels[test.status]||'等待本机状态…';
       const suffix=test.exitCode!==null?' 退出码：'+test.exitCode+'。':'';
       const category=test.category?' 诊断类别：'+test.category+'。':'';
@@ -331,7 +333,10 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       if(test.status!=='running'&&cliTestPolling){
         clearInterval(cliTestPolling);cliTestPolling=null;
       }
-    } else localCliTestStatus.textContent='尚未开始本机测试。';
+    } else {
+      cliTestRunning=false;
+      localCliTestStatus.textContent='尚未开始本机测试。';
+    }
     render();
   }
   function beginCliTestPolling(){
@@ -341,7 +346,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     });},3500);
   }
   localCliTestRun.addEventListener('click',async()=>{
-    if(busy||cliTestBusy||!cliProjects.length||options.codexEnabled!==true)return;
+    if(busy||cliTestBusy||cliTestRunning||!cliProjects.length||options.codexEnabled!==true)return;
     const project=localCliTestProject.value;
     const chatUrl=localCliTestChatUrl.value.trim();
     if(!cliProjects.includes(project)){
@@ -366,6 +371,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       // Only this physical, locally-authorized button emits a request.
       const saved=await magpie.options.set(next);
       options=cleanOptions(saved||next);
+      cliTestRunning=true;
       localCliTestStatus.textContent='测试已提交至本机 Magpie；正在等待插件重载并启动。';
       localCliTestStatus.classList.remove('error');
       beginCliTestPolling();

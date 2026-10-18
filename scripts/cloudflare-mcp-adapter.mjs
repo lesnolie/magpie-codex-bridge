@@ -15,7 +15,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 const PORT = 48765;
 const MCP_PATH = '/mcp';
 const MODERN_MCP_VERSION = '2026-07-28';
-const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.4.8-alpha.1' });
+const SERVER_INFO = Object.freeze({ name: 'magpie-local-review', version: '0.4.9-alpha.1' });
 const SERVER_META = Object.freeze({ 'io.modelcontextprotocol/serverInfo': SERVER_INFO });
 const UPSTREAM = 'http://127.0.0.1:3425/mcp/magpie/tools';
 const TOOL_NAMES = Object.freeze([
@@ -37,6 +37,7 @@ const CODEX_NAMES = Object.freeze([
   'magpie-codex-bridge_codex_review_changes',
   'magpie-codex-bridge_codex_ack_review',
   'magpie-codex-bridge_codex_cancel_task',
+  'magpie-codex-bridge_codex_collab_start',
 ]);
 const READ_ONLY = new Set(TOOL_NAMES.filter(x=>!x.endsWith('_chat_session_request_transfer')));
 const CODEX_PERMISSION_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-remote-enabled.flag');
@@ -160,7 +161,7 @@ function filteredReply(reply, allowed) {
         ...t,
         annotations: { ...t.annotations,
           readOnlyHint: READ_ONLY.has(t.name) || codexRead(t.name),
-          destructiveHint: t.name.endsWith('_codex_submit_task') || t.name.endsWith('_codex_cancel_task'),
+          destructiveHint: t.name.endsWith('_codex_submit_task') || t.name.endsWith('_codex_cancel_task') || t.name.endsWith('_codex_collab_start'),
           openWorldHint: false,
           idempotentHint: READ_ONLY.has(t.name) || t.name.endsWith('_codex_task_status') || t.name.endsWith('_codex_task_result'),
         },

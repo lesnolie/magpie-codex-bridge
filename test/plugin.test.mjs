@@ -93,16 +93,19 @@ test('Magpie MCP tools still register without granting Codex execution', async (
   const plugin=await MagpieProjectReview({},cfg({codexEnabled:false,remoteAutoStart:false}));
   assert.deepEqual(Object.keys(plugin.tool).sort(),[
     'chat_session_request_transfer','chat_session_status',
-    'codex_ack_review','codex_cancel_task','codex_review_changes','codex_review_inbox',
+    'codex_ack_review','codex_cancel_task','codex_collab_start','codex_review_changes','codex_review_inbox',
     'codex_submit_task','codex_task_result','codex_task_status','codex_wait_task',
     'git_diff','git_status','list_files','projects','read_file','search_text',
   ]);
   const result=JSON.parse(await plugin.tool.codex_submit_task.execute({project:'TMN',prompt:'read only'}));
+  const nativeResult=JSON.parse(await plugin.tool.codex_collab_start.execute({project:'TMN',goal:'Review'}));
+  assert.equal(nativeResult.ok,false,'native starts remain separately permission gated');
+  assert.match(nativeResult.error,/permission/i);
   assert.equal(result.ok,false);
   assert.match(result.error,/Codex is disabled/);
   const listing=JSON.parse(await plugin.tool.projects.execute({}));
-  assert.equal(listing.codex.integrationVersion,'0.4.8-alpha.1');
-  assert.equal(listing.codex.toolCount,16);
+  assert.equal(listing.codex.integrationVersion,'0.4.9-alpha.1');
+  assert.equal(listing.codex.toolCount,17);
   assert.equal(listing.codex.allowWrites,false);
   assert.equal(listing.projects[0].name,'TMN');
   assert.ok(!JSON.stringify(listing).includes(base));

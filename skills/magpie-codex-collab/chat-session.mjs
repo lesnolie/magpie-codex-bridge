@@ -132,7 +132,8 @@ function view(p,s){
       failureCategory:s.launch.failureCategory||null,
       failureStage:s.launch.failureStage||null,failureCode:s.launch.failureCode||null,
       exitStatus:s.launch.exitStatus??null,failureKind:s.launch.failureKind||null,
-      recoveredFrom:s.launch.recoveredFrom||null}:null,
+      recoveredFrom:s.launch.recoveredFrom||null,
+      recoveredFromStatus:s.launch.recoveredFromStatus||null}:null,
     browserControl:'not-verified',
     note:'Requesting transfer does not activate it. A native Codex browser must verify the target and activate locally.'};
 }
@@ -307,7 +308,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
   // A one-time, locally authorized recovery for a confirmed failed dispatch.
   // Requires all four exact binding identifiers and resets ONLY dispatch_failed;
   // a request still in-flight, queued, opened or acknowledged is never retried.
-  function recoverLaunch({project,launchId,taskId,chatUrl,confirm}={}){
+  function recoverLaunch({project,launchId,taskId,chatUrl,confirm,confirmNoDesktop=false}={}){
     if(confirm!==true&&confirm!=='true')
       fail('Local launch recovery requires --confirm true');
     const p=allowed(project),file=filename(p,folder),url=normalizeChatUrl(chatUrl);
@@ -317,7 +318,14 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
     return locked(file,()=>{
       const s=load(file),launch=s.launch;
       if(!launch||launch.launchId!==launchId||launch.taskId!==safeTask||
-         launch.chatUrl!==url||launch.status!=='dispatch_failed')
+         launch.chatUrl!==url)
+        fail('No matching failed launch; recovery refused');
+      const stalled=launch.status==='dispatching'&&
+        Date.now()-Date.parse(launch.updatedAt||launch.requestedAt)>=180000;
+      // An in-flight launch may have reached Windows despite an MCP timeout.
+      // Only user-confirmed, long-stalled dispatches may be rearmed.
+      if(launch.status!=='dispatch_failed'&&
+         !(stalled&&confirmNoDesktop===true))
         fail('No matching failed launch; recovery refused');
       if(launch.transport!=='desktop')
         fail('Only failed native Desktop launch tickets may be recovered');
@@ -332,6 +340,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       delete launch.exitStatus;delete launch.failureKind;
       launch.requestedAt=new Date().toISOString();
       launch.recoveredFrom=launchId;
+      launch.recoveredFromStatus=stalled?'dispatching':'dispatch_failed';
       save(file,s);
       return {...view(p,s),recovered:true};
     });

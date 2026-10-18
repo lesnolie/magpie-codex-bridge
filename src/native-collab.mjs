@@ -242,7 +242,7 @@ export function createNativeCollab(options={},dependencies={}){
   const bin=dependencies.binary||(()=>resolveCodexBinary(options));
   const cli=dependencies.launchCli||launchNativeCli;
 
-  async function start({project,goal,chatUrl,taskId,retryFailed=false,failedLaunchId}={}){
+  async function start({project,goal,chatUrl,taskId,retryFailed=false,failedLaunchId,confirmNoDesktop=false}={}){
     if(options.codexEnabled!==true)fail('Native Codex remote startup requires local Codex permission to be enabled in Magpie');
     if(resolveCodexPermissionMode(options)==='read-only')
       fail('Codex permission is read-only; change it locally before requesting a coding task');
@@ -267,12 +267,15 @@ export function createNativeCollab(options={},dependencies={}){
       // ONLY for the exact failed Desktop ticket the user named, never for a
       // queued/opened/dispatching ticket. The original goal was also checked
       // by prepareLaunch above; the target and task cannot change.
-      if(ticket.launch.status==='dispatch_failed'&&ticket.launch.transport==='desktop'){
+      if((ticket.launch.status==='dispatch_failed'||
+          (ticket.launch.status==='dispatching'&&confirmNoDesktop===true))&&
+          ticket.launch.transport==='desktop'){
         if(typeof failedLaunchId!=='string'||ticket.launch.launchId!==failedLaunchId)
           fail('Explicit Desktop retry requires the exact failedLaunchId from chat_session_status');
         if(typeof taskId!=='string'||ticket.launch.taskId!==taskId)
           fail('Explicit Desktop retry requires the exact original taskId');
-        chat.recoverLaunch({project,launchId:failedLaunchId,taskId,chatUrl,confirm:true});
+        chat.recoverLaunch({project,launchId:failedLaunchId,taskId,chatUrl,
+          confirm:true,confirmNoDesktop});
         // Fetch the new prepared ticket with its internally validated localRoot;
         // recoverLaunch deliberately does not expose a project root to MCP.
         ticket=chat.prepareLaunch({project,goal,chatUrl,taskId});

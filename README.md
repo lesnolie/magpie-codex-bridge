@@ -1,4 +1,16 @@
-# Magpie Local Project Review (v0.4.21 alpha)
+# Magpie Local Project Review (v0.4.22 alpha)
+
+## v0.4.22 alpha: distinguish native Desktop composer failures
+
+The experimental Windows Desktop auto-send helper now:
+- Checks ValuePattern, TextPattern and LegacyIAccessiblePattern for **exact matching** of the full prefilled prompt, including alternate Electron/Chromium accessibility nodes.
+- Recognizes a strict allowlist of Send controls and uses UI Automation Invoke or the verified accessible default action (never blind Enter or screen-coordinate clicking).
+- Reports fixed privacy-safe `autoSubmit` stages: `window-not-found`, `composer-not-readable`, `composer-not-matched`, `send-control-not-found`, `send-control-disabled`, `send-invoke-unavailable`, `ambiguous-target`, or `uia-error`.
+- Never reports native execution or chat binding based on clicking. The local opt-in and one-dispatch-only guarantees remain.
+
+A visible draft that does not send can also be caused by the native Codex app itself disabling the composer. No Windows Desktop behavior has been verified in the user's environment at publication time.
+
+
 
 ## v0.4.21 alpha: native Desktop launch lifecycle and Project Review cleanup
 

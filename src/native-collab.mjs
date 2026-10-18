@@ -220,7 +220,7 @@ export function createNativeCollab(options={},dependencies={}){
         // Fetch the new prepared ticket with its internally validated localRoot;
         // recoverLaunch deliberately does not expose a project root to MCP.
         ticket=chat.prepareLaunch({project,goal,chatUrl,taskId});
-      }else if(ticket.launch.launchId===failedLaunchId){
+      }else if(ticket.launch.recoveredFrom===failedLaunchId){
         // The same explicit request was already dispatched; do not launch twice.
         return response(ticket,ticket.launch.status,{reused:true,
           instructions:'The launch was already dispatched or is in progress. No second dispatch was attempted.'});

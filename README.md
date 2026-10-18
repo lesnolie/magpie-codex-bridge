@@ -1,8 +1,26 @@
-# Magpie Local Project Review (v0.4.9 alpha)
+# Magpie Local Project Review (v0.4.15 alpha)
 
 A **read-only Magpie MCP tool plugin** for reviewing code produced by a cheaper model in **official local Codex** with ChatGPT Web acting as **advisor/reviewer**. **No ChatGPT Web model provider; no second Codex agent; no browser scraping.** GitHub remains the common source of truth after pushes.
 
 
+
+## v0.4.15 alpha: native Desktop collaboration overview
+
+**Project Review UI follows v0.4.14's automatic workspace binding:**
+
+- The main collaboration card shows a read-only snapshot of Codex Desktop
+  registered projects and **workspace-verified** native-thread bindings.
+  Reload Magpie to refresh it. This snapshot does not show the focused window,
+  active ChatGPT URL, local paths or thread IDs.
+- The standalone `codex exec` diagnostic is now under **Advanced diagnostics**.
+  Its manual project picker is intentionally used **only** for that isolated
+  one-click diagnostic, and no project is preselected.
+- Native Codex Desktop starts from its actual registered workspace. ChatGPT Web
+  can omit project only when the **exact supplied** conversation URL uniquely
+  matches a previously workspace-verified thread; the web UI cannot infer the
+  currently focused Desktop project.
+- First pairing and switching ChatGPT conversations still require URL and
+  browser-visible project verification. No new ChatGPT or Codex agent is created.
 
 ## v0.4.9 alpha: ChatGPT Web initiates native Codex collaboration
 

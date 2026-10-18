@@ -173,7 +173,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
     const p=allowed(project),file=filename(p,folder);
     const normalized=normalizeChatUrl(chatUrl);
     if(typeof goal!=='string'||!goal.trim()||goal.length>1200||
-       /[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]/.test(goal))
+       /[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(goal))
       fail('Goal must contain 1-1200 safe characters');
     return locked(file,()=>{
       const s=load(file),clean=goal.trim();

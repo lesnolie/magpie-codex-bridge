@@ -54,7 +54,9 @@
         <ul id="collabBoundList" class="collab-bound-list" aria-label="已验证绑定项目"></ul>
         <p class="hint">这里是插件重载时的只读快照，不能判断此刻正在聚焦哪个 Desktop 窗口。ChatGPT Web 仅在聊天 URL 唯一对应已验证线程时才自动匹配，不会猜测项目。</p>
       </div>
-      <p class="hint"><strong>首次从 ChatGPT Web 发起：</strong>提供当前对话的完整 URL，再通过 <code>codex_collab_start</code> 请求协作。尚无绑定时需要从目标 Codex Desktop 工作区先完成配对；首次打开 Desktop 预填消息仍可能需要点击发送。</p>
+      <p class="hint"><strong>首次从 ChatGPT Web 发起：</strong>提供当前对话的完整 URL，再通过 <code>codex_collab_start</code> 请求协作。尚无绑定时需要从目标 Codex Desktop 工作区先完成配对。</p>
+      <label class="remote-switch" for="nativeDesktopAutoSendExperimental"><input id="nativeDesktopAutoSendExperimental" type="checkbox"><span>实验：Windows Codex Desktop 验证输入框后自动发送</span></label>
+      <p class="hint">默认关闭。仅在唯一 Codex 窗口的输入框完整匹配启动指令，且找到可用的发送按钮时尝试发送。未匹配时仍需手动发送；发送按钮被触发也不代表 Skill 已执行或对话绑定成功。可在下方“保存 Codex 设置”保存后重载插件。本功能不使用独立 CLI 或 app-server。</p>
       <details id="advancedCliDiagnostics" class="advanced-cli-diagnostics">
         <summary>高级诊断 · 独立 CLI（非日常 Desktop 协作）</summary>
         <label class="remote-switch" for="nativeCollabCliExperimental"><input id="nativeCollabCliExperimental" type="checkbox"><span>实验：首次使用原生 Codex CLI 自动发送（无需 Desktop 点击发送）</span></label>

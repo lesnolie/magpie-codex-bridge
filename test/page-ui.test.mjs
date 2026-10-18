@@ -155,3 +155,19 @@ test('remote auto-start setting still works independently of Codex permissions',
   assert.equal(app.options.remoteAutoStart,true);
   assert.equal(app.options.codexPermissionMode,'read-only');
 });
+
+test('Desktop auto-send is local opt-in, saved, and never enables standalone CLI',async()=>{
+  const html=readFileSync(new URL('../page/index.html',import.meta.url),'utf8');
+  assert.match(html,/id="nativeDesktopAutoSendExperimental"/);
+  const app=await ready(runPage({codexEnabled:true,nativeCollabCliExperimental:true}));
+  assert.equal(app.element('nativeDesktopAutoSendExperimental').checked,false);
+  app.element('nativeDesktopAutoSendExperimental').checked=true;
+  await app.element('nativeDesktopAutoSendExperimental').fire('change');
+  assert.equal(app.element('nativeCollabCliExperimental').checked,false);
+  assert.equal(app.element('nativeCollabCliExperimental').disabled,true);
+  await app.element('saveCodexConfig').fire('click');
+  assert.equal(app.options.nativeDesktopAutoSendExperimental,true);
+  assert.equal(app.options.nativeCollabCliExperimental,false);
+  const defaultOff=await ready(runPage());
+  assert.equal(defaultOff.element('nativeDesktopAutoSendExperimental').checked,false);
+});

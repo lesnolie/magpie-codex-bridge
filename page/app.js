@@ -64,6 +64,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const codexStatus = document.getElementById('codexStatus');
   const codexExecutable = document.getElementById('codexExecutable');
   const nativeCollabCliExperimental = document.getElementById('nativeCollabCliExperimental');
+  const nativeDesktopAutoSendExperimental = document.getElementById('nativeDesktopAutoSendExperimental');
   const codexModel = document.getElementById('codexModel');
   const codexModelSearch = document.getElementById('codexModelSearch');
   const codexModelFallback = document.getElementById('codexModelFallback');
@@ -125,6 +126,8 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     confirmCodexPermission.disabled = busy;
     cancelCodexPermission.disabled = busy;
     saveCodexConfig.disabled = busy;
+    nativeDesktopAutoSendExperimental.disabled = busy;
+    nativeCollabCliExperimental.disabled = busy || nativeDesktopAutoSendExperimental.checked;
     refreshModels.disabled = busy;
     localCliTestRun.disabled = busy || cliTestBusy || cliTestRunning || options.codexEnabled !== true || !cliProjects.length;
   }
@@ -459,6 +462,11 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
 
   codexExecutable.value = options.codexExecutable || '';
   nativeCollabCliExperimental.checked = options.nativeCollabCliExperimental === true;
+  nativeDesktopAutoSendExperimental.checked = options.nativeDesktopAutoSendExperimental === true;
+  nativeDesktopAutoSendExperimental.addEventListener('change', () => {
+    if (nativeDesktopAutoSendExperimental.checked) nativeCollabCliExperimental.checked = false;
+    render();
+  });
   codexModel.value = options.codexModel || '';
   codexModelFallback.value = options.codexModel || '';
   codexModelProvider.value = options.codexModelProvider || '';
@@ -487,7 +495,8 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
         throw new Error('选中的模型已不在 Magpie 目录中；请刷新并重新选择。');
       }
       const next = { ...options, codexExecutable: exe,
-        nativeCollabCliExperimental: nativeCollabCliExperimental.checked,
+        nativeCollabCliExperimental: nativeDesktopAutoSendExperimental.checked ? false : nativeCollabCliExperimental.checked,
+        nativeDesktopAutoSendExperimental: nativeDesktopAutoSendExperimental.checked,
         codexModel: model, codexModelProvider: provider };
       const saved = await magpie.options.set(next);
       options = saved || next;

@@ -1,4 +1,25 @@
-# Magpie Local Project Review (v0.4.22 alpha)
+# Magpie Local Project Review (v0.4.23 alpha)
+
+## v0.4.23 alpha: discover native Codex Desktop windows by process/HWND
+
+The Windows experimental auto-sender no longer requires the Desktop's window
+title to contain "Codex". It enumerates **visible top-level HWNDs**, matches
+their owning Codex application process and the helper's Windows session,
+then uses UI Automation to compare the **entire** prefilled prompt before
+invoking one uniquely verified Send control.
+
+When discovery fails, `autoSubmit` distinguishes:
+- `codex-process-not-found`: no permitted Codex process was visible to the helper
+- `desktop-session-mismatch`: Codex process exists, but not in the helper's Windows session
+- `desktop-window-unavailable`: a Codex process exists in the session, but no visible matching HWND
+- `desktop-window-inaccessible`: the HWND exists but UIA could not inspect it
+
+Diagnostics reveal no window title, PID, process path, or private prompt.
+The optional sender is still fail-closed and one-shot. A UIA click is **not**
+proof of native Codex execution or verified ChatGPT pairing. Actual native
+Windows Desktop auto-submit success is **not yet confirmed**.
+
+
 
 ## v0.4.22 alpha: distinguish native Desktop composer failures
 

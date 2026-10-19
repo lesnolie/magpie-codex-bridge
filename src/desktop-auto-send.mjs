@@ -35,8 +35,6 @@ public static class MagpieCodexHwnd {
 }
 '@
 $expected=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:MAGPIE_EXPECTED_PROMPT_B64))
-$root=[System.Windows.Automation.AutomationElement]::RootElement
-$windowCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Window)
 $buttonCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
 $deadline=[DateTime]::UtcNow.AddSeconds(12)
 $reason='window-not-found'
@@ -102,13 +100,13 @@ function InvokeButton($button){
 while([DateTime]::UtcNow -lt $deadline){
   # Do not mistake a non-interactive service session for a missing Codex UI.
   $helperSession=[System.Diagnostics.Process]::GetCurrentProcess().SessionId
-  $codexProcesses=@(Get-Process -Name 'Codex' -ErrorAction SilentlyContinue)
+  $codexProcesses=@(Get-Process -Name 'Codex','OpenAI.Codex' -ErrorAction SilentlyContinue)
   $localProcesses=@($codexProcesses | Where-Object {$_.SessionId -eq $helperSession})
   # C# owns the native callback; do not depend on PowerShell delegate closures.
   $handles=[MagpieCodexHwnd]::VisibleWindows()
   $codexWindows=@()
   $codexHandleCount=0
-  $seen=New-Object 'System.Collections.Generic.HashSet[long]'
+  $seen=[System.Collections.Generic.HashSet[long]]::new()
   foreach($hwnd in $handles){
     [uint32]$ownerProcessId=0
     [void][MagpieCodexHwnd]::GetWindowThreadProcessId($hwnd,[ref]$ownerProcessId)

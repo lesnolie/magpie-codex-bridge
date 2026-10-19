@@ -62,7 +62,7 @@ test('native Windows HWND API compiles and enumerates without depending on windo
   skip:process.platform!=='win32'
 },()=>{
   const script=desktopAutoSendScript();
-  const match=script.match(/Add-Type -TypeDefinition @'\\n([\\s\\S]+?)\\n'@/);
+  const match=script.match(/Add-Type -TypeDefinition @'\n([\s\S]+?)\n'@/);
   assert.ok(match,'native HWND declaration must be embedded');
   const ps="$ErrorActionPreference='Stop';Add-Type -TypeDefinition @'\n"+match[1]+"\n'@\n"+
     "$windows=[MagpieCodexHwnd]::VisibleWindows();"+

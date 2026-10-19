@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Local Project Review</title>
+  <title>Codex Bridge</title>
   <link rel="stylesheet" href="style.css">
   <!-- Self-contained app.js also implements Magpie's documented postMessage bridge. -->
   <script src="model-catalog.js" defer></script>
@@ -13,106 +13,83 @@
   <main class="wrap">
     <header>
       <div class="eyebrow">MAGPIE · CODEX</div>
-      <h1>Codex 项目集成</h1>
-      <p class="intro">自动使用 Codex Desktop 已登记的项目。无需再向 Magpie 添加文件夹或维护第二份目录授权。</p>
+      <h1>Codex 桥接</h1>
+      <p class="intro">ChatGPT 通过 Magpie 只读访问 Codex Desktop 已登记的项目，并把任务交给本机原生 Codex Desktop 执行。</p>
     </header>
-    <section class="card">
-      <div class="section-heading"><h2>项目来源</h2><span class="tag">Codex Desktop</span></div>
-      <p class="hint">所有文件检查和本地 Codex 任务只针对 Codex Desktop 项目。若项目未出现，请先在 Codex Desktop 添加；不会回退到已废弃的手动授权列表。</p>
-    </section>
-    <section class="card remote-section">
-      <div class="section-heading">
-        <div><h2>ChatGPT 远程连接</h2><p class="remote-sub">本机管理 Cloudflare MCP 适配器 · 代码读取只读；会话切换需本地核验</p></div>
-        <label class="remote-switch" for="remoteAutoStart">
-          <input id="remoteAutoStart" type="checkbox" aria-label="自动启动远程连接">
-          <span>自动启动</span>
-        </label>
-      </div>
-      <p class="hint">开启一次后，插件将尝试注册当前 Windows 用户的登录自启项（无需管理员权限）。Magpie 运行时自动启用 48765，退出后关闭监听；无需每次运行 PowerShell。</p>
-      <p class="hint">需要事先配置 Cloudflare Access、安装 Node.js 20+，且 Magpie 与 Cloudflare Tunnel 正在运行。不修改你的 Cloudflare 设置，Codex 工具需在本机单独开启。</p>
-      <p class="remote-status" id="remoteStatus" role="status" aria-live="polite"></p>
-    </section>
 
-    <section class="card remote-section">
-      <div class="section-heading">
-        <div><h2>原生 Codex + ChatGPT 协作</h2><p class="remote-sub">推荐方式 · Magpie Skills 安装 · 无需开启下面的 app-server</p></div>
-        <span class="tag">Skill</span>
+    <section class="card" aria-labelledby="collabHeading">
+      <h2 id="collabHeading">Codex 协作</h2>
+      <div class="row">
+        <div class="row-text">
+          <label for="codexEnabled">允许 ChatGPT 启动 Codex</label>
+          <p class="hint">关闭时 ChatGPT 只能读取项目文件。需在 Magpie Skills 中安装 <a href="https://github.com/lesnolie/magpie-codex-bridge/tree/main/skills/magpie-codex-collab" target="_blank" rel="noopener noreferrer">magpie-codex-collab</a>。</p>
+        </div>
+        <input class="switch" id="codexEnabled" type="checkbox">
       </div>
-      <p class="hint">在 Magpie 的 Skills 中从 GitHub 导入 <strong>magpie-codex-collab</strong> 并指定给 Codex。Skill 使用原生 Codex 执行和已有的 Magpie MCP 连接，不会新开隧道，也不会复制项目文件。</p>
-      <p class="hint"><strong>首次从 ChatGPT Web 发起：</strong>提供当前对话的完整 URL，再通过 <code>codex_collab_start</code> 请求协作。尚无绑定时需要从目标 Codex Desktop 工作区先完成配对。</p>
-      <label class="remote-switch" for="nativeDesktopAutoSendExperimental"><input id="nativeDesktopAutoSendExperimental" type="checkbox"><span>实验：Windows Codex Desktop 验证输入框后自动发送</span></label>
-      <p class="hint">默认关闭。仅在唯一 Codex 窗口的输入框完整匹配启动指令，且找到可用的发送按钮时尝试发送。若不能自动发送，可通过 chat_session_status 查看 autoSubmit 的具体原因（如 Desktop 会话不匹配、窗口不可见、输入框不可读或发送按钮禁用）。无法验证时仍需手动发送；按钮被触发也不代表 Skill 已执行或对话绑定成功。可在下方“保存 Codex 设置”保存后重载插件。本功能不使用独立 CLI 或 app-server。</p>
-      <details id="advancedCliDiagnostics" class="advanced-cli-diagnostics">
-        <summary>高级诊断 · 独立 CLI（非日常 Desktop 协作）</summary>
-        <label class="remote-switch" for="nativeCollabCliExperimental"><input id="nativeCollabCliExperimental" type="checkbox"><span>实验：首次使用原生 Codex CLI 自动发送（无需 Desktop 点击发送）</span></label>
-      <p class="hint">默认关闭。CLI 会在本地运行，最多等待 3 分钟；CLI 退出不代表 ChatGPT 浏览器协作成功。请先用只读测试目标验证。保存按钮位于下方 Codex 配置。</p>
-      <div class="local-cli-test" aria-labelledby="localCliTestHeading">
-        <h3 id="localCliTestHeading">本机只读诊断</h3>
-        <p class="hint">只有在此页面点击按钮，才会通过本地配置重载请求一次原生 CLI 测试；不会从远程 MCP 触发。始终使用 read-only 沙盒，不修改项目、提交或发布。</p>
-        <label for="localCliTestProject">仅限独立 CLI 诊断：选择被测项目</label>
-        <select id="localCliTestProject" aria-label="选择本机测试项目"><option value="">正在加载项目…</option></select>
-        <label for="localCliTestChatUrl">当前 ChatGPT 对话完整 URL</label>
-        <input id="localCliTestChatUrl" type="url" spellcheck="false" autocomplete="off" placeholder="https://chatgpt.com/c/..." aria-label="当前 ChatGPT 对话 URL">
-        <button type="button" id="localCliTestRun">测试原生 CLI 启动（只读）</button>
-        <p id="localCliTestStatus" class="remote-status" role="status" aria-live="polite"></p>
-        <p class="hint">最多运行 3 分钟。同一时间只允许一次测试。退出码为 0 仅表示 CLI 正常退出；只有 Skill 完成项目与目标对话验证并写入本机会话绑定后，才显示绑定成功。</p>
+      <div class="row">
+        <div class="row-text">
+          <label for="codexPermissionMode">执行权限</label>
+          <p class="hint">提升权限只能在此确认，ChatGPT 无法远程更改。</p>
+        </div>
+        <select id="codexPermissionMode">
+          <option value="read-only">只读</option>
+          <option value="workspace-write">允许修改项目</option>
+          <option value="codex-local">跟随 Codex 本地权限</option>
+        </select>
       </div>
-      </details>
-      <p class="hint">如果已经安全绑定原生 Codex 线程，同一对话的后续任务可使用 Codex Queue 投递，但入队并不等于已执行。每个请求都会防止自动重复派发。</p>
-      <p class="hint">专用 ChatGPT 标签页由 Codex 内置浏览器管理；只有该环境提供 control-in-app-browser 时才能自动发送审核消息。不同对话通过任务 ID、真实聊天 URL、MCP 项目验证后安全切换。</p>
-      <p class="hint">Skill 路径：<code>skills/magpie-codex-collab</code>。GitHub：<a href="https://github.com/lesnolie/magpie-codex-bridge/tree/main/skills/magpie-codex-collab" target="_blank" rel="noopener noreferrer">查看安装源</a>。</p>
-      <p class="hint">两个新工具：chat_session_status、chat_session_request_transfer。后者只提交切换申请，不会直接操纵浏览器。原生 Codex 关闭时也不会自动唤醒 ChatGPT。</p>
-    </section>
-
-    <section class="card remote-section">
-      <div class="section-heading">
-        <div><h2>本地 Codex 集成（实验性）</h2><p class="remote-sub">通过本机 app-server 创建任务、查询结果和取消任务</p></div>
-        <label class="remote-switch" for="codexEnabled">
-          <input id="codexEnabled" type="checkbox" aria-label="启用 Codex 任务接口">
-          <span>启用 Codex</span>
-        </label>
-      </div>
-      <label for="codexPermissionMode">执行权限</label>
-      <select id="codexPermissionMode" aria-label="选择 Codex 任务执行权限">
-        <option value="read-only">只读 — 分析代码，不修改文件</option>
-        <option value="workspace-write">允许修改项目 — Codex 工作区沙盒</option>
-        <option value="codex-local">跟随 Codex 本地权限 — 高级</option>
-      </select>
-      <p class="hint">只读为安全默认值。修改项目时仅开放 Codex Desktop 中对应工作区；跟随本地权限时可能获得更大范围的文件访问权。</p>
-      <div id="codexPermissionConfirmation" class="permission-confirmation" role="group" aria-label="确认 Codex 执行权限" hidden>
+      <div id="codexPermissionConfirmation" class="confirm" role="group" aria-label="确认 Codex 执行权限" hidden>
         <p id="codexPermissionWarning">确认允许 Codex 修改项目代码？</p>
         <div class="controls">
           <button type="button" id="confirmCodexPermission">确认授权</button>
-          <button type="button" class="remove" id="cancelCodexPermission">取消</button>
+          <button type="button" class="secondary" id="cancelCodexPermission">取消</button>
         </div>
       </div>
-      <p class="hint">提升执行权限必须在本地明确确认。Magpie 不会自动同意 Codex 的权限提升请求，也不会提供直接修改项目的 ChatGPT MCP 工具。</p>
-      <p class="hint">需要在 Windows 上安装可执行的 Codex CLI（codex.exe 应可被插件宿主找到），并预先在本地完成模型与提供商配置。ChatGPT 账户自身的 MCP 执行权限仍可能阻止远程调用。</p>
-      <p class="hint">运行中的任务仍依赖本地插件进程；已完成任务的审核记录保存在本地。</p>
-      <div class="codex-config">
-        <label for="codexExecutable">Codex 本地可执行程序路径（可选）</label>
-        <input id="codexExecutable" type="text" spellcheck="false" placeholder="C:\\...\\codex.exe">
-        <div class="section-heading"><label for="codexModel">任务模型</label><button type="button" class="remove" id="refreshModels">刷新模型</button></div>
-        <p class="hint">由本地插件读取 Magpie 已向 Codex 开放的供应商模型目录，无需修改 Magpie 本体或复制 ID。</p>
-        <input id="codexModelSearch" type="search" spellcheck="false" placeholder="搜索模型或供应商" aria-label="搜索 Magpie 模型">
-        <select id="codexModel" aria-label="选择 Codex 任务模型">
-          <option value="">跟随 Codex 当前配置</option>
-        </select>
-        <p id="modelPickerStatus" class="hint" role="status" aria-live="polite">正在读取 Magpie 模型列表…</p>
-        <details id="codexLegacyModel">
-          <summary>高级配置 / 旧版 Magpie 兼容</summary>
-          <label for="codexModelFallback">手动模型 ID（仅在宿主缺少模型目录接口时使用）</label>
-          <input id="codexModelFallback" type="text" spellcheck="false" placeholder="手动输入模型 ID">
-          <label for="codexModelProvider">Model Provider ID（留空继承 Codex 配置）</label>
-          <input id="codexModelProvider" type="text" spellcheck="false" placeholder="config.toml 中的提供商 ID">
-        </details>
-        <button type="button" id="saveCodexConfig">保存 Codex 设置</button>
+      <div class="row">
+        <div class="row-text">
+          <label for="nativeDesktopAutoSendExperimental">自动发送 <span class="badge">实验 · Windows</span></label>
+          <p class="hint">Codex Desktop 输入框内容与启动指令一致时点一次发送。没发出去的原因见 chat_session_status。</p>
+        </div>
+        <input class="switch" id="nativeDesktopAutoSendExperimental" type="checkbox">
       </div>
-      <p class="hint">这里不要填写 API Key。模型和 provider 必须事先在本地 Codex 正确配置。</p>
-      <p class="remote-status" id="codexStatus" role="status" aria-live="polite"></p>
+      <p class="status-line" id="codexStatus" role="status" aria-live="polite"></p>
     </section>
-    <p id="status" class="status" role="status" aria-live="polite"></p>
-    <footer>Codex Desktop 项目 · 单一执行权限选择 · ChatGPT 文件工具只读</footer>
+
+    <section class="card" aria-labelledby="remoteHeading">
+      <h2 id="remoteHeading">远程连接</h2>
+      <div class="row">
+        <div class="row-text">
+          <label for="remoteAutoStart">登录 Windows 时自动启动</label>
+          <p class="hint">本机 Cloudflare MCP 适配器（端口 48765）。需已配置 Cloudflare Access 和 Tunnel。</p>
+        </div>
+        <input class="switch" id="remoteAutoStart" type="checkbox">
+      </div>
+      <p class="status-line" id="remoteStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <details class="card advanced">
+      <summary>高级 · Codex 任务工具<span>codex_submit_task 使用的模型和程序</span></summary>
+      <div class="field-head">
+        <label for="codexModel">任务模型</label>
+        <button type="button" class="secondary small" id="refreshModels">刷新</button>
+      </div>
+      <input id="codexModelSearch" type="search" spellcheck="false" placeholder="搜索模型或供应商" aria-label="搜索 Magpie 模型">
+      <select id="codexModel">
+        <option value="">跟随 Codex 当前配置</option>
+      </select>
+      <p id="modelPickerStatus" class="hint" role="status" aria-live="polite">正在读取 Magpie 模型列表…</p>
+      <details id="codexLegacyModel" class="nested">
+        <summary>手动配置</summary>
+        <label for="codexExecutable">codex.exe 路径（留空自动检测）</label>
+        <input id="codexExecutable" type="text" spellcheck="false" placeholder="C:\...\codex.exe">
+        <label for="codexModelFallback">模型 ID（仅在模型目录不可用时使用）</label>
+        <input id="codexModelFallback" type="text" spellcheck="false">
+        <label for="codexModelProvider">Model Provider ID（留空继承 Codex 配置）</label>
+        <input id="codexModelProvider" type="text" spellcheck="false">
+      </details>
+      <button type="button" id="saveCodexConfig">保存</button>
+    </details>
+
+    <p id="status" class="foot" role="status" aria-live="polite"></p>
   </main>
 </body>
 </html>

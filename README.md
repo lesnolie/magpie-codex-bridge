@@ -1,4 +1,21 @@
-# Magpie Local Project Review (v0.4.25 alpha)
+# Magpie Local Project Review (v0.4.26 alpha)
+
+## v0.4.26 alpha: simplified plugin page, standalone CLI removed
+
+The plugin page is reduced to what is used day to day: **Codex
+collaboration** (allow ChatGPT to start Codex, execution permission with the
+same local confirmation, Desktop auto-send) and **remote connection**
+(auto-start). The app-server task settings (model, codex.exe path, provider)
+moved into a collapsed **Advanced** section. Toggles save immediately;
+permission and auto-send are disabled while Codex is off.
+
+The standalone Codex CLI experiment and its local read-only CLI test were
+removed entirely (page, `src/local-cli-test.mjs`, the runner script, the CLI
+branch of `codex_collab_start` and the Skill's CLI section). Native Codex
+Desktop is the only collaboration path. Saved `nativeCollabCliExperimental`
+and `nativeCliLocalTestRequest` settings are dropped on the next save and are
+ignored by the plugin.
+
 
 ## v0.4.25 alpha: Desktop auto-send matches the real Codex composer
 

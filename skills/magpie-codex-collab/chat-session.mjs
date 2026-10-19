@@ -331,7 +331,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       'window-not-found','composer-not-readable','composer-not-matched','send-control-not-found',
       'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error',
       'codex-process-not-found','desktop-session-mismatch','desktop-window-unavailable',
-      'desktop-window-inaccessible']);
+      'desktop-window-inaccessible','codex-package-host-unverified']);
     if(!allowedResults.has(result))fail('Invalid Desktop submit result');
     return locked(record,()=>{
       const s=load(record);

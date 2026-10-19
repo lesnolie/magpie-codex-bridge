@@ -20,7 +20,11 @@ test('sender cannot submit without a uniquely verified exact native composer and
   assert.match(s,/AddSeconds\(12\)/);
   assert.match(s,/\[MagpieCodexHwnd\]::VisibleWindows\(\)/);
   assert.match(s,/GetWindowThreadProcessId/);
-  assert.match(s,/\$owner\.ProcessName -ine 'Codex'/);
+  assert.match(s,/IsApprovedCodexAppHost/);
+  assert.match(s,/Get-AppxPackage -Name 'OpenAI.Codex'/);
+  assert.match(s,/HasApprovedChild/);
+  assert.match(s,/\$trustedPids -contains/);
+  assert.match(s,/codex-package-host-unverified/);
   assert.match(s,/desktop-session-mismatch/);
   assert.match(s,/desktop-window-unavailable/);
   assert.doesNotMatch(s,/\$window\.Current\.Name -match/);
@@ -79,4 +83,33 @@ test('new process/session discovery diagnostics remain fixed allowlisted labels'
       run:async()=>({stdout:code+'\n'})});
     assert.equal(r,code);
   }
+});
+
+test('Windows Codex GUI package identity is enforced before accessing a ChatGPT.exe window',{
+  skip:process.platform!=='win32'
+},()=>{
+  const script=desktopAutoSendScript();
+  const start=script.indexOf('function IsApprovedCodexAppHost($process){');
+  const end=script.indexOf('\nfunction SamePrompt',start);
+  assert.ok(start>=0&&end>start);
+  const fn=script.slice(start,end);
+  const ps=`$ErrorActionPreference='Stop'
+$approvedPackageRoots=@('C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.900.1.0_x64__2p2nqsd0c76g0\\')
+`+fn+`
+$valid=[pscustomobject]@{ProcessName='ChatGPT';MainModule=[pscustomobject]@{FileName='C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.900.1.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe'}}
+$other=[pscustomobject]@{ProcessName='ChatGPT';MainModule=[pscustomobject]@{FileName='C:\\Program Files\\WindowsApps\\OpenAI.ChatGPT_26.900.1.0_x64__abc\\app\\ChatGPT.exe'}}
+$fake=[pscustomobject]@{ProcessName='ChatGPT';MainModule=[pscustomobject]@{FileName='C:\\Temp\\ChatGPT.exe'}}
+if(-not (IsApprovedCodexAppHost $valid)){throw 'Codex MSIX GUI host rejected'}
+if(IsApprovedCodexAppHost $other){throw 'Unrelated ChatGPT app accepted'}
+if(IsApprovedCodexAppHost $fake){throw 'Untrusted executable accepted'}
+`;
+  const run=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',
+    Buffer.from(ps,'utf16le').toString('base64')],{timeout:15000,encoding:'utf8'});
+  assert.equal(run.status,0,'Only the OpenAI.Codex packaged GUI may be an approved ChatGPT.exe host');
+});
+
+test('codex packaged host failures are reflected without exposing paths or PIDs',async()=>{
+  assert.ok(AUTO_SEND_RESULTS.has('codex-package-host-unverified'));
+  assert.equal(await tryVerifiedDesktopAutoSend('probe',{platform:'win32',
+    run:async()=>({stdout:'codex-package-host-unverified\n'})}),'codex-package-host-unverified');
 });

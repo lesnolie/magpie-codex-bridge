@@ -11,7 +11,7 @@ export const AUTO_SEND_RESULTS=new Set(['invoked-unconfirmed','not-verified','wi
   'composer-not-readable','composer-not-matched','send-control-not-found',
   'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error',
   'codex-process-not-found','desktop-session-mismatch','desktop-window-unavailable',
-  'desktop-window-inaccessible']);
+  'desktop-window-inaccessible','codex-package-host-unverified']);
 export function desktopAutoSendScript(){
 return String.raw`$ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
@@ -25,6 +25,7 @@ public static class MagpieCodexHwnd {
   public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr state);
   [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr state);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+  [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr hwnd, EnumWindowsProc callback, IntPtr state);
   [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool IsWindowVisible(IntPtr hwnd);
   public static IntPtr[] VisibleWindows(){
@@ -32,12 +33,45 @@ public static class MagpieCodexHwnd {
     EnumWindows((hwnd,state)=>{ if(IsWindowVisible(hwnd)) handles.Add(hwnd); return true; },IntPtr.Zero);
     return handles.ToArray();
   }
+  public static bool HasApprovedChild(IntPtr frame, uint[] approvedPids){
+    var approved=new HashSet<uint>(approvedPids);
+    bool found=false;
+    EnumChildWindows(frame,(child,state)=>{
+      uint pid=0;
+      GetWindowThreadProcessId(child,out pid);
+      if(approved.Contains(pid)){found=true;return false;}
+      return true;
+    },IntPtr.Zero);
+    return found;
+  }
 }
 '@
 $expected=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:MAGPIE_EXPECTED_PROMPT_B64))
 $buttonCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
 $deadline=[DateTime]::UtcNow.AddSeconds(12)
 $reason='window-not-found'
+# Codex MSIX sometimes hosts its GUI in app\ChatGPT.exe.
+$approvedPackageRoots=@()
+try{
+  foreach($pkg in @(Get-AppxPackage -Name 'OpenAI.Codex' -ErrorAction SilentlyContinue)){
+    if([string]::IsNullOrWhiteSpace($pkg.InstallLocation)){continue}
+    $approvedPackageRoots+=($pkg.InstallLocation.TrimEnd([char]92)+[string][char]92)
+  }
+}catch{}
+function IsApprovedCodexAppHost($process){
+  if($process.ProcessName -ine 'ChatGPT'){return $false}
+  $exe=$null
+  try{$exe=$process.MainModule.FileName}catch{return $false}
+  if([string]::IsNullOrWhiteSpace($exe)){return $false}
+  $suffix=([string][char]92)+'app'+([string][char]92)+'ChatGPT.exe'
+  foreach($root in $approvedPackageRoots){
+    if($exe.StartsWith($root,[StringComparison]::OrdinalIgnoreCase) -and
+       $exe.EndsWith($suffix,[StringComparison]::OrdinalIgnoreCase)){return $true}
+  }
+  # Registration can be unavailable; still require WindowsApps
+  # OpenAI.Codex package family and its exact GUI executable.
+  return ($exe -match '(?i)[\\/]WindowsApps[\\/]OpenAI\.Codex_[^\\/]+[\\/]app[\\/]ChatGPT\.exe$')
+}
 
 function SamePrompt($value){
   if($null -eq $value -or $value -isnot [string]){return $false}
@@ -100,8 +134,20 @@ function InvokeButton($button){
 while([DateTime]::UtcNow -lt $deadline){
   # Do not mistake a non-interactive service session for a missing Codex UI.
   $helperSession=[System.Diagnostics.Process]::GetCurrentProcess().SessionId
-  $codexProcesses=@(Get-Process -Name 'Codex','OpenAI.Codex' -ErrorAction SilentlyContinue)
+  $candidates=@(Get-Process -Name 'Codex','OpenAI.Codex','ChatGPT' -ErrorAction SilentlyContinue)
+  $codexProcesses=@()
+  $unverifiedPackageHost=$false
+  foreach($process in $candidates){
+    if($process.ProcessName -ieq 'Codex' -or $process.ProcessName -ieq 'OpenAI.Codex'){
+      $codexProcesses+=,$process
+    }elseif(IsApprovedCodexAppHost $process){
+      $codexProcesses+=,$process
+    }elseif($process.ProcessName -ieq 'ChatGPT' -and $process.SessionId -eq $helperSession){
+      $unverifiedPackageHost=$true
+    }
+  }
   $localProcesses=@($codexProcesses | Where-Object {$_.SessionId -eq $helperSession})
+  [uint32[]]$trustedPids=@($localProcesses | ForEach-Object {[uint32]$_.Id})
   # C# owns the native callback; do not depend on PowerShell delegate closures.
   $handles=[MagpieCodexHwnd]::VisibleWindows()
   $codexWindows=@()
@@ -113,8 +159,13 @@ while([DateTime]::UtcNow -lt $deadline){
     if($ownerProcessId -eq 0){continue}
     $owner=$null
     try{$owner=[System.Diagnostics.Process]::GetProcessById([int]$ownerProcessId)}catch{continue}
-    if($owner.ProcessName -ine 'Codex' -and $owner.ProcessName -ine 'OpenAI.Codex'){continue}
     if($owner.SessionId -ne $helperSession){continue}
+    $direct=$trustedPids -contains ([uint32]$ownerProcessId)
+    $framed=$false
+    if(-not $direct -and $owner.ProcessName -ieq 'ApplicationFrameHost' -and $trustedPids.Length -gt 0){
+      $framed=[MagpieCodexHwnd]::HasApprovedChild($hwnd,$trustedPids)
+    }
+    if(-not $direct -and -not $framed){continue}
     $codexHandleCount++
     if(-not $seen.Add($hwnd.ToInt64())){continue}
     try{
@@ -123,8 +174,10 @@ while([DateTime]::UtcNow -lt $deadline){
     }catch{}
   }
   if($codexWindows.Count -eq 0){
-    if($codexProcesses.Count -eq 0){$reason='codex-process-not-found'}
+    if($codexProcesses.Count -eq 0 -and $unverifiedPackageHost){$reason='codex-package-host-unverified'}
+    elseif($codexProcesses.Count -eq 0){$reason='codex-process-not-found'}
     elseif($localProcesses.Count -eq 0){$reason='desktop-session-mismatch'}
+    elseif($codexHandleCount -eq 0 -and $unverifiedPackageHost){$reason='codex-package-host-unverified'}
     elseif($codexHandleCount -eq 0){$reason='desktop-window-unavailable'}
     else{$reason='desktop-window-inaccessible'}
     Start-Sleep -Milliseconds 400

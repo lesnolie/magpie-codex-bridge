@@ -329,7 +329,9 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
     const p=allowed(project),record=filename(p,folder);
     const allowedResults=new Set(['disabled','not-verified','invoked-unconfirmed','unsupported-platform',
       'window-not-found','composer-not-readable','composer-not-matched','send-control-not-found',
-      'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error']);
+      'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error',
+      'codex-process-not-found','desktop-session-mismatch','desktop-window-unavailable',
+      'desktop-window-inaccessible']);
     if(!allowedResults.has(result))fail('Invalid Desktop submit result');
     return locked(record,()=>{
       const s=load(record);

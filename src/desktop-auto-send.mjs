@@ -63,9 +63,10 @@ function IsApprovedCodexAppHost($process){
   $exe=$null
   try{$exe=$process.MainModule.FileName}catch{return $false}
   if([string]::IsNullOrWhiteSpace($exe)){return $false}
+  $suffix=([string][char]92)+'app'+([string][char]92)+'ChatGPT.exe'
   foreach($root in $approvedPackageRoots){
     if($exe.StartsWith($root,[StringComparison]::OrdinalIgnoreCase) -and
-       $exe.EndsWith([string][char]92+'app'+[string][char]92+'ChatGPT.exe',[StringComparison]::OrdinalIgnoreCase)){return $true}
+       $exe.EndsWith($suffix,[StringComparison]::OrdinalIgnoreCase)){return $true}
   }
   # Registration can be unavailable; still require WindowsApps
   # OpenAI.Codex package family and its exact GUI executable.
@@ -176,6 +177,7 @@ while([DateTime]::UtcNow -lt $deadline){
     if($codexProcesses.Count -eq 0 -and $unverifiedPackageHost){$reason='codex-package-host-unverified'}
     elseif($codexProcesses.Count -eq 0){$reason='codex-process-not-found'}
     elseif($localProcesses.Count -eq 0){$reason='desktop-session-mismatch'}
+    elseif($codexHandleCount -eq 0 -and $unverifiedPackageHost){$reason='codex-package-host-unverified'}
     elseif($codexHandleCount -eq 0){$reason='desktop-window-unavailable'}
     else{$reason='desktop-window-inaccessible'}
     Start-Sleep -Milliseconds 400

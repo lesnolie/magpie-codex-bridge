@@ -69,3 +69,13 @@ test('precise UIA failure stage persists in verified session diagnostics',async(
   assert.equal(x.first.confirmedExecution,false);
   assert.equal(x.repeated.reused,true);
 });
+
+test('interactive desktop session mismatch is recorded without exposing process IDs',async()=>{
+  const x=await runLaunch(true,'desktop-session-mismatch');
+  assert.equal(x.first.autoSubmit,'desktop-session-mismatch');
+  assert.equal(x.launch.autoSubmit,'desktop-session-mismatch');
+  assert.equal(x.opened,1);
+  assert.equal(x.sendCalls,1);
+  assert.equal(x.first.confirmedExecution,false);
+  assert.equal(x.repeated.reused,true);
+});

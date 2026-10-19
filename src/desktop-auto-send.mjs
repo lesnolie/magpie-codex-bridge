@@ -115,7 +115,23 @@ while([DateTime]::UtcNow -lt $deadline){
     if($ownerProcessId -eq 0){continue}
     $owner=$null
     try{$owner=[System.Diagnostics.Process]::GetProcessById([int]$ownerProcessId)}catch{continue}
-    if($owner.ProcessName -notmatch '^(?i:codex|openai\\.codex)
+    if($owner.ProcessName -ine 'Codex' -and $owner.ProcessName -ine 'OpenAI.Codex'){continue}
+    if($owner.SessionId -ne $helperSession){continue}
+    $codexHandleCount++
+    if(-not $seen.Add($hwnd.ToInt64())){continue}
+    try{
+      $element=[System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+      if($null -ne $element){$codexWindows+=,$element}
+    }catch{}
+  }
+  if($codexWindows.Count -eq 0){
+    if($codexProcesses.Count -eq 0){$reason='codex-process-not-found'}
+    elseif($localProcesses.Count -eq 0){$reason='desktop-session-mismatch'}
+    elseif($codexHandleCount -eq 0){$reason='desktop-window-unavailable'}
+    else{$reason='desktop-window-inaccessible'}
+    Start-Sleep -Milliseconds 400
+    continue
+  }
   $reason='composer-not-readable'
   $targets=@()
   foreach($window in $codexWindows){

@@ -9,11 +9,25 @@ import {promisify} from 'node:util';
 const exec=promisify(execFile);
 export const AUTO_SEND_RESULTS=new Set(['invoked-unconfirmed','not-verified','window-not-found',
   'composer-not-readable','composer-not-matched','send-control-not-found',
-  'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error']);
+  'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error',
+  'codex-process-not-found','desktop-session-mismatch','desktop-window-unavailable',
+  'desktop-window-inaccessible']);
 export function desktopAutoSendScript(){
 return String.raw`$ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+# Window titles often contain only a project/thread name; use owning HWND process.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class MagpieCodexHwnd {
+  public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr state);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr state);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
+  public static extern bool IsWindowVisible(IntPtr hwnd);
+}
+'@
 $expected=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:MAGPIE_EXPECTED_PROMPT_B64))
 $root=[System.Windows.Automation.AutomationElement]::RootElement
 $windowCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Window)
@@ -80,11 +94,99 @@ function InvokeButton($button){
 }
 
 while([DateTime]::UtcNow -lt $deadline){
-  $windows=$root.FindAll([System.Windows.Automation.TreeScope]::Children,$windowCondition)
+  # Do not mistake a non-interactive service session for a missing Codex UI.
+  $helperSession=[System.Diagnostics.Process]::GetCurrentProcess().SessionId
+  $codexProcesses=@(Get-Process -Name 'Codex' -ErrorAction SilentlyContinue)
+  $localProcesses=@($codexProcesses | Where-Object {$_.SessionId -eq $helperSession})
+  $handles=New-Object 'System.Collections.Generic.List[System.IntPtr]'
+  $callback=[MagpieCodexHwnd+EnumWindowsProc]{
+    param([IntPtr]$hwnd,[IntPtr]$state)
+    if([MagpieCodexHwnd]::IsWindowVisible($hwnd)){$handles.Add($hwnd)}
+    return $true
+  }
+  [void][MagpieCodexHwnd]::EnumWindows($callback,[IntPtr]::Zero)
   $codexWindows=@()
-  foreach($window in $windows){if($window.Current.Name -match '(?i)Codex'){$codexWindows+=,$window}}
+  $codexHandleCount=0
+  $seen=New-Object 'System.Collections.Generic.HashSet[long]'
+  foreach($hwnd in $handles){
+    [uint32]$ownerProcessId=0
+    [void][MagpieCodexHwnd]::GetWindowThreadProcessId($hwnd,[ref]$ownerProcessId)
+    if($ownerProcessId -eq 0){continue}
+    $owner=$null
+    try{$owner=[System.Diagnostics.Process]::GetProcessById([int]$ownerProcessId)}catch{continue}
+    if($owner.ProcessName -notmatch '^(?i:codex|openai\\.codex)
+  $reason='composer-not-readable'
+  $targets=@()
+  foreach($window in $codexWindows){
+    try{$all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)}
+    catch{$reason='desktop-window-inaccessible';continue}
+    $matched=$false
+    $readable=$false
+    $count=[Math]::Min($all.Count,1600)
+    for($i=0;$i -lt $count;$i++){
+      $element=$all.Item($i)
+      $kind=$element.Current.ControlType
+      if($kind -ne [System.Windows.Automation.ControlType]::Edit -and
+         $kind -ne [System.Windows.Automation.ControlType]::Document -and
+         $kind -ne [System.Windows.Automation.ControlType]::Custom){continue}
+      $readable=$true
+      if(MatchesComposer $element){$matched=$true;break}
+    }
+    if(-not $matched){
+      if($readable){$reason='composer-not-matched'}
+      continue
+    }
+    $reason='send-control-not-found'
+    $buttons=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$buttonCondition)
+    $found=0
+    for($j=0;$j -lt $buttons.Count;$j++){
+      $button=$buttons.Item($j)
+      if(-not (IsSendButton $button)){continue}
+      $found++
+      if($button.Current.IsEnabled){$targets+=@{window=$window;button=$button}}
+    }
+    if($found -gt 0 -and $targets.Count -eq 0){$reason='send-control-disabled'}
+  }
+  if($targets.Count -gt 1){
+    Write-Output 'ambiguous-target'
+    exit 0
+  }
+  if($targets.Count -eq 1){
+    if(InvokeButton $targets[0].button){Write-Output 'invoked-unconfirmed'}
+    else{Write-Output 'send-invoke-unavailable'}
+    exit 0
+  }
+  Start-Sleep -Milliseconds 400
+}
+Write-Output $reason`;
+}
+export async function tryVerifiedDesktopAutoSend(prompt,{platform=process.platform,run=exec}={}){
+  if(platform!=='win32')return 'unsupported-platform';
+  if(typeof prompt!=='string'||!prompt)return 'not-verified';
+  const env={...process.env,MAGPIE_EXPECTED_PROMPT_B64:Buffer.from(prompt,'utf8').toString('base64')};
+  try{
+    const {stdout}=await run('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',
+      Buffer.from(desktopAutoSendScript(),'utf16le').toString('base64')],{
+      env,windowsHide:true,timeout:16000,maxBuffer:1024
+    });
+    const code=stdout.trim();
+    return AUTO_SEND_RESULTS.has(code)?code:'uia-error';
+  }catch{return 'uia-error';}
+}
+){continue}
+    if($owner.SessionId -ne $helperSession){continue}
+    $codexHandleCount++
+    if(-not $seen.Add($hwnd.ToInt64())){continue}
+    try{
+      $element=[System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+      if($null -ne $element){$codexWindows+=,$element}
+    }catch{}
+  }
   if($codexWindows.Count -eq 0){
-    $reason='window-not-found'
+    if($codexProcesses.Count -eq 0){$reason='codex-process-not-found'}
+    elseif($localProcesses.Count -eq 0){$reason='desktop-session-mismatch'}
+    elseif($codexHandleCount -eq 0){$reason='desktop-window-unavailable'}
+    else{$reason='desktop-window-inaccessible'}
     Start-Sleep -Milliseconds 400
     continue
   }

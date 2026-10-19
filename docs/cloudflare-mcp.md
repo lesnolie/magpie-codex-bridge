@@ -9,7 +9,7 @@ The bundled `scripts/cloudflare-mcp-adapter.mjs` runs a minimal HTTP MCP proxy o
 If the Cloudflare app, tunnel and local JWT config already work, **you no
 longer need to launch the Node adapter manually after each Windows login.**
 
-In Magpie's **Project Review** page, enable **ChatGPT 远程连接 → 自动启动**
+In Magpie's **Codex 桥接** page, enable **远程连接 → 登录 Windows 时自动启动**
 once. The next Magpie plugin host initialization registers an interactive,
 least-privilege **Magpie Local Review MCP (Managed)** scheduled task pointing
 to a stable copy under `%LOCALAPPDATA%\MagpieLocalReview`. A supervisor
@@ -46,7 +46,7 @@ Cloudflare JWT checks and the same six-tool allowlist.
 3. From Access Overview, copy the **Application AUD** and your Access **Team domain** (`<team>.cloudflareaccess.com`). They aren't secrets. No tunnel token or Cloudflare API token is required by this adapter. You MUST configure them for JWT validation.
 4. On the Windows computer actually running Magpie (`3425`) and `cloudflared` (Cloudflare Tunnel connector), open a PowerShell console in the installed plugin folder and run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-cloudflare-mcp.ps1`. Enter the Team domain and Application AUD. It writes `%APPDATA%\magpie-local-review\cloudflare-mcp.json` and starts Node on `127.0.0.1:48765`.
 5. Keep the console open and verify: `Get-NetTCPConnection -State Listen -LocalPort 3425,48765`. Use `https://c2c.ilxyz.xyz/mcp` in **ChatGPT Plugins > Add custom MCP server**, choose **HTTPS URL** (not OpenAI Tunnel) and OAuth. Complete Cloudflare login, then inspect exactly 6 read-only tools. If the Access screen does not offer Managed OAuth, don't switch the service to an anonymous/public mode.
-6. After interactive verification, open Magpie **Project Review** and enable **自动启动** once. The plugin host will register the managed Windows task; you do **not** need to schedule `start-cloudflare-mcp.ps1` manually. The old `Codex with ChatGPT - TMN` task is not touched.
+6. After interactive verification, open Magpie **Codex 桥接** and enable **登录 Windows 时自动启动** once. The plugin host will register the managed Windows task; you do **not** need to schedule `start-cloudflare-mcp.ps1` manually. The old `Codex with ChatGPT - TMN` task is not touched.
 
 ## Troubleshooting
 

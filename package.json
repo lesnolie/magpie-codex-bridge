@@ -15,7 +15,7 @@
   "license": "MIT",
   "magpie": {
     "page": {
-      "title": "Project Review",
+      "title": "Codex 桥接",
       "file": "page/index.html"
     },
     "permissions": [

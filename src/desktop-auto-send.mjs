@@ -19,13 +19,19 @@ Add-Type -AssemblyName UIAutomationTypes
 # Window titles often contain only a project/thread name; use owning HWND process.
 Add-Type -TypeDefinition @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 public static class MagpieCodexHwnd {
   public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr state);
-  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr state);
+  [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr state);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
   [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
-  public static extern bool IsWindowVisible(IntPtr hwnd);
+  private static extern bool IsWindowVisible(IntPtr hwnd);
+  public static IntPtr[] VisibleWindows(){
+    var handles=new List<IntPtr>();
+    EnumWindows((hwnd,state)=>{ if(IsWindowVisible(hwnd)) handles.Add(hwnd); return true; },IntPtr.Zero);
+    return handles.ToArray();
+  }
 }
 '@
 $expected=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:MAGPIE_EXPECTED_PROMPT_B64))
@@ -98,13 +104,8 @@ while([DateTime]::UtcNow -lt $deadline){
   $helperSession=[System.Diagnostics.Process]::GetCurrentProcess().SessionId
   $codexProcesses=@(Get-Process -Name 'Codex' -ErrorAction SilentlyContinue)
   $localProcesses=@($codexProcesses | Where-Object {$_.SessionId -eq $helperSession})
-  $handles=New-Object 'System.Collections.Generic.List[System.IntPtr]'
-  $callback=[MagpieCodexHwnd+EnumWindowsProc]{
-    param([IntPtr]$hwnd,[IntPtr]$state)
-    if([MagpieCodexHwnd]::IsWindowVisible($hwnd)){$handles.Add($hwnd)}
-    return $true
-  }
-  [void][MagpieCodexHwnd]::EnumWindows($callback,[IntPtr]::Zero)
+  # C# owns the native callback; do not depend on PowerShell delegate closures.
+  $handles=[MagpieCodexHwnd]::VisibleWindows()
   $codexWindows=@()
   $codexHandleCount=0
   $seen=New-Object 'System.Collections.Generic.HashSet[long]'

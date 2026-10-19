@@ -7,7 +7,7 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const exec=promisify(execFile);
-export const AUTO_SEND_RESULTS=new Set(['invoked-unconfirmed','not-verified','window-not-found',
+export const AUTO_SEND_RESULTS=new Set(['sent-composer-cleared','invoked-unconfirmed','not-verified','window-not-found',
   'composer-not-readable','composer-not-matched','send-control-not-found',
   'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error',
   'codex-process-not-found','desktop-session-mismatch','desktop-window-unavailable',
@@ -73,16 +73,25 @@ function IsApprovedCodexAppHost($process){
   return ($exe -match '(?i)[\\/]WindowsApps[\\/]OpenAI\.Codex_[^\\/]+[\\/]app[\\/]ChatGPT\.exe$')
 }
 
-function SamePrompt($value){
-  if($null -eq $value -or $value -isnot [string]){return $false}
-  $lineBreak=([string][char]13+[string][char]10)
-  $clean=$value.Replace($lineBreak,[string][char]10).Replace([string][char]13,[string][char]10)
-  $wanted=$expected.Replace($lineBreak,[string][char]10).Replace([string][char]13,[string][char]10)
-  # Chromium TextPattern occasionally adds a single terminal newline.
-  if($clean.EndsWith([string][char]10) -and -not $wanted.EndsWith([string][char]10)){
-    $clean=$clean.Substring(0,$clean.Length-1)
+# Chromium flattens ProseMirror paragraphs for UIA: empty paragraphs vanish and
+# leading spaces of a line surface as trailing spaces of the previous line.
+# Compare a canonical form; TASK_ID/LAUNCH_ID keep it unique per launch.
+function CanonicalText($value){
+  if($null -eq $value -or $value -isnot [string]){return $null}
+  $text=$value.Replace([string][char]13+[string][char]10,[string][char]10).Replace([string][char]13,[string][char]10)
+  $lines=@()
+  foreach($line in $text.Split([char]10)){
+    $line=([regex]::Replace($line,'[\s\u00A0\u200B\uFEFF]+',' ')).Trim()
+    if($line.Length -gt 0){$lines+=$line}
   }
-  return $clean -ceq $wanted
+  return ($lines -join [string][char]10)
+}
+$wantedCanonical=CanonicalText $expected
+
+function SamePrompt($value){
+  $clean=CanonicalText $value
+  if([string]::IsNullOrEmpty($clean)){return $false}
+  return $clean -ceq $wantedCanonical
 }
 
 function MatchesComposer($element){
@@ -108,6 +117,10 @@ function MatchesComposer($element){
 function IsSendButton($button){
   $name=$button.Current.Name
   $id=$button.Current.AutomationId
+  $class=[string]$button.Current.ClassName
+  if($name -match '(?i)(voice|dictat|stop|cancel|interrupt|语音|听写|停止|取消|中断)'){return $false}
+  # Codex composer's primary action carries this design token in every locale.
+  if($class -match '(^|\s)bg-composer-primary(\s|$)'){return $true}
   if($name -match '(?i)^(send|send message|send prompt|submit|发送|发送消息)(\s*\(.*\))?$'){return $true}
   if($id -match '(?i)^(send|send-button|send-message|submit|composer-send|composer-submit)$'){return $true}
   try{
@@ -115,6 +128,36 @@ function IsSendButton($button){
     if($p.Current.Name -match '(?i)^(send|send message|send prompt|发送|发送消息)$'){return $true}
   }catch{}
   return $false
+}
+
+# Only the composer's own container: the window also hosts ChatGPT web views
+# with their own composers and send buttons.
+function FindComposerSendButtons($composer){
+  $walker=[System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $node=$composer
+  for($depth=0;$depth -lt 6;$depth++){
+    try{$node=$walker.GetParent($node)}catch{return @()}
+    if($null -eq $node){return @()}
+    if($node.Current.ControlType -eq [System.Windows.Automation.ControlType]::Document){return @()}
+    $buttons=$node.FindAll([System.Windows.Automation.TreeScope]::Descendants,$buttonCondition)
+    $sendButtons=@()
+    for($j=0;$j -lt $buttons.Count;$j++){
+      $button=$buttons.Item($j)
+      if(IsSendButton $button){$sendButtons+=,$button}
+    }
+    if($sendButtons.Count -gt 0){return ,$sendButtons}
+  }
+  return @()
+}
+
+function ComposerCleared($composer){
+  try{
+    $value=$composer.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+    return -not (SamePrompt $value)
+  }catch{
+    # The composer is replaced by the thread view once the turn starts.
+    return $true
+  }
 }
 
 function InvokeButton($button){
@@ -184,13 +227,12 @@ while([DateTime]::UtcNow -lt $deadline){
     continue
   }
   $reason='composer-not-readable'
-  $targets=@()
+  $composers=@()
   foreach($window in $codexWindows){
     try{$all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)}
     catch{$reason='desktop-window-inaccessible';continue}
-    $matched=$false
     $readable=$false
-    $count=[Math]::Min($all.Count,1600)
+    $count=[Math]::Min($all.Count,4000)
     for($i=0;$i -lt $count;$i++){
       $element=$all.Item($i)
       $kind=$element.Current.ControlType
@@ -198,31 +240,42 @@ while([DateTime]::UtcNow -lt $deadline){
          $kind -ne [System.Windows.Automation.ControlType]::Document -and
          $kind -ne [System.Windows.Automation.ControlType]::Custom){continue}
       $readable=$true
-      if(MatchesComposer $element){$matched=$true;break}
+      if(MatchesComposer $element){$composers+=,$element}
     }
-    if(-not $matched){
-      if($readable){$reason='composer-not-matched'}
-      continue
-    }
-    $reason='send-control-not-found'
-    $buttons=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$buttonCondition)
-    $found=0
-    for($j=0;$j -lt $buttons.Count;$j++){
-      $button=$buttons.Item($j)
-      if(-not (IsSendButton $button)){continue}
-      $found++
-      if($button.Current.IsEnabled){$targets+=@{window=$window;button=$button}}
-    }
-    if($found -gt 0 -and $targets.Count -eq 0){$reason='send-control-disabled'}
+    if($readable -and $composers.Count -eq 0){$reason='composer-not-matched'}
   }
-  if($targets.Count -gt 1){
+  if($composers.Count -gt 1){
     Write-Output 'ambiguous-target'
     exit 0
   }
-  if($targets.Count -eq 1){
-    if(InvokeButton $targets[0].button){Write-Output 'invoked-unconfirmed'}
-    else{Write-Output 'send-invoke-unavailable'}
-    exit 0
+  if($composers.Count -eq 1){
+    $composer=$composers[0]
+    $buttons=@(FindComposerSendButtons $composer)
+    if($buttons.Count -gt 1){
+      Write-Output 'ambiguous-target'
+      exit 0
+    }
+    if($buttons.Count -eq 0){
+      $reason='send-control-not-found'
+    }elseif(-not $buttons[0].Current.IsEnabled){
+      $reason='send-control-disabled'
+    }else{
+      # One-shot: never invoke again, whatever the confirmation shows.
+      if(-not (InvokeButton $buttons[0])){
+        Write-Output 'send-invoke-unavailable'
+        exit 0
+      }
+      $confirmDeadline=[DateTime]::UtcNow.AddSeconds(5)
+      while([DateTime]::UtcNow -lt $confirmDeadline){
+        if(ComposerCleared $composer){
+          Write-Output 'sent-composer-cleared'
+          exit 0
+        }
+        Start-Sleep -Milliseconds 250
+      }
+      Write-Output 'invoked-unconfirmed'
+      exit 0
+    }
   }
   Start-Sleep -Milliseconds 400
 }
@@ -235,7 +288,7 @@ export async function tryVerifiedDesktopAutoSend(prompt,{platform=process.platfo
   try{
     const {stdout}=await run('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',
       Buffer.from(desktopAutoSendScript(),'utf16le').toString('base64')],{
-      env,windowsHide:true,timeout:16000,maxBuffer:1024
+      env,windowsHide:true,timeout:24000,maxBuffer:1024
     });
     const code=stdout.trim();
     return AUTO_SEND_RESULTS.has(code)?code:'uia-error';

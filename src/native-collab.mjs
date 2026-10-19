@@ -343,7 +343,9 @@ export function createNativeCollab(options={},dependencies={}){
       catch { /* Native pairing may have advanced; never re-dispatch. */ }
       return response(ticket,'opened_unconfirmed',{
         autoSubmit,
-        instructions:autoSubmit==='invoked-unconfirmed'
+        instructions:autoSubmit==='sent-composer-cleared'
+          ?'The uniquely verified native Codex composer was submitted once and cleared. Turn execution and chat binding remain unconfirmed until native Codex reports them; do not resend.'
+          :autoSubmit==='invoked-unconfirmed'
           ?'A uniquely verified native Codex Send button was invoked. Actual turn execution and chat binding remain unconfirmed.'
           :'Codex Desktop was asked to open the project with a prefilled $magpie-codex-collab prompt. Press Send once in Codex Desktop if the composer is still populated. Only native Codex can verify and activate this ChatGPT chat.'
       });

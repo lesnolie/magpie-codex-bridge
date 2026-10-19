@@ -11,7 +11,7 @@ test('sender is never invoked on unsupported platforms',async()=>{
 test('sender cannot submit without a uniquely verified exact native composer and action',()=>{
   const s=desktopAutoSendScript();
   assert.match(s,/\$clean -ceq \$wanted/);
-  assert.match(s,/\$targets\.Count -gt 1/);
+  assert.match(s,/\$composers\.Count -gt 1/);
   assert.match(s,/InvokePattern/);
   assert.match(s,/LegacyIAccessiblePattern/);
   assert.match(s,/TextPattern/);

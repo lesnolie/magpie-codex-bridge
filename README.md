@@ -1,4 +1,35 @@
-# Magpie Local Project Review (v0.4.24 alpha)
+# Magpie Local Project Review (v0.4.25 alpha)
+
+## v0.4.25 alpha: Desktop auto-send matches the real Codex composer
+
+v0.4.24 found the Codex window but always reported `composer-not-matched`.
+Codex Desktop's composer is a ProseMirror editor, and Chromium's UI
+Automation text for it is not byte-identical to the prefilled prompt:
+empty paragraphs are dropped and a line's leading spaces surface as
+trailing spaces of the previous line. The Magpie prompt always contains
+blank lines, so the old exact comparison could never succeed.
+
+The auto-sender now compares a canonical form on both sides (unified line
+breaks, NBSP/zero-width as spaces, collapsed whitespace, trimmed lines,
+no empty lines). The unique TASK_ID and LAUNCH_ID still make a different
+launch, a placeholder or a partial prefill fail closed.
+
+The Codex window also hosts ChatGPT web views with their own composers and
+send buttons. The Send control is therefore searched only inside the
+matched composer's own container (never past the web document), identified
+by the composer's primary-action design token in any locale, and voice,
+dictation and stop controls are never pressed. More than one matching
+composer or control returns `ambiguous-target`.
+
+The control is invoked exactly once. When the composer then clears, the
+result is `sent-composer-cleared`; otherwise `invoked-unconfirmed`. Neither
+confirms Codex execution or ChatGPT chat binding.
+
+Windows regression tests reproduce the observed Chromium readback. An
+opt-in live test (`MAGPIE_LIVE_CODEX_DESKTOP_ROOT=<project>`) submits one
+harmless prompt to the real Codex Desktop; verified with OpenAI.Codex
+26.1013.4894.0.
+
 
 ## v0.4.24 alpha: verified Windows Codex MSIX GUI host
 

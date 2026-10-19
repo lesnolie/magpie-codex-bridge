@@ -1,4 +1,32 @@
-# Magpie Local Project Review (v0.4.23 alpha)
+# Magpie Local Project Review (v0.4.24 alpha)
+
+## v0.4.24 alpha: verified Windows Codex MSIX GUI host
+
+The previous v0.4.23 window discovery correctly reported
+`desktop-window-unavailable` even though the user saw the Codex Desktop
+composer. Windows MSIX Codex builds may run the **GUI** as
+`OpenAI.Codex_...\\app\\ChatGPT.exe`, while `Codex.exe` is a
+different process. Matching only Codex.exe therefore misses the GUI.
+
+The experimental Desktop auto-sender now allows `ChatGPT.exe` **only
+when the executable path identifies the OpenAI.Codex MSIX package**.
+It obtains installed package locations from the current Windows user's
+OpenAI.Codex registration and can recognize the strict WindowsApps
+OpenAI.Codex package path even when package registration lookup fails.
+It never selects an unrelated standalone ChatGPT application.
+
+For Windows app frame hosting, a visible ApplicationFrameHost window is
+allowed only if it contains a child HWND belonging to an already approved
+Codex process. The full prefilled prompt, single enabled Send control and
+one-shot dispatch guards remain mandatory. No blind Enter or independent
+CLI fallback. If the package path cannot be verified, the safe diagnostic
+`codex-package-host-unverified` is returned.
+
+Windows CI verifies both a legitimate Codex MSIX GUI path and rejection
+of unrelated ChatGPT.exe paths. Actual sending and native chat binding still
+need a real Codex Desktop read-only test after updating.
+
+
 
 ## v0.4.23 alpha: discover native Codex Desktop windows by process/HWND
 

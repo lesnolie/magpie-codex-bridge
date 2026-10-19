@@ -156,18 +156,32 @@ test('remote auto-start setting still works independently of Codex permissions',
   assert.equal(app.options.codexPermissionMode,'read-only');
 });
 
-test('Desktop auto-send is local opt-in, saved, and never enables standalone CLI',async()=>{
+test('Desktop auto-send saves on toggle and needs Codex enabled',async()=>{
   const html=readFileSync(new URL('../page/index.html',import.meta.url),'utf8');
   assert.match(html,/id="nativeDesktopAutoSendExperimental"/);
-  const app=await ready(runPage({codexEnabled:true,nativeCollabCliExperimental:true}));
-  assert.equal(app.element('nativeDesktopAutoSendExperimental').checked,false);
+  const off=await ready(runPage());
+  assert.equal(off.element('nativeDesktopAutoSendExperimental').checked,false);
+  assert.equal(off.element('nativeDesktopAutoSendExperimental').disabled,true);
+  assert.equal(off.element('codexPermissionMode').disabled,true);
+  const app=await ready(runPage({codexEnabled:true}));
+  assert.equal(app.element('nativeDesktopAutoSendExperimental').disabled,false);
   app.element('nativeDesktopAutoSendExperimental').checked=true;
   await app.element('nativeDesktopAutoSendExperimental').fire('change');
-  assert.equal(app.element('nativeCollabCliExperimental').checked,false);
-  assert.equal(app.element('nativeCollabCliExperimental').disabled,true);
-  await app.element('saveCodexConfig').fire('click');
+  await pause();
   assert.equal(app.options.nativeDesktopAutoSendExperimental,true);
-  assert.equal(app.options.nativeCollabCliExperimental,false);
-  const defaultOff=await ready(runPage());
-  assert.equal(defaultOff.element('nativeDesktopAutoSendExperimental').checked,false);
+  assert.equal(app.saved.length,1);
+});
+
+test('standalone CLI diagnostics are gone and stale CLI settings are dropped on save',async()=>{
+  const html=readFileSync(new URL('../page/index.html',import.meta.url),'utf8');
+  const js=readFileSync(new URL('../page/app.js',import.meta.url),'utf8');
+  assert.doesNotMatch(html,/nativeCollabCliExperimental|localCliTest|native-cli-test/);
+  assert.doesNotMatch(js,/localCliTest|native-cli-test-status|__magpieLocalCliTest/);
+  const app=await ready(runPage({codexEnabled:true,nativeCollabCliExperimental:true,
+    nativeCliLocalTestRequest:{id:'x',project:'p',chatUrl:'https://chatgpt.com/c/abcdefgh',createdAt:1}}));
+  await app.element('saveCodexConfig').fire('click');
+  await pause();
+  assert.equal(app.options.nativeCollabCliExperimental,undefined);
+  assert.equal(app.options.nativeCliLocalTestRequest,undefined);
+  assert.equal(app.options.codexEnabled,true);
 });

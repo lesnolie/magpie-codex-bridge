@@ -30,7 +30,7 @@ implementation, not an unrestricted computer agent.
 
 ## Codex Desktop 项目作为目录来源
 
-在 **Magpie → Project Review → 项目来源** 开启「使用 Codex 项目」。
+项目固定来自 Codex Desktop 已登记的工作区，无需在 Magpie 页面开启。
 此模式下，`projects`、`list_files`、`read_file`、`search_text`、
 `git_status`、`git_diff` 以及 `codex_submit_task` 都使用相同的
 Codex Desktop 已登记项目和目录，不要求在 Magpie 重复授权文件夹。

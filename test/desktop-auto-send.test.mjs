@@ -111,5 +111,5 @@ if(IsApprovedCodexAppHost $fake){throw 'Untrusted executable accepted'}
 test('codex packaged host failures are reflected without exposing paths or PIDs',async()=>{
   assert.ok(AUTO_SEND_RESULTS.has('codex-package-host-unverified'));
   assert.equal(await tryVerifiedDesktopAutoSend('probe',{platform:'win32',
-    run:async()=>({stdout:'codex-package-host-unverified\\n'})}),'codex-package-host-unverified');
+    run:async()=>({stdout:'codex-package-host-unverified\n'})}),'codex-package-host-unverified');
 });

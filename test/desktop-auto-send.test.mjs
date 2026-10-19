@@ -18,6 +18,13 @@ test('sender cannot submit without a uniquely verified exact native composer and
   assert.match(s,/ValuePattern/);
   assert.match(s,/ControlType\]::Custom/);
   assert.match(s,/AddSeconds\(12\)/);
+  assert.match(s,/\[MagpieCodexHwnd\]::VisibleWindows\(\)/);
+  assert.match(s,/GetWindowThreadProcessId/);
+  assert.match(s,/\$owner\.ProcessName -ine 'Codex'/);
+  assert.match(s,/desktop-session-mismatch/);
+  assert.match(s,/desktop-window-unavailable/);
+  assert.doesNotMatch(s,/\$window\.Current\.Name -match/);
+
   assert.doesNotMatch(s,/SendKeys|keybd_event|SendInput/);
   assert.doesNotMatch(s,/Write-Output \$expected/);
 });
@@ -49,4 +56,27 @@ test('unexpected helper output and execution failures are redacted',async()=>{
     run:async()=>({stdout:'private-user-prompt\n'})}),'uia-error');
   assert.equal(await tryVerifiedDesktopAutoSend('prompt',{platform:'win32',
     run:async()=>{throw Error('private chat URL')}}),'uia-error');
+});
+
+test('native Windows HWND API compiles and enumerates without depending on window titles',{
+  skip:process.platform!=='win32'
+},()=>{
+  const script=desktopAutoSendScript();
+  const match=script.match(/Add-Type -TypeDefinition @'\n([\s\S]+?)\n'@/);
+  assert.ok(match,'native HWND declaration must be embedded');
+  const ps="$ErrorActionPreference='Stop';Add-Type -TypeDefinition @'\n"+match[1]+"\n'@\n"+
+    "$windows=[MagpieCodexHwnd]::VisibleWindows();"+
+    "if($null -eq $windows){throw 'EnumWindows returned null'};";
+  const run=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',
+    Buffer.from(ps,'utf16le').toString('base64')],{timeout:15000,encoding:'utf8'});
+  assert.equal(run.status,0,'Win32 HWND interop must compile and execute');
+});
+test('new process/session discovery diagnostics remain fixed allowlisted labels',async()=>{
+  for(const code of ['codex-process-not-found','desktop-session-mismatch',
+     'desktop-window-unavailable','desktop-window-inaccessible']){
+    assert.ok(AUTO_SEND_RESULTS.has(code));
+    const r=await tryVerifiedDesktopAutoSend('probe',{platform:'win32',
+      run:async()=>({stdout:code+'\n'})});
+    assert.equal(r,code);
+  }
 });

@@ -9,14 +9,32 @@ import {promisify} from 'node:util';
 const exec=promisify(execFile);
 export const AUTO_SEND_RESULTS=new Set(['invoked-unconfirmed','not-verified','window-not-found',
   'composer-not-readable','composer-not-matched','send-control-not-found',
-  'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error']);
+  'send-control-disabled','send-invoke-unavailable','ambiguous-target','uia-error',
+  'codex-process-not-found','desktop-session-mismatch','desktop-window-unavailable',
+  'desktop-window-inaccessible']);
 export function desktopAutoSendScript(){
 return String.raw`$ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+# Window titles often contain only a project/thread name; use owning HWND process.
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+public static class MagpieCodexHwnd {
+  public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr state);
+  [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr state);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool IsWindowVisible(IntPtr hwnd);
+  public static IntPtr[] VisibleWindows(){
+    var handles=new List<IntPtr>();
+    EnumWindows((hwnd,state)=>{ if(IsWindowVisible(hwnd)) handles.Add(hwnd); return true; },IntPtr.Zero);
+    return handles.ToArray();
+  }
+}
+'@
 $expected=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:MAGPIE_EXPECTED_PROMPT_B64))
-$root=[System.Windows.Automation.AutomationElement]::RootElement
-$windowCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Window)
 $buttonCondition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
 $deadline=[DateTime]::UtcNow.AddSeconds(12)
 $reason='window-not-found'
@@ -80,18 +98,43 @@ function InvokeButton($button){
 }
 
 while([DateTime]::UtcNow -lt $deadline){
-  $windows=$root.FindAll([System.Windows.Automation.TreeScope]::Children,$windowCondition)
+  # Do not mistake a non-interactive service session for a missing Codex UI.
+  $helperSession=[System.Diagnostics.Process]::GetCurrentProcess().SessionId
+  $codexProcesses=@(Get-Process -Name 'Codex','OpenAI.Codex' -ErrorAction SilentlyContinue)
+  $localProcesses=@($codexProcesses | Where-Object {$_.SessionId -eq $helperSession})
+  # C# owns the native callback; do not depend on PowerShell delegate closures.
+  $handles=[MagpieCodexHwnd]::VisibleWindows()
   $codexWindows=@()
-  foreach($window in $windows){if($window.Current.Name -match '(?i)Codex'){$codexWindows+=,$window}}
+  $codexHandleCount=0
+  $seen=[System.Collections.Generic.HashSet[long]]::new()
+  foreach($hwnd in $handles){
+    [uint32]$ownerProcessId=0
+    [void][MagpieCodexHwnd]::GetWindowThreadProcessId($hwnd,[ref]$ownerProcessId)
+    if($ownerProcessId -eq 0){continue}
+    $owner=$null
+    try{$owner=[System.Diagnostics.Process]::GetProcessById([int]$ownerProcessId)}catch{continue}
+    if($owner.ProcessName -ine 'Codex' -and $owner.ProcessName -ine 'OpenAI.Codex'){continue}
+    if($owner.SessionId -ne $helperSession){continue}
+    $codexHandleCount++
+    if(-not $seen.Add($hwnd.ToInt64())){continue}
+    try{
+      $element=[System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+      if($null -ne $element){$codexWindows+=,$element}
+    }catch{}
+  }
   if($codexWindows.Count -eq 0){
-    $reason='window-not-found'
+    if($codexProcesses.Count -eq 0){$reason='codex-process-not-found'}
+    elseif($localProcesses.Count -eq 0){$reason='desktop-session-mismatch'}
+    elseif($codexHandleCount -eq 0){$reason='desktop-window-unavailable'}
+    else{$reason='desktop-window-inaccessible'}
     Start-Sleep -Milliseconds 400
     continue
   }
   $reason='composer-not-readable'
   $targets=@()
   foreach($window in $codexWindows){
-    $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+    try{$all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)}
+    catch{$reason='desktop-window-inaccessible';continue}
     $matched=$false
     $readable=$false
     $count=[Math]::Min($all.Count,1600)

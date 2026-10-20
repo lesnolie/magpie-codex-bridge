@@ -4,7 +4,7 @@
  * Desktop process control through its documented plugin API.
  *
  * We reuse the local project allowlist and existing Codex adapters.
- * Only documented Claude Code/OpenCode CLI invocations are supported here.
+ * Only documented Claude Code and DeepSeek Harness (dsh) CLI invocations are supported here.
  * Never accept an executable path or shell fragment from the remote caller.
  */
 import { spawn as nodeSpawn } from 'node:child_process';
@@ -23,22 +23,23 @@ const FORMATS = Object.freeze({
     readOnly: ['--print', '--permission-mode', 'plan', '--output-format', 'text'],
     native: ['--print', '--output-format', 'text'],
   },
-  opencode: {
-    readOnly: ['run', '--agent', 'plan'],
-    native: ['run'],
+  dsh: {
+    // dsh headless reads the task from stdin and prints its answer to stdout.
+    // Its current official CLI exposes no guaranteed read-only tool mode.
+    native: ['headless'],
   },
 });
 function bounded(s) { return s.length > MAX_OUTPUT ? s.slice(-MAX_OUTPUT) : s; }
 function actualCommand(harness, argv, platform, env) {
   if (platform !== 'win32') return { file: harness, args: argv };
-  // npm-installed Claude/OpenCode often expose .cmd shims on Windows.
+  // npm-installed Claude/dsh often expose .cmd shims on Windows.
   // The shell sees only a FIXED, hard-coded CLI command/flags; prompts are
   // piped through stdin, never interpolated in shell command text.
   const root = env.SystemRoot || env.SYSTEMROOT || 'C:\\Windows';
   if (!path.win32.isAbsolute(root) || /[\r\n\0"&|<>]/.test(root))
     throw Error('Invalid Windows system root');
   const cmd = path.win32.join(root, 'System32', 'cmd.exe');
-  if (!['claude','opencode'].includes(harness) ||
+  if (!['claude','dsh'].includes(harness) ||
       argv.some(a => !/^[a-zA-Z0-9-]+$/.test(a)))
     throw Error('Unsafe harness invocation rejected');
   return { file: cmd, args: ['/d', '/s', '/c', [harness, ...argv].join(' ')] };
@@ -97,6 +98,11 @@ export function createHarnessRunner(options = {}, deps = {}) {
         throw Error('Another agent CLI task is active; finish or cancel it first');
       const url = chatUrl ? normalizePeerChatUrl(chatUrl) : null;
       const nativePerms = options.agentLaunchPermission === 'native';
+      // Unlike Claude Code's plan mode, dsh headless has no supported
+      // read-only flag. Fail closed rather than mislabel it read-only.
+      if (selected === 'dsh' && !nativePerms) {
+        throw Error('DeepSeek Harness headless has no verified read-only mode; enable native Harness permissions locally for dsh');
+      }
       const spec = actualCommand(selected, nativePerms ? template.native : template.readOnly, platform, env);
       const taskId = idFactory();
       const j = { taskId, harness:selected, project, output:'', state:'running',

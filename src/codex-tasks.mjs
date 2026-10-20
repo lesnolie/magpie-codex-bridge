@@ -179,7 +179,7 @@ export function buildBrowserCollaborationPrompt({ project, taskId, prompt, chatU
     '',
     'USER GOAL:',
     prompt,
-  ].join('\\n');
+  ].join('\n');
 }
 
 export function createCodexTasks(options = {}, dependencies = {}) {

@@ -1,6 +1,7 @@
 import { createProjectTools, projectRoots } from './src/projects.mjs';
 import { createChatSessions } from './skills/magpie-codex-collab/chat-session.mjs';
 import { createNativeCollab } from './src/native-collab.mjs';
+import { createPeerMessages } from './src/peer-messages.mjs';
 import { existsSync } from 'node:fs';
 import { createCodexTasks, resolveCodexPermissionMode } from './src/codex-tasks.mjs';
 import { startModelCatalogSync } from './src/model-catalog.mjs';
@@ -32,6 +33,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   // explicitly enables Codex; Cloudflare also filters these tools by its
   // locally managed permission flag.
   const codex = createCodexTasks(options);
+  const peers = createPeerMessages();
   const chat = createChatSessions({projectRoots:()=>projectRoots(options)});
   const nativeCollab = createNativeCollab(options,{chatSessions:chat,projectRoots:()=>projectRoots(options)});
   const codexTools = {
@@ -49,6 +51,17 @@ export const MagpieProjectReview = async (_input, options = {}) => {
       failedLaunchId:{type:'string',description:'Exact original failed launch UUID. Required with retryFailed=true, together with matching taskId, goal, project and chatUrl.'}}, execute: wrap(args=>nativeCollab.start(args).then(JSON.stringify)) },
     codex_cancel_task: { description: 'Cancel a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.cancel) },
   };
+  const peerTools = {
+    agent_register: { description: 'LOCAL AGENT ONLY (not remote Cloudflare). Bind an active harness session and its exact ChatGPT Web chat for peer command exchange. Registration is self-declared, not proof of execution or filesystem permission.', args: { harness: arg('Harness ID e.g. codex, claude, opencode'), project: arg('Human-readable project label; not a grant to project files'), chatUrl: arg('Exact verified ChatGPT conversation URL observed through ego-browser') }, execute: wrap((a, ctx) => peers.register(a, ctx?.agent || '')) },
+    agent_poll: { description: 'LOCAL AGENT ONLY. Read up to ten queued peer commands for a registered session during an active harness turn. A poll marks delivered, not executed; acknowledge after processing.', args: { sessionId: arg('Session ID returned by agent_register'), chatUrl: arg('Exact bound ChatGPT conversation URL') }, execute: wrap(peers.poll) },
+    agent_ack: { description: 'LOCAL AGENT ONLY. Mark a previously polled peer command processed. No implicit approval of unrelated actions.', args: { sessionId: arg('Registered session ID'), chatUrl: arg('Exact bound ChatGPT URL'), messageId: arg('Original message ID') }, execute: wrap(peers.acknowledge) },
+    agent_sessions: { description: 'Read locally registered peer harness sessions, their project labels, ChatGPT binding and queued counts. Does NOT mean those agents can be launched or are executing.', args: {}, execute: wrap(() => peers.list()) },
+    agent_message_status: { description: 'Read routing status of a message to an agent: queued, delivered (polled), or acked. No status confirms execution.', args: { sessionId: arg('Registered session ID'), chatUrl: arg('Exact bound ChatGPT URL'), messageId: arg('Optional message ID') }, execute: wrap(peers.status) },
+    agent_message_send: { description: 'Queue a concrete peer REQUEST/RESULT/UPDATE/BLOCKED/DONE to a locally registered agent session via existing Magpie MCP. Requires LOCAL Magpie opt-in to peer messaging, exact bound chat URL and stable message ID. This queues only; it cannot start a stopped agent or execute arbitrary shell commands.', args: { sessionId: arg('Target registered agent session ID'), chatUrl: arg('Exact conversation URL supplied by the user or verified previously'), taskId: arg('Stable task ID'), messageId: arg('Stable unique message ID for idempotency on tool retries'), command: { type: 'string', enum: ['REQUEST','RESULT','UPDATE','BLOCKED','DONE'], description: 'Message intention, not a fixed sender role' }, message: arg('Actual command/request/result, max 4000 characters') }, execute: wrap(a => {
+      if (options.peerMessagingEnabled !== true) throw Error('Peer messaging is disabled in local Magpie settings');
+      return peers.send(a);
+    }) },
+  };
   const projectsWithStatus = async () => {
     const data = JSON.parse(await tools.projects());
     const configured = options.codexEnabled === true;
@@ -65,7 +78,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
       codex: {
         integrationVersion: '0.4.28-alpha.1',
         toolsRegistered: true,
-        toolCount: 17,
+        toolCount: 23,
         pendingReviewCount,
         localEnabled: configured,
         allowWrites: configured && resolveCodexPermissionMode(options) !== 'read-only',
@@ -78,6 +91,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   return {
     tool: {
       ...codexTools,
+      ...peerTools,
       projects: { description: 'List Codex Desktop registered projects and report pending Codex reviews. When pendingReviewCount is positive call codex_review_inbox and codex_review_changes to audit; never modify project files.', args: {}, execute: wrap(projectsWithStatus) },
       list_files: { description: 'List non-secret files within an allowed project directory. Paths are project-relative.', args: { project: arg('Project name'), directory: arg('Relative directory, default .') }, execute: wrap(tools.list_files) },
       read_file: { description: 'Read a limited range of an allowed source code or text file; no secrets, symlinks or files outside project roots.', args: { project: arg('Project name'), file: arg('Relative source path'), startLine: { type: 'integer', minimum: 1 }, maxLines: { type: 'integer', minimum: 1, maximum: 200 } }, execute: wrap(tools.read_file) },

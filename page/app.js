@@ -55,6 +55,8 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const status = document.getElementById('status');
   const remoteAutoStart = document.getElementById('remoteAutoStart');
   const remoteStatus = document.getElementById('remoteStatus');
+  const peerMessagingEnabled = document.getElementById('peerMessagingEnabled');
+  const peerStatus = document.getElementById('peerStatus');
   const codexEnabled = document.getElementById('codexEnabled');
   const codexPermissionMode = document.getElementById('codexPermissionMode');
   const codexPermissionConfirmation = document.getElementById('codexPermissionConfirmation');
@@ -107,6 +109,8 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   function render() {
     remoteAutoStart.checked = options.remoteAutoStart === true;
     remoteAutoStart.disabled = busy;
+    peerMessagingEnabled.checked = options.peerMessagingEnabled === true;
+    peerMessagingEnabled.disabled = busy;
     codexEnabled.checked = options.codexEnabled === true;
     codexEnabled.disabled = busy;
     codexPermissionMode.value = pendingMode || effectiveMode(options);
@@ -137,6 +141,12 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       render();
     }
   }
+  peerMessagingEnabled.addEventListener('change', async () => {
+    if (busy) return;
+    const next = peerMessagingEnabled.checked;
+    await saveOptions({ ...options, peerMessagingEnabled: next },
+      next ? '已允许将命令发送到本地已注册的 Agent 会话。' : '已禁止 ChatGPT 通过 MCP 发送 Agent 消息。', peerStatus);
+  });
   remoteAutoStart.addEventListener('change', async () => {
     if (busy) return;
     const next = remoteAutoStart.checked;

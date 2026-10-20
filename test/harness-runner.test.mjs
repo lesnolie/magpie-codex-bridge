@@ -67,7 +67,7 @@ test('explicit harness never substitutes another or touches unauthorized project
 test('running CLI task blocks a second start and can be cancelled',()=>{
   const {runner}=setup();
   const a=JSON.parse(runner.launch({harness:'claude',project:'TMN',prompt:'Task one'}));
-  assert.throws(()=>runner.launch({harness:'opencode',project:'TMN',prompt:'Task two'}),/already active/);
+  assert.throws(()=>runner.launch({harness:'opencode',project:'TMN',prompt:'Task two'}),/task is active/);
   assert.equal(JSON.parse(runner.cancel({harness:'claude',project:'TMN',taskId:a.taskId})).state,'cancelled');
   assert.throws(()=>runner.status({harness:'opencode',taskId:a.taskId}),/harness mismatch/);
 });

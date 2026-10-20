@@ -9,7 +9,7 @@ const prefix='magpie-codex-bridge_';
 const names=[
   'agent_sessions','agent_message_status','agent_message_send',
   'agent_register','agent_poll','agent_ack',
-  'codex_submit_task','projects',
+  'codex_submit_task','projects', 'agent_run','agent_run_status','agent_run_cancel',
 ];
 
 test('Cloudflare remote gate accepts peer sends only with independent local opt-in', async t => {
@@ -25,8 +25,9 @@ test('Cloudflare remote gate accepts peer sends only with independent local opt-
   });
   const p=await listen(upstream); t.after(async()=>close(upstream));
   let peer=false;
+  let launch=false;
   const bridge=createBridge({verifyJWT:async()=>({}),upstream:'http://127.0.0.1:'+p,
-    isCodexEnabled:()=>false,isPeerEnabled:()=>peer});
+    isCodexEnabled:()=>false,isPeerEnabled:()=>peer,isLaunchEnabled:()=>launch});
   const q=await listen(bridge); t.after(async()=>close(bridge));
   async function ask(method,name) {
     const body={jsonrpc:'2.0',id:1,method,params:method==='tools/call'?{name:prefix+name,arguments:{}}:{}};
@@ -44,6 +45,9 @@ test('Cloudflare remote gate accepts peer sends only with independent local opt-
   assert.ok(!allow.includes(prefix+'agent_poll'));
   assert.ok(!allow.includes(prefix+'agent_ack'));
   assert.ok(!allow.includes(prefix+'codex_submit_task'));
+  assert.ok(!allow.includes(prefix+'agent_run'));
+  assert.ok(!allow.includes(prefix+'agent_run_status'));
+  assert.ok(!allow.includes(prefix+'agent_run_cancel'));
   const previous=hits;
   assert.equal((await ask('tools/call','agent_message_send')).status,403);
   assert.equal(hits,previous,'disallowed tool must never reach upstream');
@@ -55,4 +59,11 @@ test('Cloudflare remote gate accepts peer sends only with independent local opt-
   assert.equal((await ask('tools/call','agent_register')).status,403);
   assert.equal((await ask('tools/call','agent_poll')).status,403);
   assert.equal((await ask('tools/call','agent_ack')).status,403);
+  assert.equal((await ask('tools/call','agent_run')).status,403);
+  launch=true;
+  const launched=await ask('tools/list');
+  assert.ok(launched.reply.result.tools.some(x=>x.name===prefix+'agent_run'));
+  assert.ok(launched.reply.result.tools.some(x=>x.name===prefix+'agent_run_status'));
+  assert.ok(launched.reply.result.tools.some(x=>x.name===prefix+'agent_run_cancel'));
+  assert.equal((await ask('tools/call','agent_run')).status,200);
 });

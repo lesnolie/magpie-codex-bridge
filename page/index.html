@@ -63,6 +63,31 @@
         </div>
         <input class="switch" id="peerMessagingEnabled" type="checkbox">
       </div>
+      <div class="row">
+        <div class="row-text">
+          <label for="agentLaunchEnabled">允许 ChatGPT 启动指定 Harness <span class="badge">实验</span></label>
+          <p class="hint">选择谁就启动谁：Codex 使用原生接口，Claude Code 和 OpenCode 使用 CLI。仅访问本机已授权项目，默认只读。不允许远程指定任意程序路径。</p>
+        </div>
+        <input class="switch" id="agentLaunchEnabled" type="checkbox">
+      </div>
+      <div class="row">
+        <div class="row-text">
+          <label for="agentLaunchPermission">Harness 执行权限</label>
+          <p class="hint">默认只读；跟随 Harness 原生权限可能允许修改文件，必须在本机再次确认。</p>
+        </div>
+        <select id="agentLaunchPermission">
+          <option value="read-only">只读（安全测试）</option>
+          <option value="native">跟随 Harness 原生权限</option>
+        </select>
+      </div>
+      <div id="agentLaunchConfirmation" class="confirm" role="group" hidden>
+        <p>确认允许远程启动的 Harness 使用其原生工具权限吗？可能修改已授权项目。</p>
+        <div class="controls">
+          <button type="button" id="confirmAgentLaunchPermission">确认授权</button>
+          <button type="button" id="cancelAgentLaunchPermission" class="secondary">取消</button>
+        </div>
+      </div>
+      <p class="status-line" id="agentLaunchStatus" role="status" aria-live="polite"></p>
       <p class="status-line" id="peerStatus" role="status" aria-live="polite"></p>
     </section>
 

@@ -50,6 +50,7 @@ test('Chromium-flattened Codex composer text matches the dispatched prompt (comp
 if(-not (Check '${b64(observed)}')){throw 'flattened readback rejected'}
 if(-not (Check '${b64(prompt.replace(/\n/g,'\r\n'))}')){throw 'CRLF readback rejected'}
 if(-not (Check '${b64(prompt.replace(/ /g,'\u00a0'))}')){throw 'NBSP readback rejected'}
+if(-not (Check '${b64(chromiumReadback(prompt.replace('TARGET_CHAT: ','TARGET_CHAT: \n')))}')){throw 'linkified URL readback rejected'}
 'ok'`,{EXPECTED:b64(prompt)});
   assert.equal(run.status,0,run.stderr);
 });

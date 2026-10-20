@@ -73,18 +73,13 @@ function IsApprovedCodexAppHost($process){
   return ($exe -match '(?i)[\\/]WindowsApps[\\/]OpenAI\.Codex_[^\\/]+[\\/]app[\\/]ChatGPT\.exe$')
 }
 
-# Chromium flattens ProseMirror paragraphs for UIA: empty paragraphs vanish and
-# leading spaces of a line surface as trailing spaces of the previous line.
-# Compare a canonical form; TASK_ID/LAUNCH_ID keep it unique per launch.
+# Chromium flattens ProseMirror paragraphs for UIA: empty paragraphs vanish,
+# leading spaces of a line surface as trailing spaces of the previous line,
+# and a linkified URL is read on its own line. Line breaks are therefore not
+# reliable; compare whitespace-collapsed text. TASK_ID/LAUNCH_ID keep it unique.
 function CanonicalText($value){
   if($null -eq $value -or $value -isnot [string]){return $null}
-  $text=$value.Replace([string][char]13+[string][char]10,[string][char]10).Replace([string][char]13,[string][char]10)
-  $lines=@()
-  foreach($line in $text.Split([char]10)){
-    $line=([regex]::Replace($line,'[\s\u00A0\u200B\uFEFF]+',' ')).Trim()
-    if($line.Length -gt 0){$lines+=$line}
-  }
-  return ($lines -join [string][char]10)
+  return ([regex]::Replace($value,'[\s\u00A0\u200B\uFEFF]+',' ')).Trim()
 }
 $wantedCanonical=CanonicalText $expected
 

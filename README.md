@@ -1,104 +1,95 @@
 # Magpie Local Project Review (v0.4.28 alpha)
 
-## Directional architecture (the target, not all implemented yet)
+## Command-driven peer interaction (proposed design / Skill preview)
+
+There is **no predetermined executor, reviewer, planner or owner**.
+ChatGPT Web and the local harness are peers. The **current command**
+(`REQUEST`, `RESULT`, `UPDATE`, `BLOCKED`, optional `DONE`) decides
+what the receiving side is being asked to do, subject to the tools and
+permissions it actually has. Either side may ask the other to perform a
+particular action, answer a question or continue an authorized task.
 
 ```text
-ChatGPT Web  --MCP / Cloudflare Access-->  Magpie local service
-                                               |
-                                               v
-                                     Harness adapter / runner
-                                     (Codex / Claude / other)
-                                               |
-                                         task execution
-                                               |
-                                               v
-ChatGPT Web  <--ego-browser / browser UI--  Running harness agent
+ChatGPT Web -- Magpie MCP --> locally authorized harness
+ChatGPT Web <-- ego-browser --- running harness agent
 ```
 
-**Two different directions, not one bidirectional ego connection:**
+- **ChatGPT Web → Harness:** use the existing Magpie MCP over the existing
+  Cloudflare Access setup. MCP is the inbound control/data path to the
+  local agent; its tools still have their own permission and execution
+  limits. It does **not** mean ChatGPT is permanently the reviewer.
+- **Harness → ChatGPT Web:** invoke the existing `ego-browser` Skill,
+  reuse the verified conversation page and exchange concise requests and
+  results. It does **not** mean the harness is permanently the executor.
 
-1. **ChatGPT Web → MCP → harness.** Web-side MCP tools discover locally
-   authorized projects and harnesses, dispatch tasks, inspect lifecycle
-   status/results and request interruption. The local Magpie adapter owns
-   process launch and permission checks. **Today these dispatchers are
-   Codex-specific** (`codex_submit_task`, `codex_collab_start`).
-2. **Harness → ego-browser → ChatGPT Web.** The **running** agent uses the
-   shared `magpie-web-collab` Skill and ego-browser to send a message into
-   the exact verified ChatGPT conversation and read the reply. This channel
-   is not a replacement for the MCP dispatcher.
+The shared [`magpie-web-collab` Skill](skills/magpie-web-collab/SKILL.md)
+describes the return channel for any running local harness with browser
+capability (Desktop, CLI, IDE or app-server).
+[`magpie-codex-collab`](skills/magpie-codex-collab/SKILL.md) retains
+Codex Desktop's existing secure startup, local `chat-session.mjs`
+project/chat/thread binding, and checkpoint compatibility. Both Skills
+use the same **role-free command-driven interaction**, automatically
+handling actionable replies during the agent's active execution turn.
+No routine confirmation or HELLO/ACK loops. This does not modify the
+installed ego-browser Skill or create a background service.
 
-**Next backend milestone:** add a stable agent-neutral MCP contract
-(`agent_list_harnesses`, `agent_submit_task`, `agent_task_status`,
-`agent_task_result`, `agent_cancel_task`) and per-harness adapters.
-These are **proposed interfaces**, not registered tools in this release.
-Route by an explicit locally authorized harness, project and execution
-mode; do not infer from chat titles. Keep existing Codex tools as backward
-compatible aliases. Only after an adapter is implemented, permission-gated
-and tested may ChatGPT Web claim it can remotely launch that harness.
+### Example messages (both peers may send them)
 
-The ego Skill can already be used by a **running** compatible harness; that
-alone does **not** mean the Web can remotely start Claude or arbitrary
-Desktop/CLI agents. Transport availability and real-machine verification are
-separate from a passing repository test suite.
+```text
+[MAGPIE] REQUEST
+TASK: example-1
+DO: Inspect the spec and suggest a fix using your available tools.
+```
 
-## Harness-neutral ChatGPT Web collaboration (preview)
+```text
+[MAGPIE] RESULT
+TASK: example-1
+RESULT: Found two issues; details and evidence follow.
+```
 
-The reusable [`magpie-web-collab` Skill](skills/magpie-web-collab/SKILL.md)
-is **not tied to Codex or Claude**. It describes the same minimal
-`ego-browser skill` + authenticated ChatGPT Web conversation workflow for
-any **local agent harness** that can run the ego-browser executable
-(Desktop, CLI, IDE or app-server). The agent keeps its own execution
-engine, context, approvals and tools. ChatGPT Web remains the reviewer.
+The command's content, **not which side sent it**, determines the action.
+An information-only result need not trigger another message; a new
+actionable command can start another automatic exchange.
 
-One transport, not one execution engine:
+## MCP design — inspect and reuse Magpie's harness support first
 
-- **Codex Desktop:** continue to launch using `codex_collab_start` and
-  `magpie-codex-collab`. They preserve Desktop launch ticket state, native
-  thread pairing and project/chat verification. The Web messages already
-  travel via ego-browser.
-- **Codex CLI / TUI:** invoke the generic `magpie-web-collab` Skill from an
-  ordinary interactive Codex session with access to ego-browser.
-- **Codex app-server:** `codex_submit_task` still starts the existing
-  isolated Codex app-server process. Optionally supply **`chatUrl`** to
-  request ego-browser communication from the same turn using
-  `magpie-web-collab`; omitting `chatUrl` preserves the current result-only
-  MCP workflow. A sandbox or missing Skill may prevent browser access, but
-  MCP result retrieval still works.
-- **Claude Code or another agent:** install this shared Skill in that
-  harness using its native Skill import and ensure the running agent has
-  local ego-browser execution permissions. Claude Code's Desktop/CLI
-  surfaces can use one protocol if they expose those capabilities. Other
-  desktop chat apps without local shell/browser tools cannot automatically
-  do so simply by uploading the Skill.
+Magpie itself supports multiple installed agents in its Agents page, and
+makes plugin tools available to any connected MCP-capable agent. This
+existing multi-agent support should be our **starting point** instead of
+inventing a second list of harnesses or another tunnel. However, Magpie's
+agent-model configuration and plugin-tool exposure **do not on their own
+prove that a third-party plugin can launch, resume, or control any
+arbitrary Desktop/CLI agent instance**.
 
-**Important boundaries:** This branch does **not** add a Claude launch
-adapter or a general remote process manager. Web-to-local-startup remains
-Codex-specific; messages in an **already running** compatible agent session
-are two-way via the normal browser conversation. The Magpie MCP
-project allowlist still comes solely from **Codex Desktop registered
-projects**. For a Claude-only workspace, the user must first register its
-root there or a separately user-approved generic project-registry feature
-must be built; installing a Skill does not grant filesystem access.
+Next (proposal only; **no new MCP tools implemented in this PR**):
 
-### Minimal web round
+1. Check Magpie's **supported host APIs** for reading its existing agent
+   catalog / capability metadata (and their permissions). Reuse that
+   catalog where exposed. Never scrape an undocumented app database or
+   claim private host methods exist.
+2. Inspect which installed harnesses expose **native, supported launch,
+   resume, task-result and cancellation capabilities**. Distinguish
+   `detected`, `configured`, `running`, and `remotely controllable`.
+   Desktop vs CLI should not be guessed from the agent name.
+3. Keep existing `projects`, Codex tools, Cloudflare Access gateway and
+   project authorization behavior working. Propose **the smallest** generic
+   MCP invocation/status surface needed to connect to locally authorized
+   harness sessions, delegating through supported Magpie mechanisms or
+   small per-runtime adapters only when genuinely necessary.
+4. Use **task ID + verified chat URL + native harness session identity**
+   for deduplication and safe routing. Never re-launch a task merely
+   because a browser message or MCP call was retried.
+5. End-to-end verify BOTH directions: an MCP command reaches the intended
+   harness; the running harness sends an actionable command or result
+   through ego-browser; ChatGPT Web can then act with its own tools and
+   send the next instruction through MCP.
 
-1. Read `ego-browser skill` once, reuse a single TaskSpace and ChatGPT
-   page, and match its observed URL before every send.
-2. Verify Magpie project + harmless file once on first pairing or chat/project
-   switch, not on every stage.
-3. Send compact `[MAGPIE] EXECUTED` with project, task ID, result/evidence,
-   and the next review action; ChatGPT independently checks via Magpie MCP.
-   Avoid redundant confirmation and ACK loops.
-4. Keep the original authorized goal active across intermediate approvals;
-   finish only when the full goal is complete.
-
-`codex app-server` means the **programmatic stdio/JSON-RPC execution
-interface**, not the Codex Desktop GUI and not a ChatGPT browser. `Codex CLI`
-is the **terminal-facing interactive/batch command-line interface**.
-They may use the same Codex model and workspace while exposing different
-lifecycle/tooling. **Neither interface replaces ego-browser:** execution
-and communication are separate concerns.
-
+**Known current limitation:** the local plugin's project discovery uses
+the Codex Desktop registry, and `codex_submit_task` /
+`codex_collab_start` are Codex-specific task/launch paths. The host
+Magpie's broad agent list alone does not automatically change these
+code paths. Generalizing the MCP side needs separate design and
+verification. Do not describe it as already implemented.
 
 ## v0.4.26 alpha: simplified plugin page, standalone CLI removed
 

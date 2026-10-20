@@ -5,7 +5,21 @@ description: Harness-neutral ChatGPT Web collaboration using the installed ego-b
 
 # Magpie ↔ ChatGPT Web: Harness-neutral collaboration
 
-**Goal:** Let ANY agent harness exchange useful messages with the user's exact ChatGPT Web conversation while keeping its **existing** tools, model, project environment, approvals and task lifecycle. The communication transport is **ego-browser**; this Skill is NOT an execution harness, agent launcher, model provider, replacement MCP server or ChatGPT private API client.
+**Goal:** Complete the **return communication leg** of a two-channel
+collaboration system while preserving the agent's original harness, native
+execution and permissions:
+
+- **Inbound control:** `ChatGPT Web → Magpie MCP → locally authorized harness`.
+  MCP dispatches starts/continuations, requests status/results and governs
+  the adapter lifecycle. **This Skill does not implement the inbound MCP
+  adapter.** Currently Magpie's remote task/launch tools target Codex only.
+- **Outbound interaction:** `running harness → ego-browser → ChatGPT Web`.
+  This Skill makes an already-running, capable agent send messages and read
+  replies in the exact verified ChatGPT conversation.
+
+Do not treat the browser return path as a replacement for MCP, imply that an
+agent can be launched from Web because its Skill is installed, or build a new
+MCP server/tunnel/agent process inside this Skill.
 
 **Compatibility contract:** This is **capability-based**, not a product-name allowlist. Desktop, CLI, IDE and headless app-server agents are eligible ONLY if that specific running agent can (a) load this Skill or equivalent instructions, (b) invoke a local executable/shell tool reaching the **same** authenticated ego-browser runtime, and (c) access a ChatGPT conversation authorized by the user. A branded Desktop app that cannot execute tools, a remote/cloud container isolated from local ego, or a sandbox without browser access cannot be made compatible just by installing a SKILL.md file.
 

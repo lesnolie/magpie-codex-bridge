@@ -21,11 +21,16 @@ local active agent -> ego-browser -> verified ChatGPT Web conversation (reply/fi
    `magpie-web-collab`, open the exact ChatGPT conversation with ego-browser,
    then call local-only `agent_register({harness,project,chatUrl})`.
    Keep the returned `sessionId` associated with the verified chat.
-3. **ChatGPT Web:** call `agent_sessions` to see locally registered
-   sessions; send a specific command using
-   `agent_message_send({sessionId,chatUrl,taskId,messageId,command,message})`.
-   `command` is REQUEST, RESULT, UPDATE, BLOCKED or DONE. A stable unique
-   messageId makes the delivery idempotent across tool retries.
+3. **ChatGPT Web:** follow the user's **explicit harness selection**.
+   For example “Ask Claude” routes via
+   `agent_message_send({harness:"claude",chatUrl,taskId,messageId,command,message})`;
+   “Ask Codex” targets `harness:"codex"`. The plugin automatically resolves
+   **one** session registered to that harness and exact chat. No need for
+   the user to manually choose a session ID. If more than one candidate
+   remains, specify its `project` or `mode` (or exact `sessionId` as a
+   last resort); if none exists, report unavailable and **never silently
+   switch to another harness**. A stable unique messageId makes retries
+   idempotent. `agent_sessions` remains available for diagnostics.
 4. **Agent while its native turn is active:** call
    `agent_poll({sessionId,chatUrl})`; perform the actual command under its
    native local tool permissions; call

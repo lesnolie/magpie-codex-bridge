@@ -92,8 +92,8 @@ test('multi-root Codex projects stay grouped; missing roots and symlinks stay ex
 test('Magpie MCP tools still register without granting Codex execution', async () => {
   const plugin=await MagpieProjectReview({},cfg({codexEnabled:false,remoteAutoStart:false}));
   assert.deepEqual(Object.keys(plugin.tool).sort(),[
-    'agent_ack','agent_message_send','agent_message_status','agent_poll','agent_register','agent_sessions',
-    'agent_run','agent_run_cancel','agent_run_status',
+    'agent_ack','agent_message_send','agent_message_status','agent_poll','agent_register',
+    'agent_run','agent_run_cancel','agent_run_status','agent_sessions',
     'chat_session_request_transfer','chat_session_status',
     'codex_ack_review','codex_cancel_task','codex_collab_start','codex_review_changes','codex_review_inbox',
     'codex_submit_task','codex_task_result','codex_task_status','codex_wait_task',

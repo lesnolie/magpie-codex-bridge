@@ -3,6 +3,7 @@ import { createChatSessions } from './skills/magpie-codex-collab/chat-session.mj
 import { createNativeCollab } from './src/native-collab.mjs';
 import { createPeerMessages, normalizeHarness } from './src/peer-messages.mjs';
 import { createHarnessRunner } from './src/harness-runner.mjs';
+import { createDshDesktopFocus } from './src/dsh-desktop-focus.mjs';
 import { existsSync } from 'node:fs';
 import { createCodexTasks, resolveCodexPermissionMode } from './src/codex-tasks.mjs';
 import { startModelCatalogSync } from './src/model-catalog.mjs';
@@ -36,6 +37,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   const codex = createCodexTasks(options);
   const peers = createPeerMessages();
   const harnessRunner = createHarnessRunner(options);
+  const dshDesktopFocus = createDshDesktopFocus(options);
   const chat = createChatSessions({projectRoots:()=>projectRoots(options)});
   const nativeCollab = createNativeCollab(options,{chatSessions:chat,projectRoots:()=>projectRoots(options)});
   const codexTools = {
@@ -54,6 +56,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     codex_cancel_task: { description: 'Cancel a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.cancel) },
   };
   const harnessTools = {
+    agent_desktop_focus: { description: 'Request official DeepSeek Harness Desktop window activation through dsh://open. ONLY FOCUSES/OPENS the Desktop UI; it DOES NOT send a task, select a DSH session, or prove execution. Requires local Harness-launch permission. Use agent_message_send only if a matching dsh Desktop agent session is already registered and polling.', args: { harness: arg('Must be DeepSeek Harness or dsh; other agent names are rejected') }, execute: wrap(dshDesktopFocus) },
     agent_run: { description: 'Start EXACTLY the user-requested harness. Codex uses existing native Desktop or app-server; Claude Code/DeepSeek Harness (dsh) use their documented CLI (not Desktop). Never substitute. Separate local Agent 启动权限 is required, and only allowed projects are accessible. Dispatch does not mean task completed.', args: {
       harness: arg('Required user-selected harness: codex, claude, dsh (DeepSeek Harness); never substitute'),
       project: arg('Exact locally authorized project name'),
@@ -131,7 +134,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
       codex: {
         integrationVersion: '0.4.30-alpha.1',
         toolsRegistered: true,
-        toolCount: 26,
+        toolCount: 27,
         pendingReviewCount,
         localEnabled: configured,
         allowWrites: configured && resolveCodexPermissionMode(options) !== 'read-only',

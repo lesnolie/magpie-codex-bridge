@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 const MAX_BODY = 4000;
 const MAX_MESSAGES = 40;
@@ -16,6 +16,20 @@ const MAX_SESSIONS = 50;
 const MAX_FILE = 320 * 1024;
 const AGE_MS = 24 * 60 * 60 * 1000;
 const COMMANDS = new Set(['REQUEST', 'RESULT', 'UPDATE', 'BLOCKED', 'DONE']);
+const MODES = new Set(['desktop', 'cli', 'app-server', 'ide', 'other']);
+export function normalizeHarness(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 80) throw Error('Explicit harness name required');
+  const cleaned = value.trim().toLowerCase().replace(/[_ ]+/g, '-');
+  // Only well-known full-name aliases are normalized. Do not guess providers from models.
+  const canonical = ({ 'claude-code': 'claude', 'open-code': 'opencode', 'codex-cli': 'codex' })[cleaned] || cleaned;
+  if (!/^[a-z0-9][a-z0-9.-]{0,79}$/.test(canonical)) throw Error('Invalid harness name');
+  return canonical;
+}
+function normalizeMode(mode) {
+  if (mode === undefined || mode === null || mode === '') return null;
+  if (typeof mode !== 'string' || !MODES.has(mode)) throw Error('Unknown harness execution mode');
+  return mode;
+}
 const safeId = (s, limit = 100) =>
   typeof s === 'string' && s.length >= 2 && s.length <= limit &&
   /^[a-zA-Z0-9_.:-]+$/.test(s);
@@ -39,7 +53,7 @@ export function peerMailboxDir(env = process.env) {
 }
 function publicSession(s) {
   return {
-    sessionId: s.sessionId, harness: s.harness, project: s.project,
+    sessionId: s.sessionId, harness: s.harness, mode: s.mode || null, project: s.project,
     chatUrl: s.chatUrl, registeredAt: s.registeredAt, lastPollAt: s.lastPollAt || null,
     inboxPending: s.messages.filter(m => m.state !== 'acked').length,
     activeRecently: s.lastPollAt ? Date.now() - Date.parse(s.lastPollAt) < 120000 : false,
@@ -105,17 +119,18 @@ export function createPeerMessages({ directory = peerMailboxDir(), now = () => D
     return s;
   }
   return {
-    register({ harness, project, chatUrl } = {}, agentIdentity = '') {
-      const claimed = validateText(harness, 'Harness ID', 80);
+    register({ harness, project, chatUrl, mode } = {}, agentIdentity = '') {
+      const claimed = normalizeHarness(harness);
+      const selectedMode = normalizeMode(mode);
       const proj = validateText(project, 'Project label', 100);
-      if (!/^[a-zA-Z0-9_.:-]+$/.test(claimed) || /[\r\n<>]/.test(proj))
+      if (/[\r\n<>]/.test(proj))
         throw Error('Invalid harness/project label');
       const url = normalizePeerChatUrl(chatUrl);
       return edit(d => {
         d.sessions = d.sessions.filter(s =>
           now() - Date.parse(s.registeredAt) < AGE_MS
         ).slice(-MAX_SESSIONS + 1);
-        const s = { sessionId: uuid(), harness: claimed, project: proj, chatUrl: url,
+        const s = { sessionId: uuid(), harness: claimed, mode: selectedMode, project: proj, chatUrl: url,
           registeredAt: new Date(now()).toISOString(), lastPollAt: null,
           agentIdentity: typeof agentIdentity === 'string' ? agentIdentity.slice(0, 80) : '',
           messages: [] };
@@ -131,26 +146,50 @@ export function createPeerMessages({ directory = peerMailboxDir(), now = () => D
       ).map(publicSession), source: 'locally registered agent sessions',
         limitation: 'A session registration cannot start a stopped Desktop/CLI harness.' });
     },
-    send({ sessionId, chatUrl, taskId, messageId, command, message } = {}) {
+    send({ sessionId, harness, project, mode, chatUrl, taskId, messageId, command, message } = {}) {
       if (!safeId(taskId, 96) || !safeId(messageId, 96)) throw Error('taskId and messageId required for safe idempotency');
       if (!COMMANDS.has(command)) throw Error('Unsupported peer command');
       const body = validateText(message, 'Message');
       return edit(d => {
-        const s = find(d.sessions, sessionId, chatUrl);
         if (!chatUrl) throw Error('Exact chat URL must be supplied for safe routing');
+        const boundUrl = normalizePeerChatUrl(chatUrl);
+        // Explicit user-selected harness is the primary target. Never fall back
+        // to another harness, the last used session, or the first unrelated chat.
+        const selectedHarness = harness ? normalizeHarness(harness) : null;
+        const selectedMode = normalizeMode(mode);
+        let s;
+        if (sessionId) {
+          s = find(d.sessions, sessionId, boundUrl);
+          if (selectedHarness && s.harness !== selectedHarness)
+            throw Error('Selected session does not match requested harness');
+          if (project && s.project !== project) throw Error('Selected session project mismatch');
+          if (selectedMode && s.mode !== selectedMode) throw Error('Selected session mode mismatch');
+        } else {
+          if (!selectedHarness) throw Error('Specify the requested harness, e.g. claude or codex');
+          const matching = d.sessions.filter(x =>
+            x.harness === selectedHarness && x.chatUrl === boundUrl &&
+            (!project || x.project === project) &&
+            (!selectedMode || x.mode === selectedMode) &&
+            now() - Date.parse(x.registeredAt) < AGE_MS
+          );
+          if (!matching.length) throw Error('Requested harness has no registered session in this ChatGPT conversation; no substitute used');
+          if (matching.length !== 1) throw Error('Multiple matching sessions for requested harness; specify project, mode or sessionId');
+          s = matching[0];
+          sessionId = s.sessionId;
+        }
         if (now() - Date.parse(s.registeredAt) >= AGE_MS) throw Error('Peer registration expired; re-register locally');
         const match = s.messages.find(m => m.messageId === messageId);
         if (match) {
           if (match.taskId !== taskId || match.command !== command || match.message !== body)
             throw Error('messageId already used for different content');
-          return JSON.stringify({ sessionId, messageId, state: match.state, reused: true });
+          return JSON.stringify({ sessionId, harness: s.harness, mode: s.mode, messageId, state: match.state, reused: true });
         }
         if (s.messages.filter(m => m.state !== 'acked').length >= MAX_MESSAGES)
           throw Error('Peer inbox full: local agent must poll and acknowledge');
         s.messages = s.messages.filter(m => m.state !== 'acked').slice(-MAX_MESSAGES + 1);
         s.messages.push({ messageId, taskId, command, message: body,
           state: 'queued', sentAt: new Date(now()).toISOString(), deliveredAt: null, ackedAt: null });
-        return JSON.stringify({ sessionId, messageId, state: 'queued', reused: false,
+        return JSON.stringify({ sessionId, harness: s.harness, mode: s.mode, messageId, state: 'queued', reused: false,
           confirmedExecution: false });
       });
     },

@@ -66,14 +66,14 @@
       <div class="row">
         <div class="row-text">
           <label for="agentLaunchEnabled">允许 ChatGPT 启动指定 Harness <span class="badge">实验</span></label>
-          <p class="hint">选择谁就启动谁：Codex 使用原生接口，Claude Code 和 OpenCode 使用 CLI。仅访问本机已授权项目，默认只读。不允许远程指定任意程序路径。</p>
+          <p class="hint">选择谁就启动谁：Codex 保持原生接口，新增 Claude Code CLI 和 DeepSeek Harness（dsh）CLI；不新增 OpenCode 启动。仅访问本机已授权项目，默认只读。不允许远程指定任意程序路径。</p>
         </div>
         <input class="switch" id="agentLaunchEnabled" type="checkbox">
       </div>
       <div class="row">
         <div class="row-text">
           <label for="agentLaunchPermission">Harness 执行权限</label>
-          <p class="hint">默认只读；跟随 Harness 原生权限可能允许修改文件，必须在本机再次确认。</p>
+          <p class="hint">默认只读（Claude Code 可用于只读测试）；dsh headless 暂无已验证的只读模式，需要你明确切换到原生权限并再次确认，可能修改项目文件。</p>
         </div>
         <select id="agentLaunchPermission">
           <option value="read-only">只读（安全测试）</option>

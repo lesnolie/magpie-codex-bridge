@@ -1,9 +1,50 @@
-# Magpie Local Project Review (v0.4.28 alpha)
+# Magpie Local Project Review (v0.4.29 alpha)
+
+## Native user-selected Harness startup — v0.4.29 alpha (test release)
+
+The local Magpie plugin page now has a separate **允许 ChatGPT 启动指定 Harness**
+switch and a local **read-only / native permissions** choice. The default
+is read-only; enabling native permissions needs a **second local confirmation**.
+Remote MCP callers cannot enable these permissions.
+
+Use `agent_run({harness,project,prompt,chatUrl?,mode?})` with the **exact agent
+requested by the user**, not whichever agent is available. The tool returns
+a dispatch receipt; query `agent_run_status({harness,project,taskId,mode})`
+for the process result and `agent_run_cancel` to cancel supported tasks.
+
+- **Codex:** `mode:"desktop"` uses existing native Desktop launch/queue rules;
+  `mode:"app-server"` uses existing Codex task runner. With a verified
+  `chatUrl`, Desktop is the default. Without it, app-server is the
+  fallback, but this mode never pretends to be Codex Desktop.
+- **Claude Code:** launches installed **CLI** (`claude --print`) through its
+  official noninteractive interface. CLI is not Claude Desktop.
+- **OpenCode:** launches installed **CLI** (`opencode run`) through its
+  official noninteractive interface. CLI is not an OpenCode GUI.
+- **Other Harnesses:** do not guess commands or silently substitute. Return
+  unsupported, pending a tested native adapter for that specific runtime.
+
+For CLI harnesses, a command is run with the working directory of the
+**exact locally allowlisted project**. The prompt is sent through process
+stdin, **never interpolated into Windows cmd.exe commands**, and is
+instructed to use the installed `magpie-web-collab` Skill plus ego-browser
+for Web communication and artifact downloads. It must actually have access
+to these capabilities; a CLI process exit or returned text is **not** an
+end-to-end browser delivery confirmation. A read-only smoke test is strongly
+recommended before enabling native edit permissions.
+
+**Current project limitation:** the authorized root list is still sourced
+from user-registered Codex Desktop projects. Magpie's Agents page supplies
+model configuration, not arbitrary project/file access authorization.
+This alpha does **not** automatically attach to an existing GUI thread
+of Claude Desktop/OpenCode, and does not provide a universal Desktop
+process controller. Native launch is supported only where an actual tested
+adapter exists; CI mocks cannot replace a live Windows test.
 
 ## Implemented: harness-neutral peer command inbox (PR preview)
 
-This branch **adds communication to a registered, already running agent**,
-not a general Desktop/CLI process launcher. It reuses the existing Magpie
+This branch includes peer messaging **and** an explicit, locally authorized
+native launcher for Codex, Claude Code CLI and OpenCode CLI. Arbitrary
+Desktop or CLI runtimes are not supported by default. It reuses the existing Magpie
 plugin-tool MCP service and Cloudflare Access bridge. The host's Agents tab
 continues to manage agent/model configuration; this plugin does **not**
 create a competing global harness registry.
@@ -55,8 +96,7 @@ be automatically reactivated by the mailbox. Registered harness names
 are self-declared session labels, not independently authenticated
 Magpie agent identities. Existing source-inspection projects continue
 to come from the Codex Desktop registry; registering a mailbox session
-does **not** expand file permissions. Generic native process launch
-or direct resume for non-Codex harnesses remains unimplemented; using
+does **not** expand file permissions. Generic Desktop attach and launch for other, unadapted harnesses remains unimplemented; using
 Magpie's Agents page to select models does not itself provide those
 process-control APIs. Production use requires a real-machine round-trip
 with ego and Magpie MCP on the user's machine.

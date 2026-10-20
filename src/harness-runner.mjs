@@ -57,7 +57,7 @@ export function createHarnessRunner(options = {}, deps = {}) {
   function allowed(project) {
     if (typeof project !== 'string' || !project.trim()) throw Error('Exact authorized project name required');
     const match = roots().find(x => x.name === project);
-    if (!match || !path.isAbsolute(match.root)) throw Error('Project is not in the local Magpie project allowlist');
+    if (!match || !(platform === 'win32' ? path.win32.isAbsolute(match.root) : path.isAbsolute(match.root))) throw Error('Project is not in the local Magpie project allowlist');
     return match;
   }
   function view(j) {

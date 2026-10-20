@@ -37,7 +37,7 @@ export async function writeBootstrapStatus(stage, reason = null, env = process.e
 }
 
 const CONFIG_BASENAME = 'cloudflare-mcp.json';
-const MANAGER_RUNTIME_VERSION = '0.4.1-alpha.1';
+const MANAGER_RUNTIME_VERSION = '0.4.2-alpha.1';
 const COPIES = Object.freeze([
   ['../scripts/cloudflare-mcp-adapter.mjs', 'cloudflare-mcp-adapter.mjs'],
   ['../scripts/cloudflare-mcp-manager.mjs', 'cloudflare-mcp-manager.mjs'],
@@ -51,7 +51,9 @@ export function remotePaths(env = process.env) {
     adapter: path.join(base, 'cloudflare-mcp-adapter.mjs'),
     manager: path.join(base, 'cloudflare-mcp-manager.mjs'),
     enabledFile: path.join(base, 'service-enabled.flag'),
-    codexEnabledFile: path.join(base, 'codex-remote-enabled.flag') };
+    codexEnabledFile: path.join(base, 'codex-remote-enabled.flag'),
+    peerEnabledFile: path.join(base, 'peer-remote-enabled.flag'),
+    agentLaunchEnabledFile: path.join(base, 'agent-launch-enabled.flag') };
 }
 export function validAccessConfig(content) {
   let parsed;
@@ -192,7 +194,7 @@ async function reloadOldManager(manager) {
 }
 
 export async function reconcileRemoteService(options = {}) {
-  if (typeof options.remoteAutoStart !== 'boolean' && typeof options.codexEnabled !== 'boolean') return { state: 'unchanged' };
+  if (typeof options.remoteAutoStart !== 'boolean' && typeof options.codexEnabled !== 'boolean' && typeof options.peerMessagingEnabled !== 'boolean' && typeof options.agentLaunchEnabled !== 'boolean') return { state: 'unchanged' };
   if (process.platform !== 'win32') return { state: 'unsupported-platform' };
   // The remote adapter checks this local-only flag for EVERY request. Never let
   // remote calls grant themselves Codex access; local Magpie options are authoritative.
@@ -203,7 +205,21 @@ export async function reconcileRemoteService(options = {}) {
   } else {
     await unlink(grant.codexEnabledFile).catch(error => { if (error.code !== 'ENOENT') throw error; });
   }
-  if (typeof options.remoteAutoStart !== 'boolean') return { state: 'codex-permission-synced' };
+  // Peer messaging is a separate opt-in from Codex execution permission.
+  // The public MCP adapter checks its own marker on every remote request.
+  if (options.peerMessagingEnabled === true) {
+    await writeFile(grant.peerEnabledFile, 'enabled\n');
+  } else {
+    await unlink(grant.peerEnabledFile).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  }
+  // Independent, local-only permission to launch an agent process via MCP.
+  // Remote callers cannot set options or obtain this marker.
+  if (options.agentLaunchEnabled === true) {
+    await writeFile(grant.agentLaunchEnabledFile, 'enabled\n');
+  } else {
+    await unlink(grant.agentLaunchEnabledFile).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  }
+  if (typeof options.remoteAutoStart !== 'boolean') return { state: 'agent-permissions-synced' };
   await writeBootstrapStatus('initializing');
   // This is only called from the locally configured Magpie plugin hook,
   // never via the six remote MCP tools.

@@ -9,6 +9,7 @@ import { isAbsolute } from 'node:path';
 import { resolveCodexBinary } from './codex-binary.mjs';
 export { resolveCodexBinary };
 import { projectRoots } from './projects.mjs';
+import { normalizeChatUrl } from '../skills/magpie-codex-collab/chat-session.mjs';
 import { gitBaseline, reviewFolder, saveReviewReceipt, readReviewReceipt, reviewInbox, reviewChanges, acknowledgeReview } from './codex-review.mjs';
 
 const MAX_PROMPT = 12000;
@@ -157,6 +158,30 @@ export function buildCodexThreadConfig(options = {}, project = {}) {
     additionalWorkspaceCount: extraRoots.length };
 }
 
+/**
+ * Browser collaboration is strictly opt-in per submitted task: without a
+ * user-supplied exact chat URL, the existing app-server behavior is unchanged.
+ * Codex still runs via app-server; ego-browser is only the ChatGPT Web transport.
+ */
+export function buildBrowserCollaborationPrompt({ project, taskId, prompt, chatUrl }) {
+  const url = normalizeChatUrl(chatUrl);
+  return [
+    'Use the installed magpie-web-collab Skill to communicate through ego-browser.',
+    'EXECUTION: This is a Codex app-server task. Keep executing in this thread.',
+    'TARGET_CHAT: ' + url,
+    'PROJECT: ' + project,
+    'TASK_ID: ' + taskId,
+    'Open only TARGET_CHAT in one ego-browser TaskSpace/page. Verify the Magpie project once.',
+    'Use the command-driven peer protocol: Web and local agents can both REQUEST actions or send RESULT. No fixed reviewer/executor role.',
+    'Do not call undocumented ChatGPT APIs, read cookies or create another tunnel.',
+    'If the Skill or ego-browser is unavailable, report browser-unavailable and continue',
+    'returning the result through this existing MCP app-server task.',
+    '',
+    'USER GOAL:',
+    prompt,
+  ].join('\n');
+}
+
 export function createCodexTasks(options = {}, dependencies = {}) {
   const jobs = new Map();
   const lastThreads = new Map();
@@ -284,12 +309,15 @@ export function createCodexTasks(options = {}, dependencies = {}) {
     }
   }
   return {
-    submit({ project, prompt, continueThread = false } = {}) {
+    submit({ project, prompt, continueThread = false, chatUrl } = {}) {
       const p = allowed(project);
       if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > MAX_PROMPT) throw new Error('Prompt must be 1-12000 characters');
       if (Array.from(jobs.values()).some(t => t.state === 'running')) throw new Error('A Codex task is already running');
       const id = randomUUID();
-      const task = { id, project, prompt: prompt.trim(), state: 'running',
+      const taskPrompt = typeof chatUrl === 'string' && chatUrl.trim()
+        ? buildBrowserCollaborationPrompt({ project, taskId: id, prompt: prompt.trim(), chatUrl })
+        : prompt.trim();
+      const task = { id, project, prompt: taskPrompt, state: 'running',
         startedAt: new Date().toISOString(), phase: 'queued', output: '', threadId: null,
         turnId: null, error: null, rpc: null, cancelRequested: false };
       task.done = new Promise(resolve => { task.resolveDone = resolve; });

@@ -55,6 +55,14 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const status = document.getElementById('status');
   const remoteAutoStart = document.getElementById('remoteAutoStart');
   const remoteStatus = document.getElementById('remoteStatus');
+  const peerMessagingEnabled = document.getElementById('peerMessagingEnabled');
+  const peerStatus = document.getElementById('peerStatus');
+  const agentLaunchEnabled = document.getElementById('agentLaunchEnabled');
+  const agentLaunchPermission = document.getElementById('agentLaunchPermission');
+  const agentLaunchConfirmation = document.getElementById('agentLaunchConfirmation');
+  const confirmAgentLaunchPermission = document.getElementById('confirmAgentLaunchPermission');
+  const cancelAgentLaunchPermission = document.getElementById('cancelAgentLaunchPermission');
+  const agentLaunchStatus = document.getElementById('agentLaunchStatus');
   const codexEnabled = document.getElementById('codexEnabled');
   const codexPermissionMode = document.getElementById('codexPermissionMode');
   const codexPermissionConfirmation = document.getElementById('codexPermissionConfirmation');
@@ -75,6 +83,7 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
 
   let busy = false;
   let pendingMode = null;
+  let pendingAgentPermission = false;
   let modelCatalog = [];
   let modelsAvailable = false;
   let selectedCatalogID = null;
@@ -107,6 +116,15 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   function render() {
     remoteAutoStart.checked = options.remoteAutoStart === true;
     remoteAutoStart.disabled = busy;
+    peerMessagingEnabled.checked = options.peerMessagingEnabled === true;
+    peerMessagingEnabled.disabled = busy;
+    agentLaunchEnabled.checked = options.agentLaunchEnabled === true;
+    agentLaunchEnabled.disabled = busy;
+    agentLaunchPermission.value = pendingAgentPermission ? 'native' : options.agentLaunchPermission === 'native' ? 'native' : 'read-only';
+    agentLaunchPermission.disabled = busy || options.agentLaunchEnabled !== true;
+    agentLaunchConfirmation.hidden = !pendingAgentPermission;
+    confirmAgentLaunchPermission.disabled = busy;
+    cancelAgentLaunchPermission.disabled = busy;
     codexEnabled.checked = options.codexEnabled === true;
     codexEnabled.disabled = busy;
     codexPermissionMode.value = pendingMode || effectiveMode(options);
@@ -137,6 +155,44 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       render();
     }
   }
+  agentLaunchEnabled.addEventListener('change', () => {
+    if (busy) return;
+    const enabled = agentLaunchEnabled.checked;
+    pendingAgentPermission = false;
+    void saveOptions({
+      ...options, agentLaunchEnabled: enabled,
+      agentLaunchPermission: enabled ? (options.agentLaunchPermission || 'read-only') : 'read-only',
+    }, enabled ? '已启用指定 Harness 原生启动；默认只读。' : '已关闭所有远程 Harness 原生启动。',
+      agentLaunchStatus);
+  });
+  agentLaunchPermission.addEventListener('change', () => {
+    if (busy) return;
+    const value = agentLaunchPermission.value;
+    if (value === 'read-only') {
+      pendingAgentPermission = false;
+      void saveOptions({ ...options, agentLaunchPermission: 'read-only' },
+        'Harness 运行权限已设为只读。', agentLaunchStatus);
+      return;
+    }
+    pendingAgentPermission = true;
+    render();
+  });
+  confirmAgentLaunchPermission.addEventListener('click', () => {
+    if (busy || !pendingAgentPermission) return;
+    pendingAgentPermission = false;
+    void saveOptions({ ...options, agentLaunchPermission: 'native' },
+      '已明确授权使用 Harness 原生执行权限。', agentLaunchStatus);
+  });
+  cancelAgentLaunchPermission.addEventListener('click', () => {
+    pendingAgentPermission = false;
+    render();
+  });
+  peerMessagingEnabled.addEventListener('change', async () => {
+    if (busy) return;
+    const next = peerMessagingEnabled.checked;
+    await saveOptions({ ...options, peerMessagingEnabled: next },
+      next ? '已允许将命令发送到本地已注册的 Agent 会话。' : '已禁止 ChatGPT 通过 MCP 发送 Agent 消息。', peerStatus);
+  });
   remoteAutoStart.addEventListener('change', async () => {
     if (busy) return;
     const next = remoteAutoStart.checked;

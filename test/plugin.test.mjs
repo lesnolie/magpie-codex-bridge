@@ -92,6 +92,8 @@ test('multi-root Codex projects stay grouped; missing roots and symlinks stay ex
 test('Magpie MCP tools still register without granting Codex execution', async () => {
   const plugin=await MagpieProjectReview({},cfg({codexEnabled:false,remoteAutoStart:false}));
   assert.deepEqual(Object.keys(plugin.tool).sort(),[
+    'agent_ack','agent_message_send','agent_message_status','agent_poll','agent_register',
+    'agent_run','agent_run_cancel','agent_run_status','agent_sessions',
     'chat_session_request_transfer','chat_session_status',
     'codex_ack_review','codex_cancel_task','codex_collab_start','codex_review_changes','codex_review_inbox',
     'codex_submit_task','codex_task_result','codex_task_status','codex_wait_task',
@@ -103,9 +105,20 @@ test('Magpie MCP tools still register without granting Codex execution', async (
   assert.match(nativeResult.error,/permission/i);
   assert.equal(result.ok,false);
   assert.match(result.error,/Codex is disabled/);
+  const peer=JSON.parse(await plugin.tool.agent_message_send.execute({
+    sessionId:'not-registered', chatUrl:'https://chatgpt.com/c/12345678',
+    taskId:'task-01', messageId:'msg-01', command:'REQUEST', message:'hello'
+  }));
+  assert.equal(peer.ok,false,'peer sends require their own independent local option');
+  assert.match(peer.error,/Peer messaging is disabled/);
+  const started=JSON.parse(await plugin.tool.agent_run.execute({
+    harness:'claude',project:'TMN',prompt:'Read only'
+  }));
+  assert.equal(started.ok,false);
+  assert.match(started.error,/Agent native launch is disabled/);
   const listing=JSON.parse(await plugin.tool.projects.execute({}));
-  assert.equal(listing.codex.integrationVersion,'0.4.28-alpha.1');
-  assert.equal(listing.codex.toolCount,17);
+  assert.equal(listing.codex.integrationVersion,'0.4.29-alpha.1');
+  assert.equal(listing.codex.toolCount,26);
   assert.equal(listing.codex.allowWrites,false);
   assert.equal(listing.projects[0].name,'TMN');
   assert.ok(!JSON.stringify(listing).includes(base));

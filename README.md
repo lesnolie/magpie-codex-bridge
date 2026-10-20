@@ -1,4 +1,196 @@
-# Magpie Local Project Review (v0.4.26 alpha)
+# Magpie Local Project Review (v0.4.29 alpha)
+
+## Native user-selected Harness startup — v0.4.29 alpha (test release)
+
+The local Magpie plugin page now has a separate **允许 ChatGPT 启动指定 Harness**
+switch and a local **read-only / native permissions** choice. The default
+is read-only; enabling native permissions needs a **second local confirmation**.
+Remote MCP callers cannot enable these permissions.
+
+Use `agent_run({harness,project,prompt,chatUrl?,mode?})` with the **exact agent
+requested by the user**, not whichever agent is available. The tool returns
+a dispatch receipt; query `agent_run_status({harness,project,taskId,mode})`
+for the process result and `agent_run_cancel` to cancel supported tasks.
+
+- **Codex:** `mode:"desktop"` uses existing native Desktop launch/queue rules;
+  `mode:"app-server"` uses existing Codex task runner. With a verified
+  `chatUrl`, Desktop is the default. Without it, app-server is the
+  fallback, but this mode never pretends to be Codex Desktop.
+- **Claude Code:** launches installed **CLI** (`claude --print`) through its
+  official noninteractive interface. CLI is not Claude Desktop.
+- **OpenCode:** launches installed **CLI** (`opencode run`) through its
+  official noninteractive interface. CLI is not an OpenCode GUI.
+- **Other Harnesses:** do not guess commands or silently substitute. Return
+  unsupported, pending a tested native adapter for that specific runtime.
+
+For CLI harnesses, a command is run with the working directory of the
+**exact locally allowlisted project**. The prompt is sent through process
+stdin, **never interpolated into Windows cmd.exe commands**, and is
+instructed to use the installed `magpie-web-collab` Skill plus ego-browser
+for Web communication and artifact downloads. It must actually have access
+to these capabilities; a CLI process exit or returned text is **not** an
+end-to-end browser delivery confirmation. A read-only smoke test is strongly
+recommended before enabling native edit permissions.
+
+**Current project limitation:** the authorized root list is still sourced
+from user-registered Codex Desktop projects. Magpie's Agents page supplies
+model configuration, not arbitrary project/file access authorization.
+This alpha does **not** automatically attach to an existing GUI thread
+of Claude Desktop/OpenCode, and does not provide a universal Desktop
+process controller. Native launch is supported only where an actual tested
+adapter exists; CI mocks cannot replace a live Windows test.
+
+## Implemented: harness-neutral peer command inbox (PR preview)
+
+This branch includes peer messaging **and** an explicit, locally authorized
+native launcher for Codex, Claude Code CLI and OpenCode CLI. Arbitrary
+Desktop or CLI runtimes are not supported by default. It reuses the existing Magpie
+plugin-tool MCP service and Cloudflare Access bridge. The host's Agents tab
+continues to manage agent/model configuration; this plugin does **not**
+create a competing global harness registry.
+
+```text
+ChatGPT Web -> Cloudflare Access / Magpie MCP -> agent_message_send (queue)
+local active agent -> Magpie's local MCP -> agent_poll (retrieve command)
+local active agent -> ego-browser -> verified ChatGPT Web conversation (reply/files)
+```
+
+1. **Local permission:** in Magpie's plugin page enable **Agent 双向通信**,
+   separate from the existing Codex execution toggle. No remote MCP call
+   can enable this option.
+2. **Running agent (any harness with Magpie's local MCP tools):** use
+   `magpie-web-collab`, open the exact ChatGPT conversation with ego-browser,
+   then call local-only `agent_register({harness,project,chatUrl})`.
+   Keep the returned `sessionId` associated with the verified chat.
+3. **ChatGPT Web:** follow the user's **explicit harness selection**.
+   For example “Ask Claude” routes via
+   `agent_message_send({harness:"claude",chatUrl,taskId,messageId,command,message})`;
+   “Ask Codex” targets `harness:"codex"`. The plugin automatically resolves
+   **one** session registered to that harness and exact chat. No need for
+   the user to manually choose a session ID. If more than one candidate
+   remains, specify its `project` or `mode` (or exact `sessionId` as a
+   last resort); if none exists, report unavailable and **never silently
+   switch to another harness**. A stable unique messageId makes retries
+   idempotent. `agent_sessions` remains available for diagnostics.
+4. **Agent while its native turn is active:** call
+   `agent_poll({sessionId,chatUrl})`; perform the actual command under its
+   native local tool permissions; call
+   `agent_ack({sessionId,chatUrl,messageId})` after processing and
+   send any meaningful answer through ego-browser. The local-only polling
+   and ack tools are never exposed through Cloudflare.
+5. **Remote status:** `agent_message_status` reports queued → delivered
+   (polled) → acked (locally processed). **None confirms task execution**;
+   the actual result must come from the agent or an independent check.
+   `activeRecently` is only a recent-poll indicator, not native
+   session liveness.
+
+When ChatGPT Web offers a downloadable task artifact, the harness uses
+the **same ego-browser page** to click the actual Download control,
+verifies the bytes exist on a reachable local filesystem and uses them
+with native tools. Do not guess file paths, invent download APIs or
+execute downloaded code without authorization. This rule is in both
+collaboration Skills, not in the upstream ego-browser Skill.
+
+**Limits:** An exited Desktop/CLI agent cannot poll and therefore cannot
+be automatically reactivated by the mailbox. Registered harness names
+are self-declared session labels, not independently authenticated
+Magpie agent identities. Existing source-inspection projects continue
+to come from the Codex Desktop registry; registering a mailbox session
+does **not** expand file permissions. Generic Desktop attach and launch for other, unadapted harnesses remains unimplemented; using
+Magpie's Agents page to select models does not itself provide those
+process-control APIs. Production use requires a real-machine round-trip
+with ego and Magpie MCP on the user's machine.
+
+## Command-driven peer interaction (proposed design / Skill preview)
+
+There is **no predetermined executor, reviewer, planner or owner**.
+ChatGPT Web and the local harness are peers. The **current command**
+(`REQUEST`, `RESULT`, `UPDATE`, `BLOCKED`, optional `DONE`) decides
+what the receiving side is being asked to do, subject to the tools and
+permissions it actually has. Either side may ask the other to perform a
+particular action, answer a question or continue an authorized task.
+
+```text
+ChatGPT Web -- Magpie MCP --> locally authorized harness
+ChatGPT Web <-- ego-browser --- running harness agent
+```
+
+- **ChatGPT Web → Harness:** use the existing Magpie MCP over the existing
+  Cloudflare Access setup. MCP is the inbound control/data path to the
+  local agent; its tools still have their own permission and execution
+  limits. It does **not** mean ChatGPT is permanently the reviewer.
+- **Harness → ChatGPT Web:** invoke the existing `ego-browser` Skill,
+  reuse the verified conversation page and exchange concise requests and
+  results. It does **not** mean the harness is permanently the executor.
+
+The shared [`magpie-web-collab` Skill](skills/magpie-web-collab/SKILL.md)
+describes the return channel for any running local harness with browser
+capability (Desktop, CLI, IDE or app-server).
+[`magpie-codex-collab`](skills/magpie-codex-collab/SKILL.md) retains
+Codex Desktop's existing secure startup, local `chat-session.mjs`
+project/chat/thread binding, and checkpoint compatibility. Both Skills
+use the same **role-free command-driven interaction**, automatically
+handling actionable replies during the agent's active execution turn.
+No routine confirmation or HELLO/ACK loops. This does not modify the
+installed ego-browser Skill or create a background service.
+
+### Example messages (both peers may send them)
+
+```text
+[MAGPIE] REQUEST
+TASK: example-1
+DO: Inspect the spec and suggest a fix using your available tools.
+```
+
+```text
+[MAGPIE] RESULT
+TASK: example-1
+RESULT: Found two issues; details and evidence follow.
+```
+
+The command's content, **not which side sent it**, determines the action.
+An information-only result need not trigger another message; a new
+actionable command can start another automatic exchange.
+
+## MCP design — inspect and reuse Magpie's harness support first
+
+Magpie itself supports multiple installed agents in its Agents page, and
+makes plugin tools available to any connected MCP-capable agent. This
+existing multi-agent support should be our **starting point** instead of
+inventing a second list of harnesses or another tunnel. However, Magpie's
+agent-model configuration and plugin-tool exposure **do not on their own
+prove that a third-party plugin can launch, resume, or control any
+arbitrary Desktop/CLI agent instance**.
+
+Next (proposal only; **no new MCP tools implemented in this PR**):
+
+1. Check Magpie's **supported host APIs** for reading its existing agent
+   catalog / capability metadata (and their permissions). Reuse that
+   catalog where exposed. Never scrape an undocumented app database or
+   claim private host methods exist.
+2. Inspect which installed harnesses expose **native, supported launch,
+   resume, task-result and cancellation capabilities**. Distinguish
+   `detected`, `configured`, `running`, and `remotely controllable`.
+   Desktop vs CLI should not be guessed from the agent name.
+3. Keep existing `projects`, Codex tools, Cloudflare Access gateway and
+   project authorization behavior working. Propose **the smallest** generic
+   MCP invocation/status surface needed to connect to locally authorized
+   harness sessions, delegating through supported Magpie mechanisms or
+   small per-runtime adapters only when genuinely necessary.
+4. Use **task ID + verified chat URL + native harness session identity**
+   for deduplication and safe routing. Never re-launch a task merely
+   because a browser message or MCP call was retried.
+5. End-to-end verify BOTH directions: an MCP command reaches the intended
+   harness; the running harness sends an actionable command or result
+   through ego-browser; ChatGPT Web can then act with its own tools and
+   send the next instruction through MCP.
+
+**Known current limitation:** the local plugin's project discovery uses
+the Codex Desktop registry, and `codex_submit_task` /
+`codex_collab_start` are Codex-specific task/launch paths. The host
+Magpie's broad agent list alone does not automatically change these
+code paths. Generalizing the MCP side needs separate design and
+verification. Do not describe it as already implemented.
 
 ## v0.4.26 alpha: simplified plugin page, standalone CLI removed
 

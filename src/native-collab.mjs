@@ -76,7 +76,7 @@ export function desktopPrompt({project,goal,chatUrl,taskId,launchId}){
     '2. Ask ChatGPT there to verify this same project using Magpie MCP projects and read_file.',
     '3. Only after the verification, run local chat-session prepare/activate for this TASK_ID and TARGET_CHAT.',
     '4. Do not assume the deep link started a turn. Do not use another ChatGPT chat.',
-    '5. After pairing, run the requested native Codex work and report EXECUTED for ChatGPT code review.',
+    '5. After pairing, follow the received command. Either peer may request actions or return results; use ego-browser for Web replies without a fixed reviewer/executor role.',
     '',
     'USER GOAL:',
     goal

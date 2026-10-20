@@ -1,5 +1,46 @@
 # Magpie Local Project Review (v0.4.28 alpha)
 
+## Directional architecture (the target, not all implemented yet)
+
+```text
+ChatGPT Web  --MCP / Cloudflare Access-->  Magpie local service
+                                               |
+                                               v
+                                     Harness adapter / runner
+                                     (Codex / Claude / other)
+                                               |
+                                         task execution
+                                               |
+                                               v
+ChatGPT Web  <--ego-browser / browser UI--  Running harness agent
+```
+
+**Two different directions, not one bidirectional ego connection:**
+
+1. **ChatGPT Web → MCP → harness.** Web-side MCP tools discover locally
+   authorized projects and harnesses, dispatch tasks, inspect lifecycle
+   status/results and request interruption. The local Magpie adapter owns
+   process launch and permission checks. **Today these dispatchers are
+   Codex-specific** (`codex_submit_task`, `codex_collab_start`).
+2. **Harness → ego-browser → ChatGPT Web.** The **running** agent uses the
+   shared `magpie-web-collab` Skill and ego-browser to send a message into
+   the exact verified ChatGPT conversation and read the reply. This channel
+   is not a replacement for the MCP dispatcher.
+
+**Next backend milestone:** add a stable agent-neutral MCP contract
+(`agent_list_harnesses`, `agent_submit_task`, `agent_task_status`,
+`agent_task_result`, `agent_cancel_task`) and per-harness adapters.
+These are **proposed interfaces**, not registered tools in this release.
+Route by an explicit locally authorized harness, project and execution
+mode; do not infer from chat titles. Keep existing Codex tools as backward
+compatible aliases. Only after an adapter is implemented, permission-gated
+and tested may ChatGPT Web claim it can remotely launch that harness.
+
+The ego Skill can already be used by a **running** compatible harness; that
+alone does **not** mean the Web can remotely start Claude or arbitrary
+Desktop/CLI agents. Transport availability and real-machine verification are
+separate from a passing repository test suite.
+
 ## Harness-neutral ChatGPT Web collaboration (preview)
 
 The reusable [`magpie-web-collab` Skill](skills/magpie-web-collab/SKILL.md)

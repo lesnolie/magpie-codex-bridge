@@ -65,7 +65,8 @@ export function createHarnessRunner(options = {}, deps = {}) {
       project:j.project, state:j.state, startedAt:j.startedAt,
       completedAt:j.completedAt || null, exitCode:j.exitCode ?? null,
       output:bounded(j.output), error:j.error || null,
-      actualExecutionConfirmed:j.state === 'completed' };
+      processCompleted:j.state === 'completed',
+      taskOutcomeVerified:false };
   }
   function lookup({taskId,harness,project}={}) {
     const j = jobs.get(taskId);

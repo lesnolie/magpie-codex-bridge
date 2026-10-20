@@ -8,8 +8,8 @@ import { startModelCatalogSync } from './src/model-catalog.mjs';
 import { reconcileRemoteService, writeBootstrapStatus, remotePaths } from './src/remote-service.mjs';
 
 const arg = (description, extra = {}) => ({ type: 'string', description, ...extra });
-const wrap = (fn) => async (args) => {
-  try { return await fn(args || {}); }
+const wrap = (fn) => async (args, ctx) => {
+  try { return await fn(args || {}, ctx); }
   catch (error) { return JSON.stringify({ ok: false, error: error.message }); }
 };
 

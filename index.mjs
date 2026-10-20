@@ -54,12 +54,12 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     codex_cancel_task: { description: 'Cancel a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.cancel) },
   };
   const harnessTools = {
-    agent_run: { description: 'Start EXACTLY the user-requested harness. Codex uses existing native Desktop or app-server; Claude Code/OpenCode use their documented CLI (not Desktop). Never substitute. Separate local Agent 启动权限 is required, and only allowed projects are accessible. Dispatch does not mean task completed.', args: {
-      harness: arg('Required user-selected harness: codex, claude, opencode; never substitute'),
+    agent_run: { description: 'Start EXACTLY the user-requested harness. Codex uses existing native Desktop or app-server; Claude Code/DeepSeek Harness (dsh) use their documented CLI (not Desktop). Never substitute. Separate local Agent 启动权限 is required, and only allowed projects are accessible. Dispatch does not mean task completed.', args: {
+      harness: arg('Required user-selected harness: codex, claude, dsh (DeepSeek Harness); never substitute'),
       project: arg('Exact locally authorized project name'),
       prompt: arg('The actual authorized instruction, max 12000 chars'),
       chatUrl: {type:'string',description:'Exact current ChatGPT conversation URL supplied by the user; required for native Codex Desktop and ego-browser collaboration'},
-      mode: {type:'string',enum:['desktop','cli','app-server'],description:'Codex defaults to Desktop if chatUrl provided, otherwise app-server; Claude/OpenCode support CLI only'},
+      mode: {type:'string',enum:['desktop','cli','app-server'],description:'Codex defaults to Desktop if chatUrl provided, otherwise app-server; Claude/dsh support CLI only'},
     }, execute: wrap(async a => {
       if (options.agentLaunchEnabled !== true) throw Error('Agent native launch is disabled in local Magpie settings');
       const selected = normalizeHarness(a.harness);
@@ -105,7 +105,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     })},
   };
   const peerTools = {
-    agent_register: { description: 'LOCAL AGENT ONLY (not remote Cloudflare). Bind an active harness session and its exact ChatGPT Web chat for peer command exchange. Registration is self-declared, not proof of execution or filesystem permission.', args: { harness: arg('Exact locally running harness name: codex, claude, opencode, or other'), project: arg('Human-readable project label; not a grant to project files'), mode: { type: 'string', enum: ['desktop','cli','app-server','ide','other'], description: 'Optional current execution mode. This is metadata, not an execution capability grant.' }, chatUrl: arg('Exact verified ChatGPT conversation URL observed through ego-browser') }, execute: wrap((a, ctx) => peers.register(a, ctx?.agent || '')) },
+    agent_register: { description: 'LOCAL AGENT ONLY (not remote Cloudflare). Bind an active harness session and its exact ChatGPT Web chat for peer command exchange. Registration is self-declared, not proof of execution or filesystem permission.', args: { harness: arg('Exact locally running harness name: codex, claude, dsh, or other'), project: arg('Human-readable project label; not a grant to project files'), mode: { type: 'string', enum: ['desktop','cli','app-server','ide','other'], description: 'Optional current execution mode. This is metadata, not an execution capability grant.' }, chatUrl: arg('Exact verified ChatGPT conversation URL observed through ego-browser') }, execute: wrap((a, ctx) => peers.register(a, ctx?.agent || '')) },
     agent_poll: { description: 'LOCAL AGENT ONLY. Read up to ten queued peer commands for a registered session during an active harness turn. A poll marks delivered, not executed; acknowledge after processing.', args: { sessionId: arg('Session ID returned by agent_register'), chatUrl: arg('Exact bound ChatGPT conversation URL') }, execute: wrap(peers.poll) },
     agent_ack: { description: 'LOCAL AGENT ONLY. Mark a previously polled peer command processed. No implicit approval of unrelated actions.', args: { sessionId: arg('Registered session ID'), chatUrl: arg('Exact bound ChatGPT URL'), messageId: arg('Original message ID') }, execute: wrap(peers.acknowledge) },
     agent_sessions: { description: 'Read locally registered peer harness sessions, their project labels, ChatGPT binding and queued counts. Does NOT mean those agents can be launched or are executing.', args: {}, execute: wrap(() => peers.list()) },
@@ -129,7 +129,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     return JSON.stringify({
       ...data,
       codex: {
-        integrationVersion: '0.4.29-alpha.1',
+        integrationVersion: '0.4.30-alpha.1',
         toolsRegistered: true,
         toolCount: 26,
         pendingReviewCount,

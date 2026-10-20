@@ -67,3 +67,36 @@ test('an expired registered agent cannot receive new messages', t => {
   assert.throws(() => peer.send({sessionId:r.sessionId,chatUrl:CHAT,taskId:'t-01',
     messageId:'msg-01',command:'REQUEST',message:'hello'}), /expired/);
 });
+
+test('explicit harness routing targets only the user-named harness without a session ID', t => {
+  const { peer } = mailbox(t);
+  const claude = JSON.parse(peer.register({ harness:'Claude Code', mode:'cli', project:'TMN', chatUrl:CHAT }));
+  const codex = JSON.parse(peer.register({ harness:'codex', mode:'desktop', project:'TMN', chatUrl:CHAT }));
+  const result = JSON.parse(peer.send({ harness:'Claude', chatUrl:CHAT, taskId:'task-claude',
+    messageId:'msg-claude', command:'REQUEST', message:'Please inspect the UI.' }));
+  assert.equal(result.harness,'claude');
+  assert.equal(result.sessionId,claude.sessionId);
+  assert.equal(result.mode,'cli');
+  assert.equal(JSON.parse(peer.poll({sessionId:codex.sessionId,chatUrl:CHAT})).messages.length,0);
+  assert.equal(JSON.parse(peer.poll({sessionId:claude.sessionId,chatUrl:CHAT})).messages.length,1);
+  assert.throws(() => peer.send({ harness:'gemini',chatUrl:CHAT,taskId:'task-gemini',
+    messageId:'msg-gemini', command:'REQUEST',message:'do work' }), /no registered session.*no substitute/);
+  assert.throws(() => peer.send({ harness:'claude',sessionId:codex.sessionId,chatUrl:CHAT,
+    taskId:'wrong',messageId:'wrong-id',command:'REQUEST',message:'do work' }), /does not match requested harness/);
+});
+
+test('same harness in multiple sessions requires explicit project, mode or session ID', t => {
+  const { peer } = mailbox(t);
+  const cli=JSON.parse(peer.register({ harness:'claude', mode:'cli', project:'A', chatUrl:CHAT }));
+  const desktop=JSON.parse(peer.register({ harness:'claude', mode:'desktop', project:'B', chatUrl:CHAT }));
+  const command={harness:'claude',chatUrl:CHAT,taskId:'multiple-01',
+    messageId:'multi-msg-01',command:'REQUEST',message:'run tests'};
+  assert.throws(()=>peer.send(command), /Multiple matching sessions/);
+  const result=JSON.parse(peer.send({...command, project:'B'}));
+  assert.equal(result.sessionId,desktop.sessionId);
+  assert.equal(result.mode,'desktop');
+  assert.equal(JSON.parse(peer.poll({sessionId:cli.sessionId,chatUrl:CHAT})).messages.length,0);
+  assert.equal(JSON.parse(peer.poll({sessionId:desktop.sessionId,chatUrl:CHAT})).messages.length,1);
+  assert.throws(()=>peer.send({...command,sessionId:desktop.sessionId, mode:'cli',messageId:'wrong-mode'}),
+    /mode mismatch/);
+});

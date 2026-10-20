@@ -45,7 +45,8 @@ test('select Claude, launch only Claude and deliver task through stdin',()=>{
   const status=JSON.parse(runner.status({harness:'claude',project:'TMN',taskId:r.taskId}));
   assert.equal(status.state,'completed');
   assert.equal(status.output,'Finished');
-  assert.equal(status.actualExecutionConfirmed,true);
+  assert.equal(status.processCompleted,true);
+  assert.equal(status.taskOutcomeVerified,false);
 });
 test('OpenCode runs only OpenCode with native permissions when enabled',()=>{
   const {runner,launches}=setup({agentLaunchPermission:'native'});

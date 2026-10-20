@@ -92,7 +92,7 @@ test('multi-root Codex projects stay grouped; missing roots and symlinks stay ex
 test('Magpie MCP tools still register without granting Codex execution', async () => {
   const plugin=await MagpieProjectReview({},cfg({codexEnabled:false,remoteAutoStart:false}));
   assert.deepEqual(Object.keys(plugin.tool).sort(),[
-    'agent_ack','agent_message_send','agent_message_status','agent_poll','agent_register',
+    'agent_ack','agent_desktop_focus','agent_message_send','agent_message_status','agent_poll','agent_register',
     'agent_run','agent_run_cancel','agent_run_status','agent_sessions',
     'chat_session_request_transfer','chat_session_status',
     'codex_ack_review','codex_cancel_task','codex_collab_start','codex_review_changes','codex_review_inbox',
@@ -116,9 +116,12 @@ test('Magpie MCP tools still register without granting Codex execution', async (
   }));
   assert.equal(started.ok,false);
   assert.match(started.error,/Agent native launch is disabled/);
+  const focused=JSON.parse(await plugin.tool.agent_desktop_focus.execute({harness:'dsh'}));
+  assert.equal(focused.ok,false);
+  assert.match(focused.error,/permission is disabled/);
   const listing=JSON.parse(await plugin.tool.projects.execute({}));
   assert.equal(listing.codex.integrationVersion,'0.4.30-alpha.1');
-  assert.equal(listing.codex.toolCount,26);
+  assert.equal(listing.codex.toolCount,27);
   assert.equal(listing.codex.allowWrites,false);
   assert.equal(listing.projects[0].name,'TMN');
   assert.ok(!JSON.stringify(listing).includes(base));

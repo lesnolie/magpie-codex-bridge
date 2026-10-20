@@ -1,7 +1,8 @@
 import { createProjectTools, projectRoots } from './src/projects.mjs';
 import { createChatSessions } from './skills/magpie-codex-collab/chat-session.mjs';
 import { createNativeCollab } from './src/native-collab.mjs';
-import { createPeerMessages } from './src/peer-messages.mjs';
+import { createPeerMessages, normalizeHarness } from './src/peer-messages.mjs';
+import { createHarnessRunner } from './src/harness-runner.mjs';
 import { existsSync } from 'node:fs';
 import { createCodexTasks, resolveCodexPermissionMode } from './src/codex-tasks.mjs';
 import { startModelCatalogSync } from './src/model-catalog.mjs';
@@ -34,6 +35,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   // locally managed permission flag.
   const codex = createCodexTasks(options);
   const peers = createPeerMessages();
+  const harnessRunner = createHarnessRunner(options);
   const chat = createChatSessions({projectRoots:()=>projectRoots(options)});
   const nativeCollab = createNativeCollab(options,{chatSessions:chat,projectRoots:()=>projectRoots(options)});
   const codexTools = {
@@ -50,6 +52,57 @@ export const MagpieProjectReview = async (_input, options = {}) => {
       retryFailed:{type:'boolean',description:'Explicit user-approved one-time recovery of a dispatch_failed Desktop ticket. Default false. No retry for in-flight, queued or opened requests.'},
       failedLaunchId:{type:'string',description:'Exact original failed launch UUID. Required with retryFailed=true, together with matching taskId, goal, project and chatUrl.'}}, execute: wrap(args=>nativeCollab.start(args).then(JSON.stringify)) },
     codex_cancel_task: { description: 'Cancel a previously submitted local Codex task.', args: { project: arg('Allowed project name'), taskId: arg('Task ID') }, execute: wrap(codex.cancel) },
+  };
+  const harnessTools = {
+    agent_run: { description: 'Start EXACTLY the user-requested harness. Codex uses existing native Desktop or app-server; Claude Code/OpenCode use their documented CLI (not Desktop). Never substitute. Separate local Agent 启动权限 is required, and only allowed projects are accessible. Dispatch does not mean task completed.', args: {
+      harness: arg('Required user-selected harness: codex, claude, opencode; never substitute'),
+      project: arg('Exact locally authorized project name'),
+      prompt: arg('The actual authorized instruction, max 12000 chars'),
+      chatUrl: {type:'string',description:'Exact current ChatGPT conversation URL supplied by the user; required for native Codex Desktop and ego-browser collaboration'},
+      mode: {type:'string',enum:['desktop','cli','app-server'],description:'Codex defaults to Desktop if chatUrl provided, otherwise app-server; Claude/OpenCode support CLI only'},
+    }, execute: wrap(async a => {
+      if (options.agentLaunchEnabled !== true) throw Error('Agent native launch is disabled in local Magpie settings');
+      const selected = normalizeHarness(a.harness);
+      if (selected === 'codex') {
+        if (a.mode === 'cli') throw Error('Standalone Codex CLI is not supported; select Desktop or app-server');
+        if ((a.mode || (a.chatUrl ? 'desktop' : 'app-server')) === 'desktop') {
+          if (!a.chatUrl) throw Error('Native Codex Desktop requires an exact ChatGPT conversation URL');
+          return JSON.stringify({harness:'codex',mode:'desktop',
+            ...await nativeCollab.start({project:a.project,goal:a.prompt,chatUrl:a.chatUrl})});
+        }
+        return JSON.stringify({harness:'codex',mode:'app-server',
+          ...JSON.parse(codex.submit({project:a.project,prompt:a.prompt,chatUrl:a.chatUrl}))});
+      }
+      if (a.mode && a.mode !== 'cli') throw Error('Selected harness does not support requested mode; no fallback');
+      return harnessRunner.launch({...a,harness:selected});
+    }) },
+    agent_run_status: {description:'Read actual execution status for the exact selected CLI/app-server task. Desktop status uses chat_session_status.',args:{
+      harness:arg('Harness chosen with agent_run'),
+      project:arg('Original authorized project'),
+      taskId:arg('Task ID from agent_run'),
+      mode:{type:'string',enum:['cli','app-server'],description:'Codex app-server or another harness CLI'},
+    },execute:wrap(a=>{
+      const selected=normalizeHarness(a.harness);
+      if(selected==='codex'){
+        if(a.mode!=='app-server') throw Error('For Codex Desktop use chat_session_status');
+        return codex.status({project:a.project,taskId:a.taskId});
+      }
+      return harnessRunner.status({...a,harness:selected});
+    })},
+    agent_run_cancel: {description:'Cancel selected CLI/app-server task if still running. Separate local agent-launch permission is required.',args:{
+      harness:arg('Exact harness previously selected'),
+      project:arg('Original authorized project'),
+      taskId:arg('Task ID returned from agent_run'),
+      mode:{type:'string',enum:['cli','app-server'],description:'CLI or Codex app-server'},
+    },execute:wrap(a=>{
+      if(options.agentLaunchEnabled!==true) throw Error('Agent launch permission disabled in local Magpie settings');
+      const selected=normalizeHarness(a.harness);
+      if(selected==='codex'){
+        if(a.mode!=='app-server')throw Error('Desktop cancellation not supported; check chat_session_status');
+        return codex.cancel({project:a.project,taskId:a.taskId});
+      }
+      return harnessRunner.cancel({...a,harness:selected});
+    })},
   };
   const peerTools = {
     agent_register: { description: 'LOCAL AGENT ONLY (not remote Cloudflare). Bind an active harness session and its exact ChatGPT Web chat for peer command exchange. Registration is self-declared, not proof of execution or filesystem permission.', args: { harness: arg('Exact locally running harness name: codex, claude, opencode, or other'), project: arg('Human-readable project label; not a grant to project files'), mode: { type: 'string', enum: ['desktop','cli','app-server','ide','other'], description: 'Optional current execution mode. This is metadata, not an execution capability grant.' }, chatUrl: arg('Exact verified ChatGPT conversation URL observed through ego-browser') }, execute: wrap((a, ctx) => peers.register(a, ctx?.agent || '')) },
@@ -78,7 +131,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
       codex: {
         integrationVersion: '0.4.28-alpha.1',
         toolsRegistered: true,
-        toolCount: 23,
+        toolCount: 26,
         pendingReviewCount,
         localEnabled: configured,
         allowWrites: configured && resolveCodexPermissionMode(options) !== 'read-only',
@@ -92,6 +145,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     tool: {
       ...codexTools,
       ...peerTools,
+      ...harnessTools,
       projects: { description: 'List Codex Desktop registered projects and report pending Codex reviews. When pendingReviewCount is positive call codex_review_inbox and codex_review_changes to audit; never modify project files.', args: {}, execute: wrap(projectsWithStatus) },
       list_files: { description: 'List non-secret files within an allowed project directory. Paths are project-relative.', args: { project: arg('Project name'), directory: arg('Relative directory, default .') }, execute: wrap(tools.list_files) },
       read_file: { description: 'Read a limited range of an allowed source code or text file; no secrets, symlinks or files outside project roots.', args: { project: arg('Project name'), file: arg('Relative source path'), startLine: { type: 'integer', minimum: 1 }, maxLines: { type: 'integer', minimum: 1, maximum: 200 } }, execute: wrap(tools.read_file) },

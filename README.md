@@ -1,4 +1,63 @@
-# Magpie Local Project Review (v0.4.26 alpha)
+# Magpie Local Project Review (v0.4.28 alpha)
+
+## Harness-neutral ChatGPT Web collaboration (preview)
+
+The reusable [`magpie-web-collab` Skill](skills/magpie-web-collab/SKILL.md)
+is **not tied to Codex or Claude**. It describes the same minimal
+`ego-browser skill` + authenticated ChatGPT Web conversation workflow for
+any **local agent harness** that can run the ego-browser executable
+(Desktop, CLI, IDE or app-server). The agent keeps its own execution
+engine, context, approvals and tools. ChatGPT Web remains the reviewer.
+
+One transport, not one execution engine:
+
+- **Codex Desktop:** continue to launch using `codex_collab_start` and
+  `magpie-codex-collab`. They preserve Desktop launch ticket state, native
+  thread pairing and project/chat verification. The Web messages already
+  travel via ego-browser.
+- **Codex CLI / TUI:** invoke the generic `magpie-web-collab` Skill from an
+  ordinary interactive Codex session with access to ego-browser.
+- **Codex app-server:** `codex_submit_task` still starts the existing
+  isolated Codex app-server process. Optionally supply **`chatUrl`** to
+  request ego-browser communication from the same turn using
+  `magpie-web-collab`; omitting `chatUrl` preserves the current result-only
+  MCP workflow. A sandbox or missing Skill may prevent browser access, but
+  MCP result retrieval still works.
+- **Claude Code or another agent:** install this shared Skill in that
+  harness using its native Skill import and ensure the running agent has
+  local ego-browser execution permissions. Claude Code's Desktop/CLI
+  surfaces can use one protocol if they expose those capabilities. Other
+  desktop chat apps without local shell/browser tools cannot automatically
+  do so simply by uploading the Skill.
+
+**Important boundaries:** This branch does **not** add a Claude launch
+adapter or a general remote process manager. Web-to-local-startup remains
+Codex-specific; messages in an **already running** compatible agent session
+are two-way via the normal browser conversation. The Magpie MCP
+project allowlist still comes solely from **Codex Desktop registered
+projects**. For a Claude-only workspace, the user must first register its
+root there or a separately user-approved generic project-registry feature
+must be built; installing a Skill does not grant filesystem access.
+
+### Minimal web round
+
+1. Read `ego-browser skill` once, reuse a single TaskSpace and ChatGPT
+   page, and match its observed URL before every send.
+2. Verify Magpie project + harmless file once on first pairing or chat/project
+   switch, not on every stage.
+3. Send compact `[MAGPIE] EXECUTED` with project, task ID, result/evidence,
+   and the next review action; ChatGPT independently checks via Magpie MCP.
+   Avoid redundant confirmation and ACK loops.
+4. Keep the original authorized goal active across intermediate approvals;
+   finish only when the full goal is complete.
+
+`codex app-server` means the **programmatic stdio/JSON-RPC execution
+interface**, not the Codex Desktop GUI and not a ChatGPT browser. `Codex CLI`
+is the **terminal-facing interactive/batch command-line interface**.
+They may use the same Codex model and workspace while exposing different
+lifecycle/tooling. **Neither interface replaces ego-browser:** execution
+and communication are separate concerns.
+
 
 ## v0.4.26 alpha: simplified plugin page, standalone CLI removed
 

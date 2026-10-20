@@ -21,7 +21,7 @@ export function normalizeHarness(value) {
   if (typeof value !== 'string' || !value.trim() || value.length > 80) throw Error('Explicit harness name required');
   const cleaned = value.trim().toLowerCase().replace(/[_ ]+/g, '-');
   // Only well-known full-name aliases are normalized. Do not guess providers from models.
-  const canonical = ({ 'claude-code': 'claude', 'open-code': 'opencode', 'codex-cli': 'codex' })[cleaned] || cleaned;
+  const canonical = ({ 'claude-code': 'claude', 'codex-cli': 'codex', 'deepseek-harness': 'dsh', 'deepseekhsrness': 'dsh', 'deepseekharness': 'dsh' })[cleaned] || cleaned;
   if (!/^[a-z0-9][a-z0-9.-]{0,79}$/.test(canonical)) throw Error('Invalid harness name');
   return canonical;
 }

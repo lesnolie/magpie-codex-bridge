@@ -1,6 +1,6 @@
-# Magpie Local Project Review (v0.4.29 alpha)
+# Magpie Local Project Review (v0.4.30 alpha)
 
-## Native user-selected Harness startup — v0.4.29 alpha (test release)
+## Native user-selected Harness startup — v0.4.30 alpha (test release)
 
 The local Magpie plugin page now has a separate **允许 ChatGPT 启动指定 Harness**
 switch and a local **read-only / native permissions** choice. The default
@@ -18,8 +18,14 @@ for the process result and `agent_run_cancel` to cancel supported tasks.
   fallback, but this mode never pretends to be Codex Desktop.
 - **Claude Code:** launches installed **CLI** (`claude --print`) through its
   official noninteractive interface. CLI is not Claude Desktop.
-- **OpenCode:** launches installed **CLI** (`opencode run`) through its
-  official noninteractive interface. CLI is not an OpenCode GUI.
+- **DeepSeek Harness (dsh):** launches the installed **CLI**
+  (`dsh headless`) using stdin. This is the official one-task, print-result
+  and exit mode; it is not the dsh Desktop/Web UI. DeepSeek model selection
+  alone is not a launchable Harness. **dsh has no supported read-only CLI
+  mode**, so this adapter refuses launch until the local user explicitly
+  enables native Harness permissions (second confirmation in Magpie).
+  Treat downloaded instructions as untrusted input and grant only the
+  authority necessary for the requested project.
 - **Other Harnesses:** do not guess commands or silently substitute. Return
   unsupported, pending a tested native adapter for that specific runtime.
 
@@ -36,14 +42,14 @@ recommended before enabling native edit permissions.
 from user-registered Codex Desktop projects. Magpie's Agents page supplies
 model configuration, not arbitrary project/file access authorization.
 This alpha does **not** automatically attach to an existing GUI thread
-of Claude Desktop/OpenCode, and does not provide a universal Desktop
+of Claude Desktop/DeepSeek Harness GUI, and does not provide a universal Desktop
 process controller. Native launch is supported only where an actual tested
 adapter exists; CI mocks cannot replace a live Windows test.
 
 ## Implemented: harness-neutral peer command inbox (PR preview)
 
 This branch includes peer messaging **and** an explicit, locally authorized
-native launcher for Codex, Claude Code CLI and OpenCode CLI. Arbitrary
+native launcher for Codex, Claude Code CLI and DeepSeek Harness (dsh) CLI. Arbitrary
 Desktop or CLI runtimes are not supported by default. It reuses the existing Magpie
 plugin-tool MCP service and Cloudflare Access bridge. The host's Agents tab
 continues to manage agent/model configuration; this plugin does **not**

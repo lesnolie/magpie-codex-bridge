@@ -11,6 +11,37 @@ existing MCP connector gives ChatGPT access to validated Codex Desktop projects.
 This Skill does **not** launch Codex app-server, create a second Cloudflare tunnel,
 fetch credentials, or install its own MCP server.
 
+## Minimal interaction rule (priority)
+
+**One verification at initial pairing or ChatGPT URL/project transfer, not
+at every stage.** Keep all existing one-chat, project, task ID, generation,
+and permission checks; they protect against sending to the wrong conversation.
+Those local checks are not a reason to send extra conversational acknowledgments.
+
+- Never create a separate browser for each message. Reuse the verified
+  ego-browser TaskSpace and `p1`.
+- Do not ask for repeated “can I proceed?” approvals for work already covered
+  by the user’s goal and local Codex permission mode. Ask only if the requested
+  write, deployment, destination or permission genuinely changes scope.
+- Keep user-visible messages to a useful plan (only when needed), an EXECUTED
+  result with verifiable evidence, the next actionable review decision, or
+  one real blocker. Keep progress inside the original task, not a handshake
+  of CODEX_HELLO / WEB_ACK / RECEIVED for every round.
+- Do not force one-word DONE/ACK responses. ChatGPT can review the Magpie MCP
+  diff and give a short PLAN with next steps. An intermediate PASS is not
+  completion of the whole user goal.
+- Prefer 1–3 concise sentences in RESULT and one NEXT action. Do not repeat
+  already known project metadata, explanatory boilerplate or large logs.
+- If there is no pending ChatGPT review or decision, continue locally instead
+  of pointlessly messaging the browser. Keep the existing checkpoint protocol
+  and verify the browser-observed URL **before every actual send**.
+
+The shared `magpie-web-collab` Skill is the simple browser transport for
+Claude Code, Codex CLI and opt-in app-server turns. This native Desktop Skill
+still owns the original `codex_collab_start` launch and guarded
+`chat-session.mjs` bindings; do not replace those checks with a loose generic
+agent handshake.
+
 ## Intermediate verification is not final DONE
 
 **Track the original authorized user goal, not merely the current review round.**

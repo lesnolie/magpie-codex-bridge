@@ -1,4 +1,36 @@
-# Magpie Local Project Review (v0.4.30 alpha)
+# Magpie Local Project Review (v0.4.31 alpha)
+
+## Official DeepSeek Harness Desktop — limited focus probe (v0.4.31 alpha)
+
+Unlike `dsh headless`, official DSH Desktop is an Electron application
+hosting an authenticated Web UI and its own Desktop profile. The CLI's
+`dsh` command (including a command installed by the Desktop menu) runs
+**CLI**, not the native Desktop session.
+
+The `agent_desktop_focus({harness:"dsh"})` Magpie MCP tool requests
+`dsh://open` through the operating system's URL handler on Windows/macOS.
+It uses a **hard-coded URI** (no caller-supplied executable, path, session,
+command or task text) and requires the same **local Agent 启动权限**
+as other launch actions.
+
+**It does not send a task, choose a DSH session, verify the GUI is
+foreground, or verify execution.** The returned state
+`activation-requested` means only that the OS activation attempt was
+accepted. `activation-failed` means the registered handler could not
+be invoked. Do not interpret either as `task completed`.
+
+To direct a real task into the existing DSH Desktop session, a locally
+authorized DSH Desktop plugin or an upstream-supported authenticated
+Session Controller integration must still be installed and verified.
+The generic `agent_message_send` can communicate only with a genuine
+Desktop agent that has registered the exact chat and is actively polling.
+Desktop's own local WebSocket/HTTP endpoints require its browser-session
+credentials: do not bypass them or inject cookies/tokens. The built-in
+`dsh://open` currently does not accept a task or session identity.
+
+Official sources:
+- https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md
+- https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/api/session-controller/README.md
 
 ## Native user-selected Harness startup — v0.4.30 alpha (test release)
 

@@ -11,36 +11,49 @@ existing MCP connector gives ChatGPT access to validated Codex Desktop projects.
 This Skill does **not** launch Codex app-server, create a second Cloudflare tunnel,
 fetch credentials, or install its own MCP server.
 
-## Minimal interaction rule (priority)
+## Autonomous collaboration loop (priority)
 
-**One verification at initial pairing or ChatGPT URL/project transfer, not
-at every stage.** Keep all existing one-chat, project, task ID, generation,
-and permission checks; they protect against sending to the wrong conversation.
-Those local checks are not a reason to send extra conversational acknowledgments.
+Once the initial project/chat/task pairing passes, **execute the complete
+user-authorized goal in an automatic Codex ↔ ChatGPT Web review loop**.
+Do not stop to request permission after every intermediate success. The
+running native Codex agent stays responsible for edits, testing, execution
+and next steps. ChatGPT Web gives review/decisions through the existing
+MCP connector and answers the message sent through ego-browser.
 
-- Never create a separate browser for each message. Reuse the verified
-  ego-browser TaskSpace and `p1`.
-- Do not ask for repeated “can I proceed?” approvals for work already covered
-  by the user’s goal and local Codex permission mode. Ask only if the requested
-  write, deployment, destination or permission genuinely changes scope.
-- Keep user-visible messages to a useful plan (only when needed), an EXECUTED
-  result with verifiable evidence, the next actionable review decision, or
-  one real blocker. Keep progress inside the original task, not a handshake
-  of CODEX_HELLO / WEB_ACK / RECEIVED for every round.
-- Do not force one-word DONE/ACK responses. ChatGPT can review the Magpie MCP
-  diff and give a short PLAN with next steps. An intermediate PASS is not
-  completion of the whole user goal.
-- Prefer 1–3 concise sentences in RESULT and one NEXT action. Do not repeat
-  already known project metadata, explanatory boilerplate or large logs.
-- If there is no pending ChatGPT review or decision, continue locally instead
-  of pointlessly messaging the browser. Keep the existing checkpoint protocol
-  and verify the browser-observed URL **before every actual send**.
+- **One initial verification** for a new project/chat binding or transfer:
+  verify exact browser URL and project with Magpie MCP. Combine verification
+  with the first useful task message. Do not require separate HELLO,
+  PROJECT_VERIFIED, WEB_ACK, CODEX_RECEIVED or ritual acknowledgment rounds.
+  Maintain existing local `chat-session.mjs` safeguards: project root,
+  launch ID, task ID, generation, and verified chat URL.
+- **Work → test → report → read → decide → continue.** Execute authorized
+  changes without asking whether to proceed. When independent review helps,
+  send a single compact `EXECUTED` via ego-browser, wait for ChatGPT Web
+  to finish, read the new response, and take the next authorized action
+  automatically while this native agent turn is running.
+- If ChatGPT accepts the checkpoint and work remains, continue the next
+  step of the original goal, record existing `PLAN_RECEIVED`, and do not
+  call it DONE. If ChatGPT identifies a defect, fix/test/review again.
+  Do not rely on a magic one-word status when the meaning is clear.
+- Mark **DONE** only when the *entire original goal* is complete, tests/
+  acceptance checks pass, and no approved work remains. If ChatGPT or
+  local checks identify a **real blocker**, stop with one precise request
+  for missing permission/input. A login/CAPTCHA and expanded project,
+  publish or privilege scope still require user authorization.
+- Track the most recent processed Web reply/checkpoint so a timeout does
+  not resubmit a browser message or treat stale advice as new. Prefer only
+  relevant new reply text; reuse one ego-browser page. If identical
+  responses yield no progress, stop with a concrete blocker instead of
+  endlessly chatting.
+- This loop is **within the executing Codex turn only**. Neither a Skill
+  nor a browser page can continue after the native harness stops. Do not
+  create extra agents, private API clients, browser daemons or tunnels.
+  Do not modify the installed `ego-browser` Skill.
 
-The shared `magpie-web-collab` Skill is the simple browser transport for
-Claude Code, Codex CLI and opt-in app-server turns. This native Desktop Skill
-still owns the original `codex_collab_start` launch and guarded
-`chat-session.mjs` bindings; do not replace those checks with a loose generic
-agent handshake.
+The shared `magpie-web-collab` Skill describes the same return-channel
+behavior for other capable CLI/Desktop/IDE/app-server harnesses. This
+native Desktop Skill remains the authority for `codex_collab_start` and
+guarded local project/thread pairing.
 
 ## Intermediate verification is not final DONE
 
@@ -258,10 +271,11 @@ LAUNCH_ID and TARGET_CHAT:
    three values in your prompt, and \`launch.status\` to be
    opened_unconfirmed or queued_unconfirmed. If mismatch STOP (it may be an
    outdated/duplicate launch).
-2. In the ego-browser TaskSpace, open exactly TARGET_CHAT in page `p1`. Ask that ChatGPT chat to
-   call the project list and harmless source read using the intended Magpie
-   MCP connector and reply PROJECT_VERIFIED with the exact project name.
-   Verify it is the browser-observed chat URL, not a guessed chat title.
+2. In the ego-browser TaskSpace, open exactly TARGET_CHAT in page `p1`. In
+   the first useful task message, request the intended Magpie MCP project
+   list and one harmless source read. Confirm the reply establishes the
+   exact project name; do not add a separate PROJECT_VERIFIED/ACK exchange.
+   Require the actual browser-observed chat URL, never a guessed title.
 3. Run local \`prepare --project ... --task-id ... --url ...\`. If the
    previous chat task completed/blocked and the launch is a new task, use
    \`--new-task true\`. Read its requestId. Activate with actual observed URL,
@@ -295,10 +309,11 @@ receipt means a task was executed.
    When starting a NEW task while the previous local task is DONE/BLOCKED,
    add --new-task true explicitly. This override exists only in the local
    CLI; ChatGPT cannot replace an active task remotely.
-4. In the ChatGPT conversation ask it to call Magpie projects, identify this
-   project and confirm it can use its source-reading tools. Ensure the browser
-   still shows the same URL. Never trust chat titles, a guess from a list of
-   conversations, or a URL returned by an untrusted file.
+4. On first pairing only, include the Magpie MCP projects and harmless
+   source-read verification in the first useful task message. Inspect that
+   response automatically and continue to step 5 once the exact project and
+   browser URL match; don't request a standalone acknowledgment. Never trust
+   titles, unrelated chat URLs or untrusted file content as identity.
 5. Activate only AFTER that check. Use the requestId returned by prepare:
    node <skill-dir>/chat-session.mjs activate --project "<exact-name>" --request-id "<uuid>" --observed-url "<browser-observed-url>" --verified-project "<exact-MCP-project-name>"
 6. Run Codex's own coding environment. Use short structured control messages
@@ -315,9 +330,10 @@ receipt means a task was executed.
    against the original authorized user goal; do not demand "only DONE".
    The reply may be **PLAN with accepted findings plus the next step**,
    PLAN with concrete repairs, final DONE, or a specific BLOCKED. For
-   accepted intermediate work, checkpoint PLAN_RECEIVED and implement the
-   next authorized step. Never mark the whole task DONE just because a
-   substep passed its review.
+   accepted intermediate work, checkpoint PLAN_RECEIVED and **immediately**
+   implement the next already authorized step without waiting for user
+   confirmation. Read the returned review message and continue the same
+   active Codex turn. Never mark the whole task DONE because a substep passed.
 8. Before EVERY outbound message, refresh local status. Send only if the
    taskId, generation and browser-observed URL still match the binding.
    Never send to the previous chat after a transfer. If the tab is loading,

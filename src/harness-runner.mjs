@@ -132,13 +132,19 @@ export function createHarnessRunner(options = {}, deps = {}) {
       },timeLimit);
       j.timer.unref?.();
       const instruction = [
-        'Use your installed magpie-web-collab Skill when available.',
+        'Invoke the installed magpie-web-collab Skill when available; use ego-browser for all Harness-to-Web messages.',
         'You and ChatGPT Web are peers; follow the actual command, not a fixed reviewer/executor role.',
+        'TASK_ID: '+taskId,
+        'HARNESS: '+selected,
+        'PROJECT: '+project,
+        'During this active agent turn, work on the task, send useful REQUEST/RESULT messages through ego-browser, read new Web replies and continue when actionable.',
+        'No repeated HELLO/ACK messages, no assumed reviewer role, and no claims of execution based only on opening a window.',
         'Work only in the supplied project and obey your native local permission policy.',
         url ? 'ChatGPT Web conversation: '+url : 'No verified ChatGPT conversation was provided. Do not guess one.',
         'When ChatGPT Web offers a relevant file to download, use the installed ego-browser Skill',
         'and verify real local bytes; never pretend that clicking a link alone downloaded the file.',
         'If ego-browser or the Skill cannot run, report that limitation in your final CLI output.',
+        'Do not claim success in ChatGPT Web unless its browser page actually shows the posted message.',
         '',
         'TASK:',
         prompt.trim(),

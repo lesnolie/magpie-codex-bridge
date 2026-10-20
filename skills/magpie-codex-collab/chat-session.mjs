@@ -222,6 +222,20 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       save(file,s);return {...view(p,s),activated:true,previousUrl:old};
     });
   }
+  // A verified local task may reach DONE/BLOCKED before its queue transport
+  // receipt is acknowledged. Reconcile only when ALL recorded identities agree.
+  // Never clear a different, in-progress, failed or unbound launch.
+  function reconcileFinishedLaunch(s){
+    const launch=s.launch,active=s.active,checkpoint=s.checkpoint;
+    if(!launch||!['queued_unconfirmed','opened_unconfirmed'].includes(launch.status)||
+       !active||!checkpoint||active.taskId!==launch.taskId||
+       checkpoint.taskId!==launch.taskId||active.url!==launch.chatUrl||
+       !['DONE','BLOCKED'].includes(checkpoint.protocolState))
+      return false;
+    launch.status=checkpoint.protocolState==='DONE'?'acknowledged':'blocked';
+    launch.updatedAt=new Date().toISOString();
+    return true;
+  }
   function checkpoint({project,taskId,generation,iteration,protocolState,waitingFor,goal,progress,issues,nextStep}={}){
     const p=allowed(project),file=filename(p,folder);
     if(!['INIT','PLAN_RECEIVED','EXECUTING','EXECUTED_LOCAL','EXECUTED_SENT','DONE','BLOCKED'].includes(protocolState)||
@@ -235,6 +249,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       s.checkpoint={taskId,iteration:n,protocolState,waitingFor,
         goal:small(goal,500),progress:small(progress,800),issues:small(issues,450),
         nextStep:small(nextStep,450),updatedAt:new Date().toISOString()};
+      reconcileFinishedLaunch(s);
       save(file,s);return {...view(p,s),saved:true};
     });
   }
@@ -251,6 +266,8 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
       fail('Goal must contain 1-1200 safe characters');
     return locked(file,()=>{
       const s=load(file),clean=goal.trim();
+      // Also heal older persisted tickets that predate completion reconciliation.
+      if(reconcileFinishedLaunch(s))save(file,s);
       if(s.launch&&['prepared','dispatching','opened_unconfirmed','queued_unconfirmed','dispatch_failed'].includes(s.launch.status)){
         const previous=s.launch;
         const identical=previous.chatUrl===normalized&&previous.goal===clean&&
@@ -322,6 +339,7 @@ export function createChatSessions({projectRoots=nativeCodexProjectRoots,folder=
         delete s.launch.failureCode;delete s.launch.exitStatus;delete s.launch.failureKind;
       }
       s.launch.updatedAt=new Date().toISOString();
+      reconcileFinishedLaunch(s);
       save(file,s);return view(p,s);
     });
   }

@@ -44,13 +44,21 @@ const CODEX_NAMES = Object.freeze([
 const PEER_NAMES = Object.freeze([
   'magpie-codex-bridge_agent_message_send',
 ]);
+const LAUNCH_NAMES = Object.freeze([
+  'magpie-codex-bridge_agent_run',
+  'magpie-codex-bridge_agent_run_status',
+  'magpie-codex-bridge_agent_run_cancel',
+]);
 const READ_ONLY = new Set(TOOL_NAMES.filter(x=>!x.endsWith('_chat_session_request_transfer')));
 const CODEX_PERMISSION_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-remote-enabled.flag');
 const remoteCodexEnabled = () => existsSync(CODEX_PERMISSION_FILE);
 const PEER_PERMISSION_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'peer-remote-enabled.flag');
 const remotePeerEnabled = () => existsSync(PEER_PERMISSION_FILE);
-const allowedTools = (codexEnabled, peerEnabled = false) =>
-  new Set([...TOOL_NAMES, ...(codexEnabled ? CODEX_NAMES : []), ...(peerEnabled ? PEER_NAMES : [])]);
+const LAUNCH_PERMISSION_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'agent-launch-enabled.flag');
+const remoteLaunchEnabled = () => existsSync(LAUNCH_PERMISSION_FILE);
+const allowedTools = (codexEnabled, peerEnabled = false, launchEnabled = false) =>
+  new Set([...TOOL_NAMES, ...(codexEnabled ? CODEX_NAMES : []),
+    ...(peerEnabled ? PEER_NAMES : []), ...(launchEnabled ? LAUNCH_NAMES : [])]);
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
@@ -161,7 +169,7 @@ function inspectMessage(m, allowed) {
   return allowed.has(m.params.name);
 }
 function filteredReply(reply, allowed) {
-  const codexReadNames = ['_codex_task_status', '_codex_task_result', '_codex_wait_task', '_codex_review_inbox', '_codex_review_changes'];
+  const codexReadNames = ['_codex_task_status', '_codex_task_result', '_codex_wait_task', '_codex_review_inbox', '_codex_review_changes', '_agent_run_status'];
   const codexRead = name => codexReadNames.some(suffix => name.endsWith(suffix));
   const filter = m => {
     if (m && m.result && Array.isArray(m.result.tools)) {
@@ -169,7 +177,7 @@ function filteredReply(reply, allowed) {
         ...t,
         annotations: { ...t.annotations,
           readOnlyHint: READ_ONLY.has(t.name) || codexRead(t.name),
-          destructiveHint: t.name.endsWith('_codex_submit_task') || t.name.endsWith('_codex_cancel_task') || t.name.endsWith('_codex_collab_start') || t.name.endsWith('_agent_message_send'),
+          destructiveHint: t.name.endsWith('_codex_submit_task') || t.name.endsWith('_codex_cancel_task') || t.name.endsWith('_codex_collab_start') || t.name.endsWith('_agent_message_send') || t.name.endsWith('_agent_run') || t.name.endsWith('_agent_run_cancel'),
           openWorldHint: false,
           idempotentHint: READ_ONLY.has(t.name) || t.name.endsWith('_codex_task_status') || t.name.endsWith('_codex_task_result'),
         },
@@ -189,7 +197,7 @@ async function readBody(stream, limit) {
   }
   return Buffer.concat(data);
 }
-export function createBridge({ verifyJWT, upstream = UPSTREAM, isCodexEnabled = remoteCodexEnabled, isPeerEnabled = remotePeerEnabled }) {
+export function createBridge({ verifyJWT, upstream = UPSTREAM, isCodexEnabled = remoteCodexEnabled, isPeerEnabled = remotePeerEnabled, isLaunchEnabled = remoteLaunchEnabled }) {
   if (typeof verifyJWT !== 'function') fail('JWT verifier required');
   return http.createServer(async (req, res) => {
     const started = Date.now();
@@ -216,7 +224,7 @@ export function createBridge({ verifyJWT, upstream = UPSTREAM, isCodexEnabled = 
       let parsed;
       try { parsed = JSON.parse(body.toString('utf8')); } catch { return jsonResponse(res, 400, { error: 'Invalid JSON' }); }
       const messages = Array.isArray(parsed) ? parsed : [parsed];
-      const allowed = allowedTools(isCodexEnabled(), isPeerEnabled());
+      const allowed = allowedTools(isCodexEnabled(), isPeerEnabled(), isLaunchEnabled());
       const rejected = messages.find(m => !inspectMessage(m, allowed));
       if (!messages.length || messages.length > 20 || rejected) {
         // Report only MCP method names, never arguments, tool names, project paths, or tokens.

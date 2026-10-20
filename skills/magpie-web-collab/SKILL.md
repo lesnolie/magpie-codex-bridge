@@ -29,24 +29,80 @@ MCP server/tunnel/agent process inside this Skill.
 2. Create/resume a **single** ego TaskSpace named `magpie-web-collab <PROJECT>` and a **single** page `p1` for ChatGPT Web. All participating harnesses targeting the same project should use the same space/page when supported; never create a fresh space for every round. If another agent owns an active turn, coordinate and don't concurrently send into its composer.
 3. Use the **exact ChatGPT conversation URL** supplied by the user or **observed in this ego-browser page**. For ChatGPT-initiated MCP handoffs, the exact URL must be supplied by the user because MCP doesn't reveal the current conversation URL. Do not infer it from chat titles, another tab or an older binding. Before **every** send read `await page.url()` and require an exact match.
 4. Read via `snapshot()`; compose via `fill()` or `keyboard.insertText()`; click the verified Send control ONCE. Wait for the web reply to finish rather than duplicating on a slow response. If ego asks for authentication/captcha/user control, hand off once and stop; do not bypass controls, scrape credentials or fall back to another browser.
-5. **Project check only at initial pairing or when project/conversation identity changes:** ask ChatGPT to verify the intended project's presence with Magpie MCP `projects` and a harmless `read_file`. Then reuse that verified binding. Magpie currently exposes **Codex Desktop registered projects**, so other agents' files must live in an already registered and allowed project for Magpie to read them. This Skill does not extend Magpie's project allowlist.
+5. **Automatically perform project pairing once per new project/chat identity**, with no separate human confirmation round: the first useful browser message asks ChatGPT Web to check the exact registered Magpie MCP `projects` entry and a harmless `read_file` while addressing the actual task. Once the matching project/chat is verified, continue directly; do not repeat the check every iteration or ask for an ACK. A mismatch is a blocker, not a reason to guess another project. Magpie currently exposes Codex Desktop registered projects; this Skill cannot extend its allowlist.
 6. The local harness executes its work with **its own native tools and permissions**. Ask ChatGPT Web for independent planning/review only when useful, with Magpie MCP reading the actual source/diff. Never paste credentials, full source trees or private logs into chat.
 
-## Minimal messages, no confirmation ping-pong
+## Automatic task-and-review loop (the default)
 
-Use a short envelope when crossing the browser:
+**Once the user has authorized a goal, KEEP GOING through the full goal.**
+No HELLO/ACK/RECEIVED ping-pong; no repeating “may I continue?”;
+no separate approval for each stage, code change or ChatGPT review inside
+the already authorized project/permissions. This is an active agent-turn
+workflow, NOT a persistent daemon or promise to run after the agent stops.
+
+1. **Join once:** Read the live ego-browser Skill instructions, resume the
+   same browser page and confirm its exact URL. Pair the project once when
+   starting a different project/chat; do this as part of a useful task
+   message, not a standalone ritual. Treat chat/project mismatch as BLOCKED.
+2. **Execute autonomously:** The native harness plans, edits, tests and
+   examines results under the user's original scope and existing local
+   approval policy. Do not wait for ChatGPT to approve routine intermediate
+   steps. Run safe, reversible steps before requesting a review.
+3. **Send only meaningful checkpoints:** After a coherent change, decision
+   needing independent judgment, or genuine blocker, send one short
+   `EXECUTED` message to the already verified ChatGPT conversation through
+   ego-browser. Give a task ID and evidence pointers; ChatGPT uses Magpie MCP
+   to inspect actual source/diff. Do not dump files or whole logs in chat.
+4. **Automatically read and act:** Wait for the ChatGPT response to finish
+   using the documented ego page capabilities; read the *new response*, not
+   the entire old thread again when the browser interface allows it.
+   Interpret the message by meaning, not a compulsory magic keyword:
+   - **Accepted + work remains:** proceed with the next already authorized
+     step of the original goal, even if ChatGPT omitted the word PLAN.
+   - **Specific defect or change request:** apply it using native harness
+     tools, test, then send the next meaningful EXECUTED checkpoint.
+   - **Final acceptance + original goal fully complete:** send at most one
+     final DONE (only if useful), record final state and stop.
+   - **Real missing permission, browser error, conflicting requirements or
+     changed destination:** report BLOCKED with exactly the needed user
+     action; don't claim autonomous continuation past the blocker.
+5. **Repeat steps 2–4 within the same running agent turn** until the full
+   authorized goal is complete or genuinely blocked. Intermediate passing
+   tests and successful review are *not* final DONE if authorized steps
+   remain. Do not impose an arbitrary “two rounds only” limit, but detect
+   repeated identical replies/no-progress cycles and stop with a precise
+   blocker rather than flooding the chat or burning tokens.
+6. **Deduplicate and preserve context:** Track the active project, original
+   goal, task ID, last processed reply, and completed checkpoint locally
+   using the harness's existing state/checkpoint mechanism (for native
+   Codex Desktop, continue using `chat-session.mjs`). One browser Send
+   attempt must not become two due to a timeout. Never process old messages
+   as new orders or send into the wrong chat. Continue existing work on an
+   intermediate PASS; do not spawn an additional agent/thread to resume it.
+
+### Brief browser message
 
 ```text
 [MAGPIE] EXECUTED
-PROJECT: <exact registered name>
-TASK: <stable identifier>
-RESULT: <work done + evidence, 1–3 sentences>
-NEXT: <specific requested review/next action, if any>
+PROJECT: <registered project>
+TASK: <stable task ID>
+RESULT: <what changed, what was tested, and where to review>
+NEXT: <only an actionable question or next stage, if useful>
 ```
 
-`EXECUTED` means a stage is ready for review, not that the user's entire goal is finished. Other permitted statuses are `PLAN` (new instructions or repair), `DONE` (complete), and `BLOCKED` (genuine blocker). Don't send HELLO / ACK / RECEIVED sequences, repeated project checks, empty status messages, or repeated permission questions for already authorized work. Ask once **only** for a genuinely new authorization, such as modifying an unrelated project, changing the destination chat, publishing, escalating privileges or overcoming a real sign-in prompt. ChatGPT replies should include evidence or one actionable next step.
+Use `PLAN` for an actionable review decision or next stage, `DONE` for
+completion of the entire user goal, and `BLOCKED` for a real obstacle.
+Structured tags are optional for ChatGPT replies: never demand a
+one-word ACK, “approved, continue?” or mechanical handshakes. Avoid
+unnecessary browser snapshots; reuse the same page, and focus on newly
+returned messages when supported.
 
-On an intermediate PASS, **continue the original authorized task**. Only declare DONE after the whole original goal is complete. Preserve existing local checkpoints if the harness already implements them; do not replace them with a new duplicate state store.
+**Approval boundary:** No new confirmation for work already covered by the
+user's goal and the harness's local permission mode. A new authorization
+is still required when expanding to another project, escalating local
+permissions, deploying/publishing without prior consent, handling login
+or CAPTCHA, or changing the ChatGPT destination. The Skill never overrides
+the harness's native approval prompts.
 
 ## Native harness adapters (examples, NOT separate protocols)
 

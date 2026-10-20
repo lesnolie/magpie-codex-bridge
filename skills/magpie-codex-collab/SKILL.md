@@ -11,6 +11,33 @@ existing MCP connector gives ChatGPT access to validated Codex Desktop projects.
 This Skill does **not** launch Codex app-server, create a second Cloudflare tunnel,
 fetch credentials, or install its own MCP server.
 
+## Intermediate verification is not final DONE
+
+**Track the original authorized user goal, not merely the current review round.**
+A passing read-only check, a successful replay, or ChatGPT accepting a test
+result verifies that stage; it does **not** automatically complete a wider goal.
+
+Use the existing bridge-compatible controls:
+- **PLAN (accepted, continue)**: review passed and the original authorized
+  goal still has concrete steps. ChatGPT gives its findings and precise next
+  action; Codex records PLAN_RECEIVED and continues. PLAN need not mean a bug.
+- **PLAN (repair)**: review found a specific defect; state evidence and fix.
+- **DONE (final)**: only if the *entire* user-authorized goal is complete,
+  all required acceptance checks pass, and no approved action remains.
+- **BLOCKED**: a real blocker, missing permission or required user input.
+
+Do not ask ChatGPT to **"只回复 DONE"** after every review. Ask for
+independent evidence-based findings and next steps. Do not limit ChatGPT to a
+single-word reply except for explicit one-off identity handshakes. If review
+passes but implementation or analysis remains, keep the task active.
+
+This policy deliberately preserves the current CLI protocol. Do **not**
+write new checkpoint states (VERIFIED/CONTINUE/COMPLETE) to
+`chat-session.mjs`; intermediate acceptance uses PLAN_RECEIVED. Respect
+the user's authorization: if proceeding requires a newly authorized write,
+report the result and ask rather than silently expanding scope. Never
+promise autonomous background continuation without an active Codex turn.
+
 ## Capabilities and gate
 
 All ChatGPT Web work goes through **ego-browser** (the ego lite browser, where
@@ -35,9 +62,10 @@ guide describes; keep Chinese text inside the file.
 - Read the conversation with `snapshot()`; type into the ChatGPT composer
   with `fill()` (or `keyboard.insertText()` for the rich editor) and press its
   Send button once. Check `await page.url()` before every send.
-- Do **not** call `task.finish()` while the task is waiting for ChatGPT; that
-  would close the tab. Only on DONE or BLOCKED call
-  `await task.finish({ keep: ["p1"] })` so the user keeps the conversation.
+- Do **not** call `task.finish()` while waiting for ChatGPT or after an
+  accepted **intermediate** stage. Only after **final goal DONE** or a genuine
+  BLOCKED state call `await task.finish({ keep: ["p1"] })` so the user keeps
+  the conversation.
 - If ChatGPT asks for sign-in, a captcha or any browser-owned prompt, call
   `await task.handOff()`, set waiting-for USER, and tell the user what to do.
   If the user takes control or the space becomes inactive, stop and wait;
@@ -250,10 +278,15 @@ receipt means a task was executed.
    CHAT_GENERATION: ...
    Neither source code nor secrets/log bodies should be pasted. ChatGPT pulls
    code and diffs through its already connected Magpie MCP tools.
-7. After receiving PLAN, execute with native Codex. On EXECUTED, record state
-   locally and send one completion message to the verified page `p1`. Ask
-   ChatGPT to independently inspect files, git diff and test evidence. The
-   reply should be PLAN (further fixes), DONE, or BLOCKED.
+7. After receiving PLAN, execute with native Codex. On EXECUTED, record
+   state locally and send one **stage-review** message to verified page `p1`.
+   Request independent review of files, diff, test evidence and progress
+   against the original authorized user goal; do not demand "only DONE".
+   The reply may be **PLAN with accepted findings plus the next step**,
+   PLAN with concrete repairs, final DONE, or a specific BLOCKED. For
+   accepted intermediate work, checkpoint PLAN_RECEIVED and implement the
+   next authorized step. Never mark the whole task DONE just because a
+   substep passed its review.
 8. Before EVERY outbound message, refresh local status. Send only if the
    taskId, generation and browser-observed URL still match the binding.
    Never send to the previous chat after a transfer. If the tab is loading,
@@ -272,6 +305,11 @@ node <skill-dir>/chat-session.mjs checkpoint --project "<exact-name>" --task-id 
 
 States: INIT, PLAN_RECEIVED, EXECUTING, EXECUTED_LOCAL, EXECUTED_SENT, DONE, BLOCKED.
 Waiting for: none, GPT_PLAN, GPT_REVIEW, USER.
+
+Before writing DONE, check that the original authorized user goal is
+finished—not merely the current round's verification. For a verified
+intermediate step, keep the existing task active, record PLAN_RECEIVED and a
+specific nextStep, and only continue during a real Codex turn.
 
 ### When the user changes ChatGPT conversations
 

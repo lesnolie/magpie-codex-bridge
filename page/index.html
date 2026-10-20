@@ -54,6 +54,18 @@
       <p class="status-line" id="codexStatus" role="status" aria-live="polite"></p>
     </section>
 
+    <section class="card" aria-labelledby="peerHeading">
+      <h2 id="peerHeading">Agent 双向通信</h2>
+      <div class="row">
+        <div class="row-text">
+          <label for="peerMessagingEnabled">允许 ChatGPT 发送 Agent 消息</label>
+          <p class="hint">仅向已在本地注册的 Agent 会话排队发送命令。Harness 在运行中通过 Magpie MCP 读取，回复通过 ego-browser 发往 ChatGPT Web。此开关不授权启动进程或扩大文件访问权限。</p>
+        </div>
+        <input class="switch" id="peerMessagingEnabled" type="checkbox">
+      </div>
+      <p class="status-line" id="peerStatus" role="status" aria-live="polite"></p>
+    </section>
+
     <section class="card" aria-labelledby="remoteHeading">
       <h2 id="remoteHeading">远程连接</h2>
       <div class="row">

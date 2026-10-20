@@ -72,7 +72,7 @@ export function desktopPrompt({project,goal,chatUrl,taskId,launchId}){
     'TARGET_CHAT: '+chatUrl,
     '',
     'Follow the installed magpie-codex-collab Skill. IMPORTANT:',
-    '1. First open EXACT TARGET_CHAT in ONE Codex-managed ChatGPT tab.',
+    '1. First open EXACT TARGET_CHAT in ONE ego-browser page (not the Codex in-app browser).',
     '2. Ask ChatGPT there to verify this same project using Magpie MCP projects and read_file.',
     '3. Only after the verification, run local chat-session prepare/activate for this TASK_ID and TARGET_CHAT.',
     '4. Do not assume the deep link started a turn. Do not use another ChatGPT chat.',

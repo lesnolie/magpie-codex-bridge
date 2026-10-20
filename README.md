@@ -257,8 +257,8 @@ On the FIRST task in a Codex Desktop workspace:
    the installed \`$magpie-codex-collab\` Skill invocation prefilled.
    **Click Send once in Codex Desktop**. The deep link itself DOES NOT
    run the agent, nor does MCP claiming \`opened_unconfirmed\` mean it ran.
-4. Native Codex opens exactly the supplied ChatGPT URL in its one managed
-   in-app browser tab; ChatGPT verifies the project over Magpie MCP (projects
+4. Native Codex opens exactly the supplied ChatGPT URL in its one ego-browser
+   page; ChatGPT verifies the project over Magpie MCP (projects
    + read_file). Only after \`PROJECT_VERIFIED\` may native Codex locally
    activate the chat binding and execute the goal. The old chat is unchanged
    until that verified activation.
@@ -292,9 +292,10 @@ and assign to **Codex**. This does not require the plugin's `codex app-server`
 task runner. Native Codex executes code/tests with its own harness, while
 ChatGPT Web plans and reviews using the **existing protected Magpie MCP**.
 
-The Skill tells the native Codex Agent to use its official
-`control-in-app-browser` integration, **if present**, to maintain one
-dedicated ChatGPT tab. It must stop safely if this browser is not available.
+The Skill tells the native Codex Agent to use **ego-browser** (ego lite,
+signed in to ChatGPT) to maintain one dedicated ChatGPT page in a single
+TaskSpace; Codex's in-app browser is no longer used. It must stop safely if
+ego-browser is not available.
 The Skill is an agent workflow, not an independently running browser daemon.
 
 ### Stable conversation identity and switching
@@ -310,7 +311,7 @@ stored **outside the repository**. Chat URLs are restricted to exact
 The handoff protocol is **prepare → verify workspace + browser URL → activate**.
 A pending request NEVER replaces the active chat. The native Codex Skill
 verifies that ChatGPT called the correct Magpie MCP project and that the
-actual in-app browser URL matches, then locally activates it. A stale
+actual ego-browser page URL matches, then locally activates it. A stale
 generation cannot update the new chat's checkpoint. Completed/blocked tasks
 can be replaced locally with `prepare --new-task true`. Remote clients
 cannot start a different task under the same active binding.
@@ -339,10 +340,10 @@ the previous task is DONE/BLOCKED, use `prepare --new-task true`.
 
 **Limits:** The local Skill does not control a ChatGPT Web conversation
 opened in some unrelated user browser without its direct URL or a new
-user-approved binding. It sends a new **user message** through the supported
-in-app browser, not a forged assistant response. It cannot send after the
+user-approved binding. It sends a new **user message** through ego-browser,
+not a forged assistant response. It cannot send after the
 Codex agent has stopped running, and the presence of the Skill does not prove
-that your particular Codex Desktop build exposes `control-in-app-browser`.
+that ego lite is running and signed in to ChatGPT.
 Real-world Windows end-to-end validation is still required before calling
 automated ChatGPT wake-up production-ready.
 

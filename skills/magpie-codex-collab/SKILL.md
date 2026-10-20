@@ -13,20 +13,42 @@ fetch credentials, or install its own MCP server.
 
 ## Capabilities and gate
 
-Before touching a ChatGPT tab, check that native Codex provides the official
-control-in-app-browser skill and its runtime. When available, follow its
-documentation, initialize the runtime exactly once, obtain the **iab** browser
-and reuse **one dedicated tab**. In environments exposing the documented
-browser runtime, run setupBrowserRuntime() once, obtain
-agent.browsers.get("iab"), create only one managed tab, and reuse its exact
-tab handle for all later navigation. Set visibility when the browser supports
-it and use tab.markHandoff()/tab.markDeliverable() to prevent automatic cleanup
-from closing the tab. Reclaim the same tab after transient timeouts. Never
-call undocumented private ChatGPT APIs,
-read cookies/tokens, automate the user's other browsers, or impersonate a native
-assistant reply. If in-app browser is unavailable, report **browser-unavailable**
-and leave pending work saved locally. Do not claim that a notification was sent.
-Never silently fall back to screen-click Computer Use.
+All ChatGPT Web work goes through **ego-browser** (the ego lite browser, where
+the user is already signed in to ChatGPT). Do **not** use Codex's in-app
+browser, Chrome, Computer Use or any other browser for this workflow.
+
+Before touching a ChatGPT tab, run `ego-browser skill` once in this session and
+follow the guide it prints (the installed ego-browser Skill says the same). On
+Windows, if `ego-browser` is not on PATH, use
+`%USERPROFILE%\.local\share\ego\active_version_dir\ego-browser.exe`. In
+PowerShell, write each round as a new UTF-8 `.mjs` file and run it with
+`ego-browser nodejs -e "await import('file:///C:/.../round-01.mjs')"`, as the
+guide describes; keep Chinese text inside the file.
+
+- Use exactly **one TaskSpace** named `magpie-codex-collab <PROJECT>` and
+  resume it every round with `await taskSpace("magpie-codex-collab <PROJECT>")`
+  (names are unique, so this resumes rather than duplicates). Print its
+  `spaceId` once.
+- Use exactly **one Page, `p1`**, for the ChatGPT conversation. Navigate only
+  `p1` with `goto()`; never open a second ChatGPT page. After a transient
+  timeout, recover inside the same space and page; never open a new space.
+- Read the conversation with `snapshot()`; type into the ChatGPT composer
+  with `fill()` (or `keyboard.insertText()` for the rich editor) and press its
+  Send button once. Check `await page.url()` before every send.
+- Do **not** call `task.finish()` while the task is waiting for ChatGPT; that
+  would close the tab. Only on DONE or BLOCKED call
+  `await task.finish({ keep: ["p1"] })` so the user keeps the conversation.
+- If ChatGPT asks for sign-in, a captcha or any browser-owned prompt, call
+  `await task.handOff()`, set waiting-for USER, and tell the user what to do.
+  If the user takes control or the space becomes inactive, stop and wait;
+  resume afterwards with `takeOverTaskSpace(<spaceId>)`.
+
+Never call undocumented private ChatGPT APIs, read cookies/tokens, clear
+browser state, or impersonate a native assistant reply. If ego-browser is
+unavailable (command missing, ego lite not running, or the space cannot be
+created), report **browser-unavailable** and leave pending work saved locally.
+Do not claim that a notification was sent, and never fall back to another
+browser.
 
 The Skill's bundled local CLI is the file named chat-session.mjs **beside this
 SKILL.md** in the installed skill directory. Use an absolute path to it when
@@ -177,7 +199,7 @@ LAUNCH_ID and TARGET_CHAT:
    three values in your prompt, and \`launch.status\` to be
    opened_unconfirmed or queued_unconfirmed. If mismatch STOP (it may be an
    outdated/duplicate launch).
-2. Use ONE managed IAB tab, open exactly TARGET_CHAT. Ask that ChatGPT chat to
+2. In the ego-browser TaskSpace, open exactly TARGET_CHAT in page `p1`. Ask that ChatGPT chat to
    call the project list and harmless source read using the intended Magpie
    MCP connector and reply PROJECT_VERIFIED with the exact project name.
    Verify it is the browser-observed chat URL, not a guessed chat title.
@@ -195,7 +217,7 @@ LAUNCH_ID and TARGET_CHAT:
    unavailable, skip queue binding; later launches will open a Desktop composer.
 5. Only AFTER pairing, execute the requested goal and run the normal
    ChatGPT Web PLAN / EXECUTED / REVIEW loop. Mark checkpoints and keep
-   the single managed browser tab.
+   the single ego-browser page `p1`.
 
 Never claim an unopened URI composer, a stored queue message or an MCP
 receipt means a task was executed.
@@ -204,9 +226,9 @@ receipt means a task was executed.
 
 1. Read local state:
    node <skill-dir>/chat-session.mjs status --project "<exact-name>"
-2. Read the official control-in-app-browser instructions. Open/claim the ONE
-   managed tab; after verified initialization navigate only that tab. Keep it
-   available when waiting, do not close or create duplicate ChatGPT tabs.
+2. Run `ego-browser skill` (once per session) and resume the one TaskSpace
+   `magpie-codex-collab <PROJECT>`; navigate only page `p1`. Keep it open
+   when waiting (no `finish()`), do not close or create duplicate ChatGPT pages.
 3. For a first conversation or an explicit new task, use the conversation's
    exact browser-observed URL (https://chatgpt.com/c/... or a Project chat URL).
    node <skill-dir>/chat-session.mjs prepare --project "<exact-name>" --task-id "<id>" --url "<chat-url>"
@@ -221,7 +243,7 @@ receipt means a task was executed.
 5. Activate only AFTER that check. Use the requestId returned by prepare:
    node <skill-dir>/chat-session.mjs activate --project "<exact-name>" --request-id "<uuid>" --observed-url "<browser-observed-url>" --verified-project "<exact-MCP-project-name>"
 6. Run Codex's own coding environment. Use short structured control messages
-   in the managed tab:
+   in ego-browser page `p1`:
    [MAGPIE] STATE: INIT | PLAN | EXECUTED | DONE | BLOCKED
    TASK_ID: ...
    ITERATION: ...
@@ -229,15 +251,18 @@ receipt means a task was executed.
    Neither source code nor secrets/log bodies should be pasted. ChatGPT pulls
    code and diffs through its already connected Magpie MCP tools.
 7. After receiving PLAN, execute with native Codex. On EXECUTED, record state
-   locally and send one completion message to the verified active tab. Ask
+   locally and send one completion message to the verified page `p1`. Ask
    ChatGPT to independently inspect files, git diff and test evidence. The
    reply should be PLAN (further fixes), DONE, or BLOCKED.
 8. Before EVERY outbound message, refresh local status. Send only if the
    taskId, generation and browser-observed URL still match the binding.
    Never send to the previous chat after a transfer. If the tab is loading,
    already generating or showing a retry/error, wait or repair rather than
-   resending. Poll page state at a reasonable interval only while a real
-   Codex turn is active. Do not claim continuous unattended monitoring.
+   resending. While ChatGPT is generating, wait in one round with
+   `waitForFunction()` / `waitForSelector()` (the Stop button disappearing)
+   instead of fixed sleeps, then read the reply with `snapshot()`. Poll only
+   while a real Codex turn is active. Do not claim continuous unattended
+   monitoring.
 
 ## Checkpoints and transfer
 
@@ -251,18 +276,18 @@ Waiting for: none, GPT_PLAN, GPT_REVIEW, USER.
 ### When the user changes ChatGPT conversations
 
 - If the user changes to a **different window containing the same conversation**,
-  restore the saved exact URL in the managed tab. No rebind is needed.
-- If the managed tab has navigated to a **new conversation**, do not guess that
+  restore the saved exact URL in page `p1`. No rebind is needed.
+- If page `p1` has navigated to a **new conversation**, do not guess that
   it belongs to the current task. Freeze outgoing messages. Run a new prepare
   for the same taskId and browser-observed new URL. Send a HANDOFF to the
   new conversation (read using the local handoff command) and require
   an independent Magpie MCP workspace verification. Then activate the
   pending request. Do not swap the pointer before verification.
-- If the new conversation is **outside the managed browser**, native Codex
-  cannot discover it automatically. ChatGPT can call the Magpie tool
-  chat_session_request_transfer with the exact new URL (supplied by the
-  user/browser), project and taskId; it remains pending until native
-  Codex can open that URL in the managed tab, verify workspace, and activate.
+- If the new conversation is **outside page `p1`** (another tab, window or
+  device), native Codex cannot discover it automatically. ChatGPT can call the
+  Magpie tool chat_session_request_transfer with the exact new URL (supplied
+  by the user/browser), project and taskId; it remains pending until native
+  Codex can open that URL in page `p1`, verify workspace, and activate.
   Without a URL or reachable browser, stop safely and ask for the direct
   ChatGPT conversation link. The tool never silently changes the current chat.
 - For a replacement after a 404 or long chat, preserve the checkpoint.
@@ -280,7 +305,7 @@ the browser-observed URL MUST equal a URL supplied to prepare (when specified).
 The actual browser workspace check is performed by the native Codex agent;
 the CLI's --verified-project assertion does not cryptographically authenticate
 a ChatGPT account. Therefore this workflow still needs Windows real-machine
-validation of Codex Desktop in-app-browser availability.
+validation that ego lite is running and signed in to ChatGPT.
 
 ## Limits
 

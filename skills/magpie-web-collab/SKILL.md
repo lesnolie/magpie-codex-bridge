@@ -1,43 +1,51 @@
 ---
 name: magpie-web-collab
-description: Connect a running Claude Code or Codex agent to an existing ChatGPT Web conversation via the installed ego-browser Skill and the existing Magpie Local Review MCP. Use for brief two-way planning, code review and progress messages, not as a replacement for the agent's execution engine.
+description: Harness-neutral ChatGPT Web collaboration using the installed ego-browser Skill and Magpie Local Review MCP. For any compatible local agent running in a desktop application, terminal CLI, IDE, or app-server that can actually invoke ego-browser.
 ---
 
-# Magpie Web Collaboration (Claude Code + Codex)
+# Magpie ↔ ChatGPT Web: Harness-neutral collaboration
 
-You are the **local executing agent**. ChatGPT Web is the external planner/reviewer. Keep the existing execution engine: Claude Code stays Claude Code; Codex Desktop, CLI and app-server stay Codex. **ego-browser is only the communication transport.** Do not add another browser bridge, tunnel, MCP server or AI execution process.
+**Goal:** Let ANY agent harness exchange useful messages with the user's exact ChatGPT Web conversation while keeping its **existing** tools, model, project environment, approvals and task lifecycle. The communication transport is **ego-browser**; this Skill is NOT an execution harness, agent launcher, model provider, replacement MCP server or ChatGPT private API client.
 
-## Prerequisites
+**Compatibility contract:** This is **capability-based**, not a product-name allowlist. Desktop, CLI, IDE and headless app-server agents are eligible ONLY if that specific running agent can (a) load this Skill or equivalent instructions, (b) invoke a local executable/shell tool reaching the **same** authenticated ego-browser runtime, and (c) access a ChatGPT conversation authorized by the user. A branded Desktop app that cannot execute tools, a remote/cloud container isolated from local ego, or a sandbox without browser access cannot be made compatible just by installing a SKILL.md file.
 
-- The user has installed and authenticated ego (lite), installed its `ego-browser` Skill for this agent, and can open ChatGPT Web there.
-- The target ChatGPT conversation URL is supplied by the user **or observed in the active ego-browser page**. Never guess a chat URL from a title, previous task, or another project.
-- ChatGPT Web already has the **Magpie Local Review** MCP connector. Its project list currently comes from Codex Desktop's registered workspaces. A Claude-owned working directory must also be represented by the **same** registered project if Magpie is to read and review its files. The browser alone cannot grant Magpie extra filesystem access.
-- A local agent must have permission to use ego-browser. If permissions or login are missing, stop and report one specific blocker. Do not recommend bypassing sandbox restrictions as a default.
+## A single browser transport for all harnesses
 
-## Minimal protocol — do not chat for the sake of chatting
+1. Run `ego-browser skill` **once per local agent session** and follow its live guide. The executable may be at `%USERPROFILE%\.local\share\ego\active_version_dir\ego-browser.exe` on Windows. Never assume that a CLI flag or skill path works in a different harness without checking.
+2. Create/resume a **single** ego TaskSpace named `magpie-web-collab <PROJECT>` and a **single** page `p1` for ChatGPT Web. All participating harnesses targeting the same project should use the same space/page when supported; never create a fresh space for every round. If another agent owns an active turn, coordinate and don't concurrently send into its composer.
+3. Use the **exact ChatGPT conversation URL** supplied by the user or **observed in this ego-browser page**. For ChatGPT-initiated MCP handoffs, the exact URL must be supplied by the user because MCP doesn't reveal the current conversation URL. Do not infer it from chat titles, another tab or an older binding. Before **every** send read `await page.url()` and require an exact match.
+4. Read via `snapshot()`; compose via `fill()` or `keyboard.insertText()`; click the verified Send control ONCE. Wait for the web reply to finish rather than duplicating on a slow response. If ego asks for authentication/captcha/user control, hand off once and stop; do not bypass controls, scrape credentials or fall back to another browser.
+5. **Project check only at initial pairing or when project/conversation identity changes:** ask ChatGPT to verify the intended project's presence with Magpie MCP `projects` and a harmless `read_file`. Then reuse that verified binding. Magpie currently exposes **Codex Desktop registered projects**, so other agents' files must live in an already registered and allowed project for Magpie to read them. This Skill does not extend Magpie's project allowlist.
+6. The local harness executes its work with **its own native tools and permissions**. Ask ChatGPT Web for independent planning/review only when useful, with Magpie MCP reading the actual source/diff. Never paste credentials, full source trees or private logs into chat.
 
-1. Run `ego-browser skill` **once per agent session** and follow its printed instructions. On Windows, the executable may be `%USERPROFILE%\.local\share\ego\active_version_dir\ego-browser.exe`.
-2. Reuse **one** ego TaskSpace named `magpie-web-collab <AGENT> <PROJECT>` and **one** ChatGPT page `p1`. Use `snapshot()` to read, and `fill()` or `keyboard.insertText()` then the page's verified Send button to post. Check `await page.url()` before **each** send.
-3. When joining a **new chat or project**, send **one** short request to ChatGPT Web to verify the exact Magpie project with `projects` and a harmless `read_file`. Do not send source files, access tokens or full diffs through the chat; ChatGPT retrieves evidence from the existing MCP connector. Only continue after the project and target URL match. **Do not repeat this verification on each turn.**
-4. Work normally in the local agent. Post to the verified ChatGPT chat **only when needed**: one useful initial goal/plan if necessary, one completed stage with test evidence, or one concrete blocker. ChatGPT's review response should be actionable; treat `PLAN` as continue/repair, `DONE` as final acceptance and `BLOCKED` as a genuine stop.
-5. For each browser message use this compact envelope (no ritual acknowledgements):
-   ```text
-   [MAGPIE] <PLAN|EXECUTED|DONE|BLOCKED>
-   PROJECT: <exact Magpie project>
-   TASK: <stable task ID>
-   RESULT: <one to three useful sentences>
-   NEXT: <specific action, only if needed>
-   ```
-   Preserve the same task ID for a continuing goal. Never ask ChatGPT to reply with only an artificial ACK, and do not require the user to confirm steps that are already authorized.
-6. When the tab is generating, loading or retrying, wait for completion and read the response. Do not blindly resend; avoid duplicates. If the observed URL changes, freeze outgoing messages and reverify before continuing. Do not `task.finish()` during a pending round; keep `p1` for the user.
+## Minimal messages, no confirmation ping-pong
 
-## Which execution mode?
+Use a short envelope when crossing the browser:
 
-- **Claude Code:** use the Claude agent's native editing/testing tools, and this Skill only for browser messages. The current Magpie MCP does **not** remotely start Claude or collect Claude tasks through a Claude-native tool. It can review work in a registered, allowed project.
-- **Codex CLI / TUI:** use native Codex execution plus this Skill and ego-browser for ChatGPT messages. No `codex app-server` is required to operate the browser.
-- **Codex app-server:** a Magpie `codex_submit_task` task is an isolated Codex app-server turn, not a Codex Desktop GUI thread. If the submitting tool provides `chatUrl`, use this Skill from inside that turn to send updates via ego-browser. If ego cannot launch in the process sandbox, return `browser-unavailable`; the original MCP task result remains available to ChatGPT.
-- **Native Codex Desktop launch from ChatGPT:** continue to use `magpie-codex-collab` and its bundled `chat-session.mjs` for the existing `codex_collab_start` launch ticket, project verification, URL transfer and native thread binding. This general Skill **does not replace** those anti-cross-chat checks.
+```text
+[MAGPIE] EXECUTED
+PROJECT: <exact registered name>
+TASK: <stable identifier>
+RESULT: <work done + evidence, 1–3 sentences>
+NEXT: <specific requested review/next action, if any>
+```
 
-## Safety and finish
+`EXECUTED` means a stage is ready for review, not that the user's entire goal is finished. Other permitted statuses are `PLAN` (new instructions or repair), `DONE` (complete), and `BLOCKED` (genuine blocker). Don't send HELLO / ACK / RECEIVED sequences, repeated project checks, empty status messages, or repeated permission questions for already authorized work. Ask once **only** for a genuinely new authorization, such as modifying an unrelated project, changing the destination chat, publishing, escalating privileges or overcoming a real sign-in prompt. ChatGPT replies should include evidence or one actionable next step.
 
-The **same** project and browser-verified chat must be used across a round. Do not silently change authorization scope, push to GitHub, publish or modify an unrelated project. Only the specific user's approved goal grants write permission. Never read cookies/tokens or call undocumented ChatGPT APIs. A browser Send click is **not** proof ChatGPT processed the message; check the page, and report uncertainty truthfully. ChatGPT Web cannot be awakened after the agent's own turn has ended merely by this Skill.
+On an intermediate PASS, **continue the original authorized task**. Only declare DONE after the whole original goal is complete. Preserve existing local checkpoints if the harness already implements them; do not replace them with a new duplicate state store.
+
+## Native harness adapters (examples, NOT separate protocols)
+
+| Harness | How work executes | How Web communication happens |
+| --- | --- | --- |
+| Codex Desktop | Native Desktop thread | This ego-browser transport, plus existing `magpie-codex-collab` identity/launch rules |
+| Codex CLI / TUI | Native terminal Codex turn | Same ego-browser transport |
+| Codex app-server | Codex app-server thread from Magpie `codex_submit_task` | Same transport **when** explicitly configured with `chatUrl` and ego can run; otherwise existing MCP result |
+| Claude Code Desktop or CLI | Local Claude Code tools and permissions | Same ego-browser transport if the running session can invoke it |
+| Other terminal, IDE or desktop agent | Its existing agent harness | Same ego-browser transport if it can load instructions and invoke ego locally |
+
+For `codex_collab_start`, do **not** replace the native Desktop launch ticket checks and local `chat-session.mjs` guard. They prevent cross-task/project/channel sends. For app-server `codex_submit_task`, the optional `chatUrl` only adds an opt-in browser instruction; it does not change execution transport or guarantee browser access.
+
+## Failure mode
+
+On browser-unavailable, missing capabilities, project mismatch, wrong URL, expired login, or unsupported harness environment: **do not fake a send**. Report one clear reason and preserve the existing task/result path. A successful browser click or queue receipt by itself does not prove ChatGPT read, accepted or responded. The agent must still be actively executing to continue interaction; installing this Skill alone does not create an always-on agent.

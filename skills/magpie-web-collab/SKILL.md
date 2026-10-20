@@ -14,6 +14,25 @@ The directions are **transport-specific, not role-specific**:
 
 Each peer decides whether to **act, answer, ask, or continue** from the *received command*, the current task, available tools and permissions. Never infer roles from the sender or assign all edits to one side and all reviews to the other.
 
+## Explicit user-selected harness routing
+
+**The user decides which harness ChatGPT Web contacts.** “Ask Claude” means
+`harness: claude`; “ask Codex” means `harness: codex`; never decide
+the recipient based on whichever agent last responded or happens to be
+available. ChatGPT sends `agent_message_send` with the requested
+`harness`, the exact bound `chatUrl`, task/message IDs and actual
+command. The MCP mailbox selects a **unique matching registered session**
+without requiring the user to look up a session ID. Use optional `project`
+or `mode` (`desktop`, `cli`, `app-server`, `ide`, `other`)
+only if needed to distinguish multiple sessions of that same harness.
+
+If no matching session exists, explain that the requested harness is not
+connected; if several remain ambiguous, ask for its project/mode. Do **not**
+select another harness, infer the user's intent from model/provider choice,
+or claim the target was launched or actually executed the command. The
+current generic MCP inbox queues to registered sessions; a new native
+Desktop/CLI launch requires a separately supported adapter.
+
 ## Common Magpie MCP peer command inbox
 
 Magpie's existing local plugin-tool MCP service makes the **same** tools
@@ -30,10 +49,12 @@ only where offered by the installed **Magpie Local Review** plugin:
   agents on Magpie's local MCP endpoint, **not remotely to ChatGPT Web**.
 - **ChatGPT Web → local harness:** ChatGPT calls
   `agent_sessions` to find the explicit local session and
-  `agent_message_send` with that `sessionId`, its exact bound
-  `chatUrl`, stable `taskId`, stable unique `messageId`, one command
+  `agent_message_send` with the **user-selected `harness`**, its
+  exact bound `chatUrl`, stable `taskId`, stable unique `messageId`, one command
   (`REQUEST`, `RESULT`, `UPDATE`, `BLOCKED`, `DONE`), and the message.
-  This requires a separate local Magpie **Agent 双向通信** permission
+  The tool resolves a unique registered session automatically; a
+  `sessionId` is needed only when multiple sessions cannot be distinguished
+  by `project` or `mode`. This requires a separate local Magpie **Agent 双向通信** permission
   toggle. `agent_message_status` distinguishes `queued`,
   `delivered` (polled), and `acked` (locally marked processed).
   **None of these states proves task execution.**

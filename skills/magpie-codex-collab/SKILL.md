@@ -29,6 +29,51 @@ been installed in native Codex, use its minimal protocol described here:
 `TASK` and `RESULT`, and `BLOCKED` only for a genuine obstacle.
 **Never require HELLO/ACK/PROJECT_VERIFIED/DONE ping-pong.**
 
+## Common Magpie MCP peer command inbox
+
+Magpie's existing local plugin-tool MCP service makes the **same** tools
+available to compatible harnesses. It is not a second agent registry,
+another tunnel, or a separate execution engine. Use these message tools
+only where offered by the installed **Magpie Local Review** plugin:
+
+- **Local harness → Magpie:** call `agent_register` once per active
+  harness/chat conversation, passing the harness's own identifier, project
+  label and **ego-browser-observed exact chat URL**. Save the returned
+  `sessionId` for this task; registering merely announces an available
+  inbox. It neither grants filesystem permissions nor proves a running
+  turn. Registration and `agent_poll`/`agent_ack` are exposed to local
+  agents on Magpie's local MCP endpoint, **not remotely to ChatGPT Web**.
+- **ChatGPT Web → local harness:** ChatGPT calls
+  `agent_sessions` to find the explicit local session and
+  `agent_message_send` with that `sessionId`, its exact bound
+  `chatUrl`, stable `taskId`, stable unique `messageId`, one command
+  (`REQUEST`, `RESULT`, `UPDATE`, `BLOCKED`, `DONE`), and the message.
+  This requires a separate local Magpie **Agent 双向通信** permission
+  toggle. `agent_message_status` distinguishes `queued`,
+  `delivered` (polled), and `acked` (locally marked processed).
+  **None of these states proves task execution.**
+- **Harness receives:** while an authorized local Agent turn is
+  **actually running**, poll `agent_poll` for its saved session ID and
+  exact chat URL. Process new commands using its own native tools and
+  current permissions. Once that *specific* message has been processed,
+  call `agent_ack` with its message ID. Then return a meaningful reply
+  **via the already verified ego-browser ChatGPT page**, not by claiming
+  the MCP ack is the answer. No polling daemon, repeated HELLO/ACK
+  browser messages or arbitrary execution is required.
+- **Identity and duplicates:** don't let one harness claim to be another;
+  use the harness ID as actually known in the local runtime. The
+  registered name is self-declared in this initial implementation;
+  never misrepresent it as an authenticated Magpie agent identity. On
+  resuming a new harness turn, only reuse a session ID if it belongs to
+  the same intended chat and project. If the harness exits, the mailbox
+  can hold a pending command but cannot wake the harness; never claim
+  delivery until a local poll occurs. Reuse the same message ID for tool
+  retries, not for distinct commands.
+
+The existing native Codex launch/queue MCP tools may still start a native
+Codex turn where supported. For other harnesses, this inbox is a
+**running-agent message channel**, not a universal remote launcher.
+
 ## Browser setup — use ego, no additional browser or server
 
 1. Run `ego-browser skill` once in the running Codex session and obey the

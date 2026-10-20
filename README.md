@@ -1,5 +1,61 @@
 # Magpie Local Project Review (v0.4.28 alpha)
 
+## Implemented: harness-neutral peer command inbox (PR preview)
+
+This branch **adds communication to a registered, already running agent**,
+not a general Desktop/CLI process launcher. It reuses the existing Magpie
+plugin-tool MCP service and Cloudflare Access bridge. The host's Agents tab
+continues to manage agent/model configuration; this plugin does **not**
+create a competing global harness registry.
+
+```text
+ChatGPT Web -> Cloudflare Access / Magpie MCP -> agent_message_send (queue)
+local active agent -> Magpie's local MCP -> agent_poll (retrieve command)
+local active agent -> ego-browser -> verified ChatGPT Web conversation (reply/files)
+```
+
+1. **Local permission:** in Magpie's plugin page enable **Agent 双向通信**,
+   separate from the existing Codex execution toggle. No remote MCP call
+   can enable this option.
+2. **Running agent (any harness with Magpie's local MCP tools):** use
+   `magpie-web-collab`, open the exact ChatGPT conversation with ego-browser,
+   then call local-only `agent_register({harness,project,chatUrl})`.
+   Keep the returned `sessionId` associated with the verified chat.
+3. **ChatGPT Web:** call `agent_sessions` to see locally registered
+   sessions; send a specific command using
+   `agent_message_send({sessionId,chatUrl,taskId,messageId,command,message})`.
+   `command` is REQUEST, RESULT, UPDATE, BLOCKED or DONE. A stable unique
+   messageId makes the delivery idempotent across tool retries.
+4. **Agent while its native turn is active:** call
+   `agent_poll({sessionId,chatUrl})`; perform the actual command under its
+   native local tool permissions; call
+   `agent_ack({sessionId,chatUrl,messageId})` after processing and
+   send any meaningful answer through ego-browser. The local-only polling
+   and ack tools are never exposed through Cloudflare.
+5. **Remote status:** `agent_message_status` reports queued → delivered
+   (polled) → acked (locally processed). **None confirms task execution**;
+   the actual result must come from the agent or an independent check.
+   `activeRecently` is only a recent-poll indicator, not native
+   session liveness.
+
+When ChatGPT Web offers a downloadable task artifact, the harness uses
+the **same ego-browser page** to click the actual Download control,
+verifies the bytes exist on a reachable local filesystem and uses them
+with native tools. Do not guess file paths, invent download APIs or
+execute downloaded code without authorization. This rule is in both
+collaboration Skills, not in the upstream ego-browser Skill.
+
+**Limits:** An exited Desktop/CLI agent cannot poll and therefore cannot
+be automatically reactivated by the mailbox. Registered harness names
+are self-declared session labels, not independently authenticated
+Magpie agent identities. Existing source-inspection projects continue
+to come from the Codex Desktop registry; registering a mailbox session
+does **not** expand file permissions. Generic native process launch
+or direct resume for non-Codex harnesses remains unimplemented; using
+Magpie's Agents page to select models does not itself provide those
+process-control APIs. Production use requires a real-machine round-trip
+with ego and Magpie MCP on the user's machine.
+
 ## Command-driven peer interaction (proposed design / Skill preview)
 
 There is **no predetermined executor, reviewer, planner or owner**.

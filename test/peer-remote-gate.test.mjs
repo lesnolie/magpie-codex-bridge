@@ -9,7 +9,7 @@ const prefix='magpie-codex-bridge_';
 const names=[
   'agent_sessions','agent_message_status','agent_message_send',
   'agent_register','agent_poll','agent_ack',
-  'codex_submit_task','projects', 'agent_run','agent_run_status','agent_run_cancel',
+  'codex_submit_task','projects', 'agent_run','agent_run_status','agent_run_cancel','agent_desktop_focus',
 ];
 
 test('Cloudflare remote gate accepts peer sends only with independent local opt-in', async t => {
@@ -48,6 +48,7 @@ test('Cloudflare remote gate accepts peer sends only with independent local opt-
   assert.ok(!allow.includes(prefix+'agent_run'));
   assert.ok(!allow.includes(prefix+'agent_run_status'));
   assert.ok(!allow.includes(prefix+'agent_run_cancel'));
+  assert.ok(!allow.includes(prefix+'agent_desktop_focus'));
   const previous=hits;
   assert.equal((await ask('tools/call','agent_message_send')).status,403);
   assert.equal(hits,previous,'disallowed tool must never reach upstream');
@@ -65,5 +66,7 @@ test('Cloudflare remote gate accepts peer sends only with independent local opt-
   assert.ok(launched.reply.result.tools.some(x=>x.name===prefix+'agent_run'));
   assert.ok(launched.reply.result.tools.some(x=>x.name===prefix+'agent_run_status'));
   assert.ok(launched.reply.result.tools.some(x=>x.name===prefix+'agent_run_cancel'));
+  assert.ok(launched.reply.result.tools.some(x=>x.name===prefix+'agent_desktop_focus'));
+  assert.equal((await ask('tools/call','agent_desktop_focus')).status,200);
   assert.equal((await ask('tools/call','agent_run')).status,200);
 });

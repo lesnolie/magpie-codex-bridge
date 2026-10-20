@@ -48,28 +48,37 @@ test('select Claude, launch only Claude and deliver task through stdin',()=>{
   assert.equal(status.processCompleted,true);
   assert.equal(status.taskOutcomeVerified,false);
 });
-test('OpenCode runs only OpenCode with native permissions when enabled',()=>{
+test('DeepSeek Harness uses official dsh headless stdin only under native permissions',()=>{
   const {runner,launches}=setup({agentLaunchPermission:'native'});
-  const r=JSON.parse(runner.launch({harness:'opencode',project:'TMN',prompt:'Write tests'}));
-  assert.equal(r.harness,'opencode');
-  assert.deepEqual(launches[0].args,['run']);
+  const r=JSON.parse(runner.launch({harness:'DeepSeek Harness',project:'TMN',prompt:'Write tests'}));
+  assert.equal(r.harness,'dsh');
+  assert.equal(launches[0].command,'dsh');
+  assert.deepEqual(launches[0].args,['headless']);
   assert.ok(launches[0].child.input.includes('Write tests'));
+  assert.match(launches[0].child.input,/ego-browser/);
   launches[0].child.emit('close',1);
-  assert.equal(JSON.parse(runner.status({harness:'opencode',taskId:r.taskId})).state,'failed');
+  assert.equal(JSON.parse(runner.status({harness:'dsh',taskId:r.taskId})).state,'failed');
+});
+test('DeepSeek Harness refuses unverified read-only execution mode',()=>{
+  const {runner,launches}=setup();
+  assert.throws(()=>runner.launch({harness:'dsh',project:'TMN',prompt:'Inspect only'}),
+    /no verified read-only mode/);
+  assert.equal(launches.length,0);
 });
 test('explicit harness never substitutes another or touches unauthorized project',()=>{
-  const {runner,launches}=setup();
+  const {runner,launches}=setup({agentLaunchPermission:'native'});
   assert.throws(()=>runner.launch({harness:'gemini',project:'TMN',prompt:'Test'}),/no supported CLI launcher/);
   assert.throws(()=>runner.launch({harness:'claude',project:'Unapproved',prompt:'Test'}),/allowlist/);
-  assert.throws(()=>runner.launch({harness:'opencode',project:'TMN',prompt:'Test',chatUrl:'https://evil.example/c/123456789'}),/chatgpt.com/);
+  assert.throws(()=>runner.launch({harness:'dsh',project:'TMN',prompt:'Test',chatUrl:'https://evil.example/c/123456789'}),/chatgpt.com/);
+  assert.throws(()=>runner.launch({harness:'opencode',project:'TMN',prompt:'No more OpenCode'}),/no supported CLI launcher/);
   assert.equal(launches.length,0);
 });
 test('running CLI task blocks a second start and can be cancelled',()=>{
   const {runner}=setup();
   const a=JSON.parse(runner.launch({harness:'claude',project:'TMN',prompt:'Task one'}));
-  assert.throws(()=>runner.launch({harness:'opencode',project:'TMN',prompt:'Task two'}),/task is active/);
+  assert.throws(()=>runner.launch({harness:'dsh',project:'TMN',prompt:'Task two'}),/task is active/);
   assert.equal(JSON.parse(runner.cancel({harness:'claude',project:'TMN',taskId:a.taskId})).state,'cancelled');
-  assert.throws(()=>runner.status({harness:'opencode',taskId:a.taskId}),/harness mismatch/);
+  assert.throws(()=>runner.status({harness:'dsh',taskId:a.taskId}),/harness mismatch/);
 });
 test('Windows invokes only a fixed shim command; task text stays in stdin',()=>{
   const calls=[];
@@ -92,4 +101,28 @@ test('Windows invokes only a fixed shim command; task text stays in stdin',()=>{
   assert.doesNotMatch(calls[0].args.join(' '),/whoami|Hello/);
   assert.match(calls[0].child.input,/whoami/);
   calls[0].child.emit('close',0);
+});
+
+test('Windows invokes dsh headless without interpolating task text into cmd',()=>{
+  const calls=[];
+  const child=new EventEmitter();
+  child.stdin=new PassThrough();
+  child.stdout=new PassThrough();
+  child.stderr=new PassThrough();
+  child.input='';
+  child.stdin.on('data',c=>{child.input+=c.toString('utf8');});
+  child.kill=()=>{};
+  const runner=createHarnessRunner({agentLaunchEnabled:true,agentLaunchPermission:'native'},{
+    platform:'win32',env:{SystemRoot:'C:\\Windows'},
+    projectRoots:()=>[{name:'TMN',root:'C:\\work\\TMN'}],
+    spawn:(file,args,opts)=>{calls.push({file,args,opts});return child;},
+    runLimitMs:5000,
+  });
+  const textInput='Review && do not run arbitrary shell commands';
+  const r=JSON.parse(runner.launch({harness:'deepseekhsrness',project:'TMN',prompt:textInput}));
+  assert.equal(r.harness,'dsh');
+  assert.deepEqual(calls[0].args.slice(-1),['dsh headless']);
+  assert.doesNotMatch(calls[0].args.join(' '),/arbitrary shell/);
+  assert.match(child.input,/arbitrary shell/);
+  child.emit('close',0);
 });

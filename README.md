@@ -1,4 +1,30 @@
-# Magpie Local Project Review (v0.4.33 alpha)
+# Magpie Local Project Review (v0.4.34 alpha)
+
+## DSH Desktop: managed by Magpie (experimental v0.4.34)
+
+Magpie's **Agent 双向通信 → DSH Desktop 原生自动收件** now owns the
+optional Desktop receiver deployment and binding. Unlike the previous
+prototype, the receiver declares an official DSH bundle manifest and is
+installed using the Desktop-installed `dsh plugin --profile desktop add`
+command from a local, detached Magpie worker. Only locally saved options
+can authorize installation. Desktop must be fully quit (including the tray)
+for initial installation; reopen Desktop afterward. A status summary is
+available in Magpie's `projects` diagnostics under `dshDesktop.install`.
+
+Set the **native DSH Session ID**, exact ChatGPT conversation URL and project
+label in Magpie (not the mailbox session ID). When messaging explicitly targets
+`harness:"dsh", mode:"desktop"`, Magpie queues for exactly that Desktop
+binding and may focus the Desktop window, but **never switches to dsh CLI**.
+The Desktop receiver polls the local Magpie mailbox and admits native Session
+prompts; it stops polling promptly when the local option is revoked.
+Execution and ego-browser return still require real-machine validation.
+
+The DSH plugin installation is a locally opted-in setup step managed by Magpie,
+not a second settings surface that the user must manage manually. If the
+Desktop-installed `dsh.cmd` is absent, install it using Desktop's
+**Manage dsh Command…** menu; npm-installed `dsh` cannot manage a Desktop
+profile. If setup fails (including Desktop still running), quit Desktop and
+re-save the same Magpie setting to retry.
 
 ## Closed loop: ChatGPT Web ⇄ Magpie ⇄ harness ⇄ ego-browser ⇄ ChatGPT Web
 

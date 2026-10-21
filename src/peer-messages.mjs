@@ -119,7 +119,7 @@ export function createPeerMessages({ directory = peerMailboxDir(), now = () => D
     return s;
   }
   return {
-    register({ harness, project, chatUrl, mode } = {}, agentIdentity = '') {
+    register({ harness, project, chatUrl, mode, resumeExisting = false } = {}, agentIdentity = '') {
       const claimed = normalizeHarness(harness);
       const selectedMode = normalizeMode(mode);
       const proj = validateText(project, 'Project label', 100);
@@ -130,6 +130,19 @@ export function createPeerMessages({ directory = peerMailboxDir(), now = () => D
         d.sessions = d.sessions.filter(s =>
           now() - Date.parse(s.registeredAt) < AGE_MS
         ).slice(-MAX_SESSIONS + 1);
+        // Opt-in idempotent reconnect: preserve pending mailbox commands after
+        // DSH Desktop restarts. Never choose arbitrarily among multiple agents.
+        if (resumeExisting === true) {
+          const matches = d.sessions.filter(s =>
+            s.harness === claimed && s.mode === selectedMode &&
+            s.project === proj && s.chatUrl === url);
+          if (matches.length > 1) throw Error('Multiple matching peer registrations; select a unique project or mode');
+          if (matches.length === 1) return JSON.stringify({
+            ...publicSession(matches[0]), registration: 'local-agent',
+            resumed: true, identityVerified: false,
+            instruction: 'Call agent_poll while your harness turn is active.',
+          });
+        }
         const s = { sessionId: uuid(), harness: claimed, mode: selectedMode, project: proj, chatUrl: url,
           registeredAt: new Date(now()).toISOString(), lastPollAt: null,
           agentIdentity: typeof agentIdentity === 'string' ? agentIdentity.slice(0, 80) : '',

@@ -88,6 +88,22 @@
         </div>
       </div>
       <p class="status-line" id="agentLaunchStatus" role="status" aria-live="polite"></p>
+      <div class="field-head">
+        <label for="dshDesktopInboxEnabled">DSH Desktop 原生自动收件 <span class="badge">实验 · Windows</span></label>
+      </div>
+      <p class="hint">仅由 Magpie 安装和管理接收组件，不再手动安装第二个插件。首次安装需要先完全退出 DSH Desktop（包括托盘）；重新打开后生效。必须绑定原生 DSH Session ID，而非 Magpie 消息邮箱 ID。</p>
+      <div class="row">
+        <div class="row-text"><label for="dshDesktopInboxEnabled">允许 Magpie 管理 DSH Desktop 接收器</label></div>
+        <input class="switch" id="dshDesktopInboxEnabled" type="checkbox">
+      </div>
+      <label for="dshDesktopChatUrl">ChatGPT 对话链接</label>
+      <input id="dshDesktopChatUrl" type="text" spellcheck="false" placeholder="https://chatgpt.com/c/...">
+      <label for="dshDesktopNativeSessionId">DSH 原生 Session ID</label>
+      <input id="dshDesktopNativeSessionId" type="text" spellcheck="false" placeholder="DSH 原生会话 ID（不是 Magpie mailbox ID）">
+      <label for="dshDesktopProject">项目标签</label>
+      <input id="dshDesktopProject" type="text" spellcheck="false" placeholder="例如 DSH Desktop Test">
+      <div class="controls"><button id="saveDshDesktopConfig" type="button">保存并由 Magpie 安装 / 更新</button></div>
+      <p class="status-line" id="dshDesktopStatus" role="status" aria-live="polite"></p>
       <p class="status-line" id="peerStatus" role="status" aria-live="polite"></p>
     </section>
 

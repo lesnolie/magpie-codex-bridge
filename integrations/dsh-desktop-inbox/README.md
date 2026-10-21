@@ -23,37 +23,39 @@ Session, edits a project, or asserts that prompt admission proves execution.
    `harness+mode+project+chatUrl` binding. The bridge fails closed when
    multiple registrations match.
 
-This package lives separately from the main Magpie plugin: simply updating
-Magpie does **not** install it inside DSH Desktop. DSH installation and
-configuration are user-initiated, after inspecting the experimental adapter.
+This package runs inside DSH Desktop, but Magpie now handles its local opt-in installation and binding. Merely updating Magpie without enabling the local option does not install it.
 
-## Installation / configuration (experimental, not yet Windows-verified)
+## Magpie-managed installation (Windows; experimental)
 
-DSH officially supports per-profile local plugins:
+**Do not install this bundle manually.** Update the Magpie Local Review
+plugin to v0.4.34-alpha.1 or later. In Magpie's existing settings page, under
+**Agent 双向通信 → DSH Desktop 原生自动收件**:
 
-```powershell
-dsh plugin --profile desktop add C:\path\to\magpie-codex-bridge\integrations\dsh-desktop-inbox
-```
+1. Completely quit DSH Desktop (including the notification-area/tray app).
+2. Enable the local receiver option, enter the **native DSH Session ID**,
+   exact ChatGPT conversation URL and a project label, then save.
+3. Magpie copies this bundle into its stable LocalAppData directory and uses
+   the **official Desktop-installed** `dsh.cmd plugin --profile desktop add`
+   CLI asynchronously; no second plugin configuration surface is required.
+4. Check the `projects` tool response under `dshDesktop.install.state`
+   for `installed`. If it says `install-failed`, inspect the reason. A
+   first-time installation requires the Desktop-installed command from
+   DSH Desktop's **Manage dsh Command…** menu; npm's ordinary dsh executable
+   cannot manage the Desktop profile.
+5. Reopen DSH Desktop after installation. Send a message from ChatGPT with
+   `harness:"dsh", mode:"desktop"`, the approved project and chat URL.
+   Verify queued → delivered → acked and the ego-browser response before
+   assuming automatic collaboration is functioning.
 
-Configure the plugin in the Desktop profile with an explicit entry resembling:
+Disabling the receiver in Magpie revokes its local binding; its next poll
+stops admitting new prompts. The installed bundle remains inert until locally
+re-enabled and Desktop restarted. No browser-session credential is read,
+exported or bypassed.
 
-```yaml
-- id: magpie-dsh-desktop-inbox
-  name: '@lesnolie/magpie-dsh-desktop-inbox'
-  config:
-    enabled: true
-    project: 'DSH Desktop Test'
-    chatUrl: 'https://chatgpt.com/c/EXACT-CONVERSATION-ID'
-    nativeSessionId: 'EXACT-NATIVE-DSH-SESSION-ID'
-    pollIntervalMs: 3000
-```
-
-Your DSH version's profile / plugin manager controls where its configuration
-is persisted. The YAML above illustrates the entry's fields; do not paste it
-into an unrelated settings file. Never copy browser authentication material.
-
-Disabled or missing `enabled: true` means **no registration, no poll, no
-prompt**. An incomplete/invalid enabled configuration fails activation.
+The adapter's `cordis.patch.yml` declares the actual Host plugin row, and
+the package manifest declares `dsh.bundle` so official Desktop installation
+can activate it. Older v0.4.32/v0.4.33 experimental copies did not declare
+these necessary bundle files.
 
 ## Delivery semantics and safety
 

@@ -9,7 +9,23 @@
  * An "acked" mailbox message means accepted by the DSH prompt queue,
  * NEVER that the DSH Agent executed it or replied to ChatGPT.
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 export const name = 'magpie-dsh-desktop-inbox';
+
+// Only the locally installed Magpie plugin writes this configuration.
+// Never take an endpoint, command, or executable path from the remote chat.
+export function managedConfigPath(env = process.env) {
+  const base = env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+  return path.join(base, 'MagpieLocalReview', 'dsh-desktop-inbox.json');
+}
+function readManagedConfig() {
+  try { return JSON.parse(fs.readFileSync(managedConfigPath(), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return {enabled:false}; throw error; }
+}
+
 export const inject = ['sessionController'];
 
 const ENDPOINT = 'http://127.0.0.1:3425/mcp/magpie/tools';
@@ -77,6 +93,7 @@ export function createDesktopInbox(raw, {
   schedule = (fn, ms) => setInterval(fn, ms),
   unschedule = handle => clearInterval(handle),
   report = () => {},
+  authorized = () => true,
 } = {}) {
   const config = validateConfig(raw);
   if (!config.enabled) return { start() {}, async tick() { return { state: 'disabled' }; }, stop() {} };
@@ -90,6 +107,7 @@ export function createDesktopInbox(raw, {
 
   async function tick() {
     if (stopped) return { state: 'stopped' };
+    if (!authorized()) return { state: 'authorization-revoked' };
     if (busy) return { state: 'busy' };
     busy = true;
     try {
@@ -114,6 +132,8 @@ export function createDesktopInbox(raw, {
         if (!SAFE_MESSAGE_ID.test(message.messageId) || !['REQUEST','RESULT','UPDATE','BLOCKED','DONE'].includes(message.command)) {
           throw new Error('Invalid Magpie queued message');
         }
+        // A local Magpie permission revocation must stop new prompt admission.
+        if (!authorized()) return { state: 'authorization-revoked', admitted };
         // Stable requestId is essential: if Magpie ack fails, retry must not
         // append a duplicate prompt to the native DSH Session.
         const requestId = 'magpie-' + message.messageId;
@@ -170,12 +190,26 @@ export function createDesktopInbox(raw, {
 
 /** Called only inside DSH Desktop's opted-in Host plugin configuration. */
 export function apply(ctx, config = {}) {
-  const settings = validateConfig(config);
+  // A bundle with no explicit config adopts the Magpie-managed settings.
+  // That allows one local Magpie settings surface to own installation, binding,
+  // and revocation without editing the DSH profile by hand.
+  const managed = config.enabled === undefined;
+  const settings = validateConfig(managed ? readManagedConfig() : config);
   if (!settings.enabled) return;
   const report = entry => {
     if (entry.event === 'error') console.warn('[magpie-dsh-inbox] ' + entry.reason);
   };
-  const bridge = createDesktopInbox(settings, { controller: ctx.sessionController, report });
+  const authorized = () => {
+    if (!managed) return true;
+    try {
+      const live = validateConfig(readManagedConfig());
+      return live.enabled && live.chatUrl === settings.chatUrl &&
+        live.nativeSessionId === settings.nativeSessionId && live.project === settings.project;
+    } catch { return false; }
+  };
+  const bridge = createDesktopInbox(settings, {
+    controller: ctx.sessionController, report, authorized,
+  });
   ctx.effect(() => {
     bridge.start();
     return () => bridge.stop();

@@ -5,6 +5,7 @@ import { createPeerMessages, normalizeHarness, normalizePeerChatUrl } from './sr
 import { createPeerWake, WAKE_MODES, sessionLiveness } from './src/peer-wake.mjs';
 import { createHarnessRunner } from './src/harness-runner.mjs';
 import { createDshDesktopFocus } from './src/dsh-desktop-focus.mjs';
+import { reconcileDshDesktop, dshDesktopSetupStatus } from './src/dsh-desktop-manager.mjs';
 import { existsSync } from 'node:fs';
 import { createCodexTasks, resolveCodexPermissionMode } from './src/codex-tasks.mjs';
 import { startModelCatalogSync } from './src/model-catalog.mjs';
@@ -25,6 +26,10 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     if (options.remoteAutoStart === true) await writeBootstrapStatus('setup-failed', error?.message || String(error));
     console.warn('[magpie-local-review] Remote autostart:', error?.message || String(error));
   }
+  // Locally authorized Magpie settings own DSH Desktop bundle installation
+  // and revocation. Never expose this installer through a remote MCP tool.
+  try { await reconcileDshDesktop(options); }
+  catch (error) { console.warn('[magpie-local-review] DSH Desktop setup:', String(error?.message||error)); }
   // Local-only, data-only model snapshot for the sandboxed plugin page.
   // Never blocks the six read-only tools when the gateway is unavailable.
   try { await startModelCatalogSync(options); }
@@ -115,11 +120,41 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     agent_ack: { description: 'LOCAL AGENT ONLY. Mark a previously polled peer command processed. No implicit approval of unrelated actions.', args: { sessionId: arg('Registered session ID'), chatUrl: arg('Exact bound ChatGPT URL'), messageId: arg('Original message ID') }, execute: wrap(peers.acknowledge) },
     agent_sessions: { description: 'Read locally registered peer harness sessions, their project labels, ChatGPT binding and queued counts. Does NOT mean those agents can be launched or are executing.', args: {}, execute: wrap(() => peers.list()) },
     agent_message_status: { description: 'Read routing status of a message to an agent: queued, delivered (polled), or acked. No status confirms execution.', args: { sessionId: arg('Registered session ID'), chatUrl: arg('Exact bound ChatGPT URL'), messageId: arg('Optional message ID') }, execute: wrap(peers.status) },
-    agent_message_send: { description: 'Send a user-directed command to the EXACT harness the user names (codex, claude, dsh), never a substitute. Delivers to the one registered session for that harness and exact verified ChatGPT conversation. When the user selected a harness that is not currently running, and local Agent startup permission is enabled, the SAME command also wakes that harness once (adopting its mailbox session) instead of waiting for the user to start it. A launch is a dispatch receipt, never proof of execution.', args: { harness: { type: 'string', description: 'User-selected harness name: codex, claude or dsh. REQUIRED when sessionId omitted. Do not guess or silently substitute.' }, project: { type: 'string', description: 'Exact project label; required to wake a stopped harness. Also distinguishes multiple sessions of one harness.' }, mode: { type: 'string', enum: ['desktop','cli','app-server','ide','other'], description: 'Optional exact execution mode to distinguish multiple sessions.' }, sessionId: { type: 'string', description: 'Optional exact session ID if multiple sessions of the SAME requested harness match; not usually needed.' }, chatUrl: arg('Exact bound ChatGPT conversation URL supplied by the user or verified through ego-browser'), taskId: arg('Stable task ID'), messageId: arg('Unique message ID for idempotency on tool retries; also deduplicates a wake'), command: { type: 'string', enum: ['REQUEST','RESULT','UPDATE','BLOCKED','DONE'], description: 'Message intent, not a permanent sender role' }, message: arg('User request or message, max 4000 characters'), wake: { type: 'boolean', description: 'Optional auto-wake control. Default true when local Agent startup permission is enabled: if the requested harness has no live polling session, wake it once with this same command. Set false to only queue for an already running harness.' } }, execute: wrap(a => {
+    agent_message_send: { description: 'Send a user-directed command to the EXACT harness the user names (codex, claude, dsh), never a substitute. Delivers to the one registered session for that harness and exact verified ChatGPT conversation. When the user selected a harness that is not currently running, and local Agent startup permission is enabled, the SAME command also wakes that harness once (adopting its mailbox session) instead of waiting for the user to start it. A launch is a dispatch receipt, never proof of execution.', args: { harness: { type: 'string', description: 'User-selected harness name: codex, claude or dsh. REQUIRED when sessionId omitted. Do not guess or silently substitute.' }, project: { type: 'string', description: 'Exact project label; required to wake a stopped harness. Also distinguishes multiple sessions of one harness.' }, mode: { type: 'string', enum: ['desktop','cli','app-server','ide','other'], description: 'Optional exact execution mode to distinguish multiple sessions.' }, sessionId: { type: 'string', description: 'Optional exact session ID if multiple sessions of the SAME requested harness match; not usually needed.' }, chatUrl: arg('Exact bound ChatGPT conversation URL supplied by the user or verified through ego-browser'), taskId: arg('Stable task ID'), messageId: arg('Unique message ID for idempotency on tool retries; also deduplicates a wake'), command: { type: 'string', enum: ['REQUEST','RESULT','UPDATE','BLOCKED','DONE'], description: 'Message intent, not a permanent sender role' }, message: arg('User request or message, max 4000 characters'), wake: { type: 'boolean', description: 'Optional auto-wake control. Default true when local Agent startup permission is enabled: if the requested harness has no live polling session, wake it once with this same command. Set false to only queue for an already running harness.' } }, execute: wrap(async a => {
       if (options.peerMessagingEnabled !== true) throw Error('Peer messaging is disabled in local Magpie settings');
       // Refuse an unadapted harness before talking about permissions, so the
       // caller learns the real reason instead of a misleading hint.
       const selected = normalizeHarness(a.harness);
+      // IMPORTANT: a requested Desktop mode must NEVER wake dsh headless CLI.
+      // With local Magpie opt-in, provision an exact native Desktop mailbox
+      // and ask the OS to focus DSH. The installed Desktop Host receiver
+      // performs the actual prompt admission, asynchronously and locally.
+      if (selected === 'dsh' && a.mode === 'desktop') {
+        const url = normalizePeerChatUrl(a.chatUrl);
+        if (options.dshDesktopInboxEnabled !== true) {
+          // Manual local DSH agent polling remains supported; never claim auto.
+          return peers.send(a);
+        }
+        if (url !== normalizePeerChatUrl(options.dshDesktopChatUrl) ||
+            a.project !== options.dshDesktopProject) {
+          throw Error('DSH Desktop project/chat must match the locally approved Magpie binding');
+        }
+        const session = JSON.parse(peers.provision({
+          harness: 'dsh', mode: 'desktop', project: a.project, chatUrl: url,
+        }));
+        const queued = JSON.parse(peers.send({
+          ...a, sessionId: session.sessionId, mode: 'desktop', harness: 'dsh',
+        }));
+        let activation = {state:'launch-not-permitted'};
+        if (options.agentLaunchEnabled === true && a.wake !== false) {
+          activation = JSON.parse(await dshDesktopFocus({harness:'dsh'}));
+        }
+        return JSON.stringify({...queued,mode:'desktop',
+          desktopReceiverOptedIn:true, desktopInstallState:(await dshDesktopSetupStatus()).state,
+          desktopActivation:activation.state,
+          executionConfirmed:false,confirmedExecution:false,
+          note:'Desktop mailbox queued; activation is not delivery. The locally managed DSH Host receiver must poll and admit it.'});
+      }
       if (!WAKE_MODES[selected])
         throw Error('No registered session for harness "' + selected + '" in this conversation, and this build has no wake adapter for it. Supported harnesses: ' + Object.keys(WAKE_MODES).join(', ') + '. No substitute was used.');
       const canWake = a.wake !== false && options.agentLaunchEnabled === true;
@@ -166,7 +201,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     return JSON.stringify({
       ...data,
       codex: {
-        integrationVersion: '0.4.33-alpha.1',
+        integrationVersion: '0.4.34-alpha.1',
         toolsRegistered: true,
         toolCount: 27,
         pendingReviewCount,
@@ -175,6 +210,11 @@ export const MagpieProjectReview = async (_input, options = {}) => {
         permissionMode: resolveCodexPermissionMode(options),
         remoteAutoStart: remoteOn,
         remoteGateEnabled: process.platform === 'win32' && existsSync(remotePaths().codexEnabledFile),
+      },
+      dshDesktop: {
+        configured: options.dshDesktopInboxEnabled === true,
+        install: await dshDesktopSetupStatus().catch(() => ({state:'unavailable'})),
+        note: 'DSH Desktop uses its own native Host plugin. A queued message and dsh://open are not execution confirmation.',
       },
       // Lets ChatGPT know which harnesses it may actually wake in this build
       // before it promises the user a harness will be started.

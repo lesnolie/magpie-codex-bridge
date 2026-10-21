@@ -1,0 +1,15 @@
+{
+  "name": "@lesnolie/magpie-dsh-desktop-inbox",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "Opt-in Magpie mailbox bridge for an explicitly selected native DeepSeek Harness Desktop Session",
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

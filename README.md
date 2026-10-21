@@ -1,5 +1,17 @@
 # Magpie Local Project Review (v0.4.31 alpha)
 
+## Experimental DSH Desktop auto-inbox (opt-in, needs real-device verification)
+
+The validated Magpie <-> DSH Desktop ping/ack handshake still needs a running
+DSH turn to poll manually. The optional
+[Desktop inbox Host plugin](integrations/dsh-desktop-inbox/README.md) prepares a
+native, opt-in receiver using DSH's official `sessionController.prompt` API.
+It reuses an exact existing Magpie mailbox on restart and never treats prompt
+admission as execution. This add-on is disabled until configured locally with
+an exact native DSH Session ID and ChatGPT URL; it is not installed by Magpie
+upgrades and does not use the DSH CLI or Desktop browser credentials.
+See the integration README for limits and the live-machine acceptance plan.
+
 ## Official DeepSeek Harness Desktop — limited focus probe (v0.4.31 alpha)
 
 Unlike `dsh headless`, official DSH Desktop is an Electron application

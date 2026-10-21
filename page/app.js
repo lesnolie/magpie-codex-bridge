@@ -63,6 +63,12 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const confirmAgentLaunchPermission = document.getElementById('confirmAgentLaunchPermission');
   const cancelAgentLaunchPermission = document.getElementById('cancelAgentLaunchPermission');
   const agentLaunchStatus = document.getElementById('agentLaunchStatus');
+  const dshDesktopInboxEnabled = document.getElementById('dshDesktopInboxEnabled');
+  const dshDesktopChatUrl = document.getElementById('dshDesktopChatUrl');
+  const dshDesktopNativeSessionId = document.getElementById('dshDesktopNativeSessionId');
+  const dshDesktopProject = document.getElementById('dshDesktopProject');
+  const dshDesktopStatus = document.getElementById('dshDesktopStatus');
+  const saveDshDesktopConfig = document.getElementById('saveDshDesktopConfig');
   const codexEnabled = document.getElementById('codexEnabled');
   const codexPermissionMode = document.getElementById('codexPermissionMode');
   const codexPermissionConfirmation = document.getElementById('codexPermissionConfirmation');
@@ -80,6 +86,10 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
   const codexLegacyModel = document.getElementById('codexLegacyModel');
   const codexModelProvider = document.getElementById('codexModelProvider');
   const saveCodexConfig = document.getElementById('saveCodexConfig');
+
+  dshDesktopChatUrl.value = options.dshDesktopChatUrl || '';
+  dshDesktopNativeSessionId.value = options.dshDesktopNativeSessionId || '';
+  dshDesktopProject.value = options.dshDesktopProject || '';
 
   let busy = false;
   let pendingMode = null;
@@ -118,6 +128,12 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
     remoteAutoStart.disabled = busy;
     peerMessagingEnabled.checked = options.peerMessagingEnabled === true;
     peerMessagingEnabled.disabled = busy;
+    dshDesktopInboxEnabled.checked = options.dshDesktopInboxEnabled === true;
+    dshDesktopInboxEnabled.disabled = busy;
+    dshDesktopChatUrl.disabled = busy;
+    dshDesktopNativeSessionId.disabled = busy;
+    dshDesktopProject.disabled = busy;
+    saveDshDesktopConfig.disabled = busy;
     agentLaunchEnabled.checked = options.agentLaunchEnabled === true;
     agentLaunchEnabled.disabled = busy;
     agentLaunchPermission.value = pendingAgentPermission ? 'native' : options.agentLaunchPermission === 'native' ? 'native' : 'read-only';
@@ -155,6 +171,27 @@ const magpie = (typeof globalThis.magpie === 'object' && globalThis.magpie)
       render();
     }
   }
+  // Local opt-in only. The Magpie backend validates these values and performs
+  // the official Desktop profile installation only after options.set.
+  saveDshDesktopConfig.addEventListener('click', () => {
+    if (busy) return;
+    const enabled = dshDesktopInboxEnabled.checked;
+    const next = {
+      ...options,
+      dshDesktopInboxEnabled: enabled,
+      dshDesktopChatUrl: dshDesktopChatUrl.value.trim(),
+      dshDesktopNativeSessionId: dshDesktopNativeSessionId.value.trim(),
+      dshDesktopProject: dshDesktopProject.value.trim(),
+    };
+    if (enabled && (!next.dshDesktopChatUrl || !next.dshDesktopNativeSessionId || !next.dshDesktopProject)) {
+      dshDesktopStatus.textContent = '启用前请填写当前 ChatGPT 对话、DSH 原生 Session ID 和项目。';
+      dshDesktopStatus.classList.add('error');
+      return;
+    }
+    void saveOptions(next, enabled
+      ? '已保存本地授权并请求 Magpie 安装。请先完全退出 DSH Desktop，再重新打开 Magpie 以重试安装；安装状态需以本机报告为准。'
+      : '已关闭 Magpie 托管 DSH 自动收件。', dshDesktopStatus);
+  });
   agentLaunchEnabled.addEventListener('change', () => {
     if (busy) return;
     const enabled = agentLaunchEnabled.checked;

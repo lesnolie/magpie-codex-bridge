@@ -210,6 +210,11 @@ export const MagpieProjectReview = async (_input, options = {}) => {
         remoteAutoStart: remoteOn,
         remoteGateEnabled: process.platform === 'win32' && existsSync(remotePaths().codexEnabledFile),
       },
+      dshDesktop: {
+        configured: options.dshDesktopInboxEnabled === true,
+        install: await dshDesktopSetupStatus().catch(() => ({state:'unavailable'})),
+        note: 'DSH Desktop uses its own native Host plugin. A queued message and dsh://open are not execution confirmation.',
+      },
       // Lets ChatGPT know which harnesses it may actually wake in this build
       // before it promises the user a harness will be started.
       peerWake: {

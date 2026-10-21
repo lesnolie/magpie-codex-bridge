@@ -36,6 +36,13 @@ function parseSession(reply) {
 /**
  * Decide whether an existing registration can still receive a command.
  * `lastPollAt` is the only real signal; registration alone proves nothing.
+ *
+ * "stopped" means only that this mailbox session stopped polling. It does NOT
+ * prove the harness process is gone: a long tool call or a blocked browser can
+ * leave it alive but silent. That case is safe because both runners refuse a
+ * second concurrent task (codex-tasks "already running", harness-runner "task
+ * is active"), so a wake fails closed and the command stays queued instead of
+ * starting a duplicate.
  */
 export function sessionLiveness(session, now = Date.now()) {
   if (!session || typeof session.registeredAt !== 'string') return 'unknown';

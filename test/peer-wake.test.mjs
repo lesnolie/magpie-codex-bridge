@@ -34,6 +34,37 @@ function launchers() {
   return { calls, harnessRunner, codex };
 }
 
+test('an already-running harness cannot be doubled by a stale-session wake', t => {
+  // A harness can stay alive without polling (long tool call, blocked browser).
+  // sessionLiveness then reports "stopped", but the underlying runners refuse a
+  // second concurrent task. The wake must fail closed and keep the command
+  // queued rather than starting a duplicate.
+  const { peers } = mailbox(t);
+  const busyRunner = {
+    launch() { throw Error('Another agent CLI task is active; finish or cancel it first'); },
+  };
+  const busyCodex = {
+    submit() { throw Error('A Codex task is already running'); },
+  };
+  const wake = createPeerWake({ options: { agentLaunchEnabled: true }, peers,
+    harnessRunner: busyRunner, codex: busyCodex });
+
+  for (const harness of ['claude', 'dsh', 'codex']) {
+    const receipt = wake.wake({ harness, project: P, chatUrl: CHAT,
+      taskId: 'busy-' + harness, messageId: 'busy-msg-' + harness,
+      command: 'REQUEST', message: 'Do more work' });
+    assert.equal(receipt.state, 'wake-failed', harness + ' must not report a launch');
+    assert.equal(receipt.queuedOnly, true);
+    assert.equal(receipt.confirmedExecution, false);
+    assert.match(receipt.reason, /already running|already active|task is active/);
+
+    // The command is still there for the original harness to pick up.
+    const polled = JSON.parse(peers.poll({ sessionId: receipt.sessionId, chatUrl: CHAT }));
+    assert.equal(polled.messages.length, 1, harness + ' keeps the queued command');
+    assert.equal(polled.messages[0].message, 'Do more work');
+  }
+});
+
 test('only the three user-selected harnesses can be woken', () => {
   assert.deepEqual(Object.keys(WAKE_MODES).sort(), ['claude', 'codex', 'dsh']);
   assert.equal(WAKE_MODES.codex, 'app-server');

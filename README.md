@@ -1,4 +1,4 @@
-# Magpie Local Project Review (v0.4.31 alpha)
+# Magpie Local Project Review (v0.4.32 alpha)
 
 ## Experimental DSH Desktop auto-inbox (opt-in, needs real-device verification)
 

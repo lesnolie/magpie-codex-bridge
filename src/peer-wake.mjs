@@ -57,9 +57,13 @@ export function sessionLiveness(session, now = Date.now()) {
   return now - registered <= STARTUP_GRACE_MS ? 'starting' : 'stopped';
 }
 
-export function wakePrompt({ command, taskId, message, harness, project, chatUrl, sessionId, messageId }) {
+export function wakePrompt({ command, taskId, message, harness, project, chatUrl, sessionId, messageId, mode }) {
   if (typeof message !== 'string' || !message.trim()) throw Error('A wake needs the actual command text');
   if (message.length > MAX_WAKE_PROMPT) throw Error('Wake command is too long');
+  // The mode is part of the mailbox identity. Without it the woken agent cannot
+  // match the provisioned session, so agent_register would create a second one
+  // and leave the waking command unread in the first. Never omit it.
+  if (typeof mode !== 'string' || !mode) throw Error('A wake must state its mailbox mode');
   return [
     '[MAGPIE] ' + command,
     'TASK: ' + taskId,
@@ -72,11 +76,15 @@ export function wakePrompt({ command, taskId, message, harness, project, chatUrl
     'PROJECT: ' + project,
     'CHAT_URL: ' + chatUrl,
     'PEER_MAILBOX_SESSION_ID: ' + sessionId,
+    'PEER_MAILBOX_MODE: ' + mode,
     'PEER_MAILBOX_MESSAGE_ID: ' + messageId,
     '',
     'The command above is ALSO queued in that exact Magpie mailbox message.',
-    '1. Adopt the session with one agent_register({harness, project, chatUrl, mode, resumeExisting:true})',
-    '   call and confirm it returns PEER_MAILBOX_SESSION_ID above. Never create a second session.',
+    '1. Adopt the session with exactly this one call (the mode value is required to match it):',
+    '   agent_register({harness: "' + harness + '", project: "' + project + '", chatUrl: "' + chatUrl + '",',
+    '                  mode: "' + mode + '", resumeExisting: true})',
+    '   It must return PEER_MAILBOX_SESSION_ID above. If it does not, stop and report that',
+    '   instead of creating a second session; the waking command would be left unread.',
     '2. agent_poll it. If you see PEER_MAILBOX_MESSAGE_ID, agent_ack it after you have actually',
     '   processed the work. Do not execute the same command twice.',
     '3. Reply with real results in this exact ChatGPT conversation, not in another chat.',
@@ -131,7 +139,7 @@ export function createPeerWake({ options = {}, peers, harnessRunner, codex } = {
         taskId, messageId, command, message }));
 
       const prompt = wakePrompt({ command, taskId, message, harness: selected,
-        project, chatUrl: url, sessionId: session.sessionId, messageId });
+        project, chatUrl: url, sessionId: session.sessionId, messageId, mode });
 
       let launch;
       try {

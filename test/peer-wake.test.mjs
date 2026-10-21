@@ -65,6 +65,45 @@ test('an already-running harness cannot be doubled by a stale-session wake', t =
   }
 });
 
+test('the wake prompt states the mailbox mode so the agent can actually adopt it', t => {
+  // Regression: the mode is part of the mailbox identity. Codex wakes provision
+  // with mode=app-server. An adoption call without that exact mode matches no
+  // session, so agent_register would silently create a SECOND one and leave the
+  // waking command unread in the first.
+  for (const [harness, mode] of [['codex', 'app-server'], ['claude', 'cli'], ['dsh', 'cli']]) {
+    const { peers } = mailbox(t);
+    const { harnessRunner, codex } = launchers();
+    const wake = createPeerWake({ options: { agentLaunchEnabled: true }, peers, harnessRunner, codex });
+    const receipt = wake.wake({ harness, project: P, chatUrl: CHAT,
+      taskId: 'adopt-' + harness, messageId: 'adopt-msg-' + harness,
+      command: 'REQUEST', message: 'Work' });
+    assert.equal(receipt.mode, mode);
+
+    // The prompt the agent receives must name the mode EXPLICITLY.
+    const prompt = wakePrompt({ command: 'REQUEST', taskId: 'adopt-' + harness,
+      message: 'Work', harness, project: P, chatUrl: CHAT,
+      sessionId: receipt.sessionId, messageId: 'adopt-msg-' + harness, mode });
+    assert.match(prompt, new RegExp('PEER_MAILBOX_MODE: ' + mode));
+    assert.ok(prompt.includes('mode: "' + mode + '"'), 'adoption call states the literal mode');
+
+    // Follow that instruction exactly: it must resolve to the SAME session and
+    // reveal the queued command.
+    const adopted = JSON.parse(peers.register({ harness, project: P, chatUrl: CHAT,
+      mode, resumeExisting: true }));
+    assert.equal(adopted.sessionId, receipt.sessionId,
+      harness + ' must adopt the provisioned session, not create a new one');
+    const polled = JSON.parse(peers.poll({ sessionId: adopted.sessionId, chatUrl: CHAT }));
+    assert.equal(polled.messages.length, 1);
+    assert.equal(polled.messages[0].message, 'Work');
+  }
+});
+
+test('a wake without a mode is refused instead of producing unadoptable instructions', () => {
+  assert.throws(() => wakePrompt({ command: 'REQUEST', taskId: 't', message: 'x',
+    harness: 'codex', project: P, chatUrl: CHAT, sessionId: 's', messageId: 'm' }),
+    /must state its mailbox mode/);
+});
+
 test('only the three user-selected harnesses can be woken', () => {
   assert.deepEqual(Object.keys(WAKE_MODES).sort(), ['claude', 'codex', 'dsh']);
   assert.equal(WAKE_MODES.codex, 'app-server');
@@ -172,12 +211,14 @@ test('liveness separates a polling session from a stopped or starting one', () =
 
 test('the wake prompt tells the harness to adopt one session and not repeat itself', () => {
   const prompt = wakePrompt({ command: 'REQUEST', taskId: 'task-9', message: 'Refactor the loader',
-    harness: 'claude', project: P, chatUrl: CHAT, sessionId: 'session-9', messageId: 'msg-9' });
+    harness: 'claude', project: P, chatUrl: CHAT, sessionId: 'session-9', messageId: 'msg-9',
+    mode: 'cli' });
   assert.match(prompt, /^\[MAGPIE\] REQUEST\nTASK: task-9\n/);
   assert.match(prompt, /Refactor the loader/);
   assert.match(prompt, /PEER_MAILBOX_SESSION_ID: session-9/);
+  assert.match(prompt, /PEER_MAILBOX_MODE: cli/);
   assert.match(prompt, /PEER_MAILBOX_MESSAGE_ID: msg-9/);
-  assert.match(prompt, /Never create a second session/);
+  assert.match(prompt, /instead of creating a second session/);
   assert.match(prompt, /Do not execute the same command twice/);
   assert.match(prompt, /carry out in-scope work directly/);
   assert.match(prompt, /Do not ask for per-step/);

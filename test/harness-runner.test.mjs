@@ -88,7 +88,9 @@ test('a woken harness is told to adopt the provisioned mailbox session',()=>{
   const input=launches[0].child.input;
   assert.match(input,/PEER_MAILBOX_SESSION_ID: session-abc/);
   assert.match(input,/PEER_MAILBOX_MODE: cli/);
-  assert.match(input,/resumeExisting:true/);
+  // The mode must appear as a literal value the agent can copy, not a placeholder.
+  assert.match(input,/mode: "cli" and resumeExisting: true/);
+  assert.match(input,/omitting it will create a second session/);
   assert.match(input,/Never invent a second mailbox session/);
   assert.match(input,/Do not ask the user or ChatGPT to confirm each step/);
   launches[0].child.emit('close',0);

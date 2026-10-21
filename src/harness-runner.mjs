@@ -143,8 +143,10 @@ export function createHarnessRunner(options = {}, deps = {}) {
       const mailbox = peerMailbox && typeof peerMailbox.sessionId === 'string'
         ? ['PEER_MAILBOX_SESSION_ID: '+peerMailbox.sessionId,
            'PEER_MAILBOX_MODE: '+(peerMailbox.mode || 'cli'),
-           'Adopt this EXACT sessionId with a single agent_register({... resumeExisting:true}) call',
-           'for this harness, project and chat URL, then agent_poll it for the waking command.',
+           'Adopt this EXACT sessionId with one agent_register call that ALSO passes',
+           'mode: "'+(peerMailbox.mode || 'cli')+'" and resumeExisting: true. The mode is part of',
+           'the mailbox identity; omitting it will create a second session and the waking',
+           'command will be left unread in the first. Then agent_poll it for that command.',
            'Acknowledge each command with agent_ack only after you actually processed it, and reply',
            'in the SAME conversation through ego-browser. Never invent a second mailbox session.']
         : ['No Magpie mailbox session was provisioned. Register one with agent_register before polling.'];

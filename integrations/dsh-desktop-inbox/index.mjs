@@ -132,6 +132,8 @@ export function createDesktopInbox(raw, {
         if (!SAFE_MESSAGE_ID.test(message.messageId) || !['REQUEST','RESULT','UPDATE','BLOCKED','DONE'].includes(message.command)) {
           throw new Error('Invalid Magpie queued message');
         }
+        // A local Magpie permission revocation must stop new prompt admission.
+        if (!authorized()) return { state: 'authorization-revoked', admitted };
         // Stable requestId is essential: if Magpie ack fails, retry must not
         // append a duplicate prompt to the native DSH Session.
         const requestId = 'magpie-' + message.messageId;

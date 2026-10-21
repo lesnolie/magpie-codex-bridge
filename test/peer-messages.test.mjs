@@ -100,3 +100,26 @@ test('same harness in multiple sessions requires explicit project, mode or sessi
   assert.throws(()=>peer.send({...command,sessionId:desktop.sessionId, mode:'cli',messageId:'wrong-mode'}),
     /mode mismatch/);
 });
+
+test('opt-in reconnect reuses one DSH Desktop mailbox and preserves unacked messages', t => {
+  const { peer } = mailbox(t);
+  const binding = { harness:'dsh',mode:'desktop',project:'DSH Desktop Test',chatUrl:CHAT };
+  const first = JSON.parse(peer.register(binding));
+  peer.send({ sessionId:first.sessionId,chatUrl:CHAT,taskId:'ping-01',
+    messageId:'ping-msg-01',command:'REQUEST',message:'hello' });
+  const resumed = JSON.parse(peer.register({...binding,resumeExisting:true}));
+  assert.equal(resumed.sessionId,first.sessionId);
+  assert.equal(resumed.resumed,true);
+  assert.equal(resumed.inboxPending,1);
+  const polled = JSON.parse(peer.poll({sessionId:resumed.sessionId,chatUrl:CHAT}));
+  assert.equal(polled.messages[0].messageId,'ping-msg-01');
+});
+
+test('opt-in reconnect refuses ambiguous sessions; legacy register still creates new session', t => {
+  const { peer } = mailbox(t);
+  const args = {harness:'dsh',mode:'desktop',project:'DSH Desktop Test',chatUrl:CHAT};
+  peer.register(args);
+  peer.register(args);
+  assert.throws(()=>peer.register({...args,resumeExisting:true}),/Multiple matching/);
+  assert.equal(JSON.parse(peer.list()).sessions.length,2);
+});

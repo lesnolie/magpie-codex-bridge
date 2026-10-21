@@ -150,7 +150,8 @@ export const MagpieProjectReview = async (_input, options = {}) => {
           activation = JSON.parse(await dshDesktopFocus({harness:'dsh'}));
         }
         return JSON.stringify({...queued,mode:'desktop',
-          desktopReceiverConfigured:true,desktopActivation:activation.state,
+          desktopReceiverOptedIn:true, desktopInstallState:(await dshDesktopSetupStatus()).state,
+          desktopActivation:activation.state,
           executionConfirmed:false,confirmedExecution:false,
           note:'Desktop mailbox queued; activation is not delivery. The locally managed DSH Host receiver must poll and admit it.'});
       }

@@ -68,5 +68,5 @@ test('Desktop authorization revocation prevents even polling',async()=>{
 test('Desktop mode is a separate native mailbox route, never dsh headless CLI',()=>{
   const src=fs.readFileSync(new URL('../index.mjs',import.meta.url),'utf8');
   assert.match(src,/selected === 'dsh' && a.mode === 'desktop'/);
-  assert.match(src,/desktopReceiverConfigured:true/);
+  assert.match(src,/desktopReceiverOptedIn:true/);
 });

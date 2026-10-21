@@ -173,6 +173,8 @@ export function buildBrowserCollaborationPrompt({ project, taskId, prompt, chatU
     'TASK_ID: ' + taskId,
     'Open only TARGET_CHAT in one ego-browser TaskSpace/page. Verify the Magpie project once.',
     'Use the command-driven peer protocol: Web and local agents can both REQUEST actions or send RESULT. No fixed reviewer/executor role.',
+    'Carry out an in-scope, already-authorized command directly. Do not ask for',
+    'per-step confirmation and do not run a HELLO/ACK ceremony.',
     'Do not call undocumented ChatGPT APIs, read cookies or create another tunnel.',
     'If the Skill or ego-browser is unavailable, report browser-unavailable and continue',
     'returning the result through this existing MCP app-server task.',

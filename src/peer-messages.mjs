@@ -46,6 +46,9 @@ export function normalizePeerChatUrl(value) {
 }
 
 export function peerMailboxDir(env = process.env) {
+  // A local override keeps tests and smoke runs out of the real user mailbox.
+  if (typeof env.MAGPIE_PEER_MAILBOX_DIR === 'string' && env.MAGPIE_PEER_MAILBOX_DIR.trim())
+    return path.resolve(env.MAGPIE_PEER_MAILBOX_DIR.trim());
   const home = process.platform === 'win32'
     ? (env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'))
     : (env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state'));
@@ -217,6 +220,42 @@ export function createPeerMessages({ directory = peerMailboxDir(), now = () => D
         }
         return JSON.stringify({ sessionId, chatUrl: s.chatUrl, messages: pending,
           note: 'delivered means polled, not executed; acknowledge only after processing.' });
+      });
+    },
+    /**
+     * Create (or resume) a mailbox session BEFORE a harness process exists.
+     *
+     * A wake is only useful if the woken harness can poll the command that woke
+     * it. The remote sender therefore provisions the exact session the new
+     * process is told to adopt, instead of guessing a session ID after launch.
+     * This grants no execution authority: the command is still delivered only
+     * by a local `agent_poll` from the running harness.
+     */
+    provision({ harness, project, chatUrl, mode } = {}) {
+      const claimed = normalizeHarness(harness);
+      const selectedMode = normalizeMode(mode);
+      const proj = validateText(project, 'Project label', 100);
+      if (/[\r\n<>]/.test(proj)) throw Error('Invalid harness/project label');
+      const url = normalizePeerChatUrl(chatUrl);
+      return edit(d => {
+        d.sessions = d.sessions.filter(s => now() - Date.parse(s.registeredAt) < AGE_MS)
+          .slice(-MAX_SESSIONS + 1);
+        const matches = d.sessions.filter(s =>
+          s.harness === claimed && s.mode === selectedMode && s.chatUrl === url &&
+          s.project === proj);
+        if (matches.length > 1)
+          throw Error('Multiple matching peer registrations; select a unique project or mode');
+        if (matches.length === 1) {
+          // Keep a live session untouched so its poll bookkeeping stays accurate.
+          return JSON.stringify({ ...publicSession(matches[0]), provisioned: false,
+            note: 'Existing registration reused; the woken harness must adopt this sessionId.' });
+        }
+        const s = { sessionId: uuid(), harness: claimed, mode: selectedMode, project: proj,
+          chatUrl: url, registeredAt: new Date(now()).toISOString(), lastPollAt: null,
+          agentIdentity: '', messages: [] };
+        d.sessions.push(s);
+        return JSON.stringify({ ...publicSession(s), provisioned: true,
+          note: 'Placeholder registration for a launched harness; not proof it is running.' });
       });
     },
     acknowledge({ sessionId, chatUrl, messageId } = {}) {

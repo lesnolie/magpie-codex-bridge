@@ -1,15 +1,24 @@
 ---
 name: magpie-web-collab
-description: Peer-to-peer collaboration between a running local agent harness and ChatGPT Web using the existing Magpie MCP connection and ego-browser. Either peer can request work, do work, return results, or ask questions; each message's command determines the action.
+description: Peer-to-peer collaboration between ChatGPT Web and a local agent harness (codex, claude, dsh) over the existing Magpie MCP connection and ego-browser. Either peer can request work, do work, return results, or ask questions; each message's command determines the action. ChatGPT can wake a stopped harness through agent_message_send.
 ---
 
 # Magpie ↔ ChatGPT Web: peer collaboration
 
 This Skill is **only the agent-to-ChatGPT-Web interaction workflow**. There is **no permanent reviewer, executor, planner, owner or subordinate role** assigned to ChatGPT Web or the local agent. Both are peers. Either side may perform work with tools available in its own runtime **when asked by the current command and authorized to do so**.
 
+The full loop is:
+
+```text
+ChatGPT Web -> Magpie MCP -> local harness (codex / claude / dsh) -> ego-browser -> ChatGPT Web
+```
+
+ChatGPT can start the loop from a cold state: `agent_message_send` both queues
+the command and, when the requested harness is not running, wakes it.
+
 The directions are **transport-specific, not role-specific**:
 
-- **Web → harness:** ChatGPT Web uses the already connected Magpie MCP tools to read permitted project data and send commands to a local harness where such a command tool is available. Magpie's current task-launch tools remain Codex-specific; the Skill cannot add a new launcher.
+- **Web → harness:** ChatGPT Web uses the already connected Magpie MCP tools to read permitted project data, then sends the actual command with `agent_message_send`. If that harness is live the command is queued for its poll; if it is stopped and the local user allowed startup, it is woken with the same command. A launch or a queue state is never proof of execution.
 - **Harness → Web:** the running local agent uses the installed `ego-browser` Skill to open the exact ChatGPT Web conversation, send a command/message and read its answer. ego is the browser transport; do not replace or extend its Skill, create another tunnel, or call undocumented ChatGPT APIs.
 
 Each peer decides whether to **act, answer, ask, or continue** from the *received command*, the current task, available tools and permissions. Never infer roles from the sender or assign all edits to one side and all reviews to the other.
@@ -26,12 +35,24 @@ without requiring the user to look up a session ID. Use optional `project`
 or `mode` (`desktop`, `cli`, `app-server`, `ide`, `other`)
 only if needed to distinguish multiple sessions of that same harness.
 
-If no matching session exists, explain that the requested harness is not
-connected; if several remain ambiguous, ask for its project/mode. Do **not**
+If no matching session exists **and the local user enabled Agent startup
+permission**, the same `agent_message_send` call also **wakes** the named
+harness: it provisions the mailbox session, queues the command there, starts
+that one harness with an instruction to adopt that exact session, and returns
+both the mailbox state and a separate `wakeState`. Report it as
+"queued and the harness was started", never as "the harness did the work";
+`confirmedExecution` stays false until a real reply or `agent_message_status`
+shows progress. If startup permission is off, the command is queued only. Send
+`wake:false` to deliberately address a running harness without starting one.
+
+Waking is supported for **codex, claude and dsh** with an exact `project`; other
+harness names return a clear "no wake adapter" error rather than a substitute.
+An ambiguous binding (several sessions for one harness/chat) is never resolved
+by starting yet another harness.
+
+If several sessions remain ambiguous, ask for its project/mode. Do **not**
 select another harness, infer the user's intent from model/provider choice,
-or claim the target was launched or actually executed the command. The
-current generic MCP inbox queues to registered sessions; a new native
-Desktop/CLI launch requires a separately supported adapter.
+or claim the target was launched or actually executed the command.
 
 ## Common Magpie MCP peer command inbox
 
@@ -58,27 +79,30 @@ only where offered by the installed **Magpie Local Review** plugin:
   toggle. `agent_message_status` distinguishes `queued`,
   `delivered` (polled), and `acked` (locally marked processed).
   **None of these states proves task execution.**
-- **Harness receives:** while an authorized local Agent turn is
-  **actually running**, poll `agent_poll` for its saved session ID and
-  exact chat URL. Process new commands using its own native tools and
-  current permissions. Once that *specific* message has been processed,
-  call `agent_ack` with its message ID. Then return a meaningful reply
-  **via the already verified ego-browser ChatGPT page**, not by claiming
-  the MCP ack is the answer. No polling daemon, repeated HELLO/ACK
-  browser messages or arbitrary execution is required.
+- **Harness receives:** when a wake starts your process, the instruction
+  names a `PEER_MAILBOX_SESSION_ID`. **Adopt that exact session** with one
+  `agent_register({... resumeExisting:true})` call — do not create a second
+  mailbox. Then `agent_poll` to read the command that woke you and any
+  commands queued while you were stopped. Do not run the same command twice:
+  the waking command is both in your prompt and in the mailbox. Process it
+  once, call `agent_ack` for that message ID, and answer
+  **through the already verified ego-browser ChatGPT page**.
+  If no session ID is given, register once per active harness/chat.
+  Registration merely announces an available inbox: it neither grants
+  filesystem permissions nor proves a running turn.
 - **Identity and duplicates:** don't let one harness claim to be another;
   use the harness ID as actually known in the local runtime. The
   registered name is self-declared in this initial implementation;
-  never misrepresent it as an authenticated Magpie agent identity. On
-  resuming a new harness turn, only reuse a session ID if it belongs to
-  the same intended chat and project. If the harness exits, the mailbox
-  can hold a pending command but cannot wake the harness; never claim
-  delivery until a local poll occurs. Reuse the same message ID for tool
-  retries, not for distinct commands.
+  never misrepresent it as an authenticated Magpie agent identity. Reuse a
+  session ID only for the same intended chat, project and harness. If the
+  harness exits, the mailbox can hold a pending command but cannot wake the
+  harness by itself — only the local startup permission allows a wake. Reuse
+  the same message ID for tool retries, not for distinct commands.
 
 The existing native Codex launch/queue MCP tools may still start a native
-Codex turn where supported. For other harnesses, this inbox is a
-**running-agent message channel**, not a universal remote launcher.
+Codex turn where supported. `agent_message_send` is the general command path:
+it delivers to a live session, or wakes the named harness when local
+permission allows.
 
 ## On first use of a conversation
 
@@ -148,11 +172,21 @@ to retrieve/use them.
 
 ## Automatic back-and-forth during the active task
 
+**Do the work, don't ask whether to do the work.** A command that is inside the
+already-authorized project, chat and permission scope is carried out directly.
+Neither peer asks the other to confirm an intermediate step, re-approve the
+same task, or acknowledge receipt before starting.
+
 1. The recipient **carries out the current REQUEST** using its native tools and authorized scope. It can choose to return a concise RESULT or make a genuine counter-request when the next action belongs to the other side.
 2. The local agent sends needed messages through the **same ego page**, waits for ChatGPT's reply to finish and reads the new content. If that content requests a permitted action from the local agent, **perform it directly without asking the user to confirm every intermediate step**; then send the useful result. If it is an answer to the local agent's question, use it and continue.
 3. Keep exchanging **only when there is a concrete next action or needed information**. No meaningless HELLO, ACK, ACCEPTED, RECEIVED, “shall I continue?” or compulsory “reply DONE” loops. Do not repeatedly read the whole browser transcript if the documented ego API provides a narrower read. Track the last processed message/task checkpoint using the harness's already available state.
 4. Prevent duplicates: distinguish already processed replies, do not retry an uncertain Send until its outcome has been checked, and do not start concurrent loops on one composer. If an identical exchange produces no progress, report a blocker rather than loop endlessly.
-5. Continue automatically **only while the native harness turn is actually active**. This Skill does not install a daemon or keep an exited agent running. If the browser requires sign-in/CAPTCHA or switches to an unverified conversation, pause and hand off to the user. A request outside previously authorized project, deployment, credential or privilege scope still needs explicit approval under that runtime's native policy.
+5. Continue automatically **only while the native harness turn is actually active**. A wake starts that turn; it does not install a daemon. If the browser requires sign-in/CAPTCHA or switches to an unverified conversation, pause and hand off to the user. A request outside previously authorized project, deployment, credential or privilege scope still needs explicit approval under that runtime's native policy.
+
+The only real hand-off to the user is an genuine obstacle: a missing
+capability, a required sign-in or CAPTCHA, an ambiguous target, a permission
+the local policy denies, or a scope change. Report that once as `BLOCKED` with
+the concrete reason, and keep working on everything else that is unblocked.
 
 ## Native-harness compatibility
 

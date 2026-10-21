@@ -1,7 +1,8 @@
 import { createProjectTools, projectRoots } from './src/projects.mjs';
 import { createChatSessions } from './skills/magpie-codex-collab/chat-session.mjs';
 import { createNativeCollab } from './src/native-collab.mjs';
-import { createPeerMessages, normalizeHarness } from './src/peer-messages.mjs';
+import { createPeerMessages, normalizeHarness, normalizePeerChatUrl } from './src/peer-messages.mjs';
+import { createPeerWake, WAKE_MODES, sessionLiveness } from './src/peer-wake.mjs';
 import { createHarnessRunner } from './src/harness-runner.mjs';
 import { createDshDesktopFocus } from './src/dsh-desktop-focus.mjs';
 import { existsSync } from 'node:fs';
@@ -37,6 +38,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   const codex = createCodexTasks(options);
   const peers = createPeerMessages();
   const harnessRunner = createHarnessRunner(options);
+  const peerWake = createPeerWake({ options, peers, harnessRunner, codex });
   const dshDesktopFocus = createDshDesktopFocus(options);
   const chat = createChatSessions({projectRoots:()=>projectRoots(options)});
   const nativeCollab = createNativeCollab(options,{chatSessions:chat,projectRoots:()=>projectRoots(options)});
@@ -57,8 +59,8 @@ export const MagpieProjectReview = async (_input, options = {}) => {
   };
   const harnessTools = {
     agent_desktop_focus: { description: 'Request official DeepSeek Harness Desktop window activation through dsh://open. ONLY FOCUSES/OPENS the Desktop UI; it DOES NOT send a task, select a DSH session, or prove execution. Requires local Harness-launch permission. Use agent_message_send only if a matching dsh Desktop agent session is already registered and polling.', args: { harness: arg('Must be DeepSeek Harness or dsh; other agent names are rejected') }, execute: wrap(dshDesktopFocus) },
-    agent_run: { description: 'Start EXACTLY the user-requested harness. Codex uses existing native Desktop or app-server; Claude Code/DeepSeek Harness (dsh) use their documented CLI (not Desktop). Never substitute. Separate local Agent 启动权限 is required, and only allowed projects are accessible. Dispatch does not mean task completed.', args: {
-      harness: arg('Required user-selected harness: codex, claude, dsh (DeepSeek Harness); never substitute'),
+    agent_run: { description: 'Start EXACTLY the user-requested harness. Codex uses existing native Desktop or app-server; Claude Code/DeepSeek Harness (dsh) use their documented CLI (not Desktop). Never substitute. Separate local Agent 启动权限 is required, and only allowed projects are accessible. Dispatch does not mean task completed. For a command-driven exchange with an already bound harness, prefer agent_message_send; its wake path adopts the mailbox automatically.', args: {
+      harness: arg('Required user-selected harness: ' + Object.keys(WAKE_MODES).join(', ') + '; never substitute'),
       project: arg('Exact locally authorized project name'),
       prompt: arg('The actual authorized instruction, max 12000 chars'),
       chatUrl: {type:'string',description:'Exact current ChatGPT conversation URL supplied by the user; required for native Codex Desktop and ego-browser collaboration'},
@@ -113,9 +115,41 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     agent_ack: { description: 'LOCAL AGENT ONLY. Mark a previously polled peer command processed. No implicit approval of unrelated actions.', args: { sessionId: arg('Registered session ID'), chatUrl: arg('Exact bound ChatGPT URL'), messageId: arg('Original message ID') }, execute: wrap(peers.acknowledge) },
     agent_sessions: { description: 'Read locally registered peer harness sessions, their project labels, ChatGPT binding and queued counts. Does NOT mean those agents can be launched or are executing.', args: {}, execute: wrap(() => peers.list()) },
     agent_message_status: { description: 'Read routing status of a message to an agent: queued, delivered (polled), or acked. No status confirms execution.', args: { sessionId: arg('Registered session ID'), chatUrl: arg('Exact bound ChatGPT URL'), messageId: arg('Optional message ID') }, execute: wrap(peers.status) },
-    agent_message_send: { description: 'Send a user-directed command to the EXACT harness the user names (e.g. claude, codex, opencode), never a substitute. Automatically routes to the one registered session for that harness and exact verified ChatGPT conversation; optionally narrow by project or execution mode. This queues only and does not launch a stopped Desktop/CLI process. Separate local permission required.', args: { harness: { type: 'string', description: 'User-selected harness name, e.g. claude, codex, opencode. REQUIRED when sessionId omitted. Do not guess or silently substitute.' }, project: { type: 'string', description: 'Optional exact project label to distinguish multiple sessions of one harness.' }, mode: { type: 'string', enum: ['desktop','cli','app-server','ide','other'], description: 'Optional exact execution mode to distinguish multiple sessions.' }, sessionId: { type: 'string', description: 'Optional exact session ID if multiple sessions of the SAME requested harness match; not usually needed.' }, chatUrl: arg('Exact bound ChatGPT conversation URL supplied by the user or verified through ego-browser'), taskId: arg('Stable task ID'), messageId: arg('Unique message ID for idempotency on tool retries'), command: { type: 'string', enum: ['REQUEST','RESULT','UPDATE','BLOCKED','DONE'], description: 'Message intent, not a permanent sender role' }, message: arg('User request or message, max 4000 characters') }, execute: wrap(a => {
+    agent_message_send: { description: 'Send a user-directed command to the EXACT harness the user names (codex, claude, dsh), never a substitute. Delivers to the one registered session for that harness and exact verified ChatGPT conversation. When the user selected a harness that is not currently running, and local Agent startup permission is enabled, the SAME command also wakes that harness once (adopting its mailbox session) instead of waiting for the user to start it. A launch is a dispatch receipt, never proof of execution.', args: { harness: { type: 'string', description: 'User-selected harness name: codex, claude or dsh. REQUIRED when sessionId omitted. Do not guess or silently substitute.' }, project: { type: 'string', description: 'Exact project label; required to wake a stopped harness. Also distinguishes multiple sessions of one harness.' }, mode: { type: 'string', enum: ['desktop','cli','app-server','ide','other'], description: 'Optional exact execution mode to distinguish multiple sessions.' }, sessionId: { type: 'string', description: 'Optional exact session ID if multiple sessions of the SAME requested harness match; not usually needed.' }, chatUrl: arg('Exact bound ChatGPT conversation URL supplied by the user or verified through ego-browser'), taskId: arg('Stable task ID'), messageId: arg('Unique message ID for idempotency on tool retries; also deduplicates a wake'), command: { type: 'string', enum: ['REQUEST','RESULT','UPDATE','BLOCKED','DONE'], description: 'Message intent, not a permanent sender role' }, message: arg('User request or message, max 4000 characters'), wake: { type: 'boolean', description: 'Optional auto-wake control. Default true when local Agent startup permission is enabled: if the requested harness has no live polling session, wake it once with this same command. Set false to only queue for an already running harness.' } }, execute: wrap(a => {
       if (options.peerMessagingEnabled !== true) throw Error('Peer messaging is disabled in local Magpie settings');
-      return peers.send(a);
+      // Refuse an unadapted harness before talking about permissions, so the
+      // caller learns the real reason instead of a misleading hint.
+      const selected = normalizeHarness(a.harness);
+      if (!WAKE_MODES[selected])
+        throw Error('No registered session for harness "' + selected + '" in this conversation, and this build has no wake adapter for it. Supported harnesses: ' + Object.keys(WAKE_MODES).join(', ') + '. No substitute was used.');
+      const canWake = a.wake !== false && options.agentLaunchEnabled === true;
+      if (!canWake) {
+        // Queue-only: report a missing session honestly instead of implying the
+        // harness received something it will never poll.
+        try { return peers.send(a); }
+        catch (error) {
+          if (!/no registered session/i.test(error.message)) throw error;
+          throw Error(error.message.replace(/\s+$/, '') + '.' + (a.wake === false
+            ? ' Sending with wake:false only queues to a session that is already registered.'
+            : ' Enable "允许 ChatGPT 启动指定 Harness" locally so this command may wake that harness.'));
+        }
+      }
+      // A live harness drains its own mailbox, and a session provisioned by a
+      // recent wake gets time to start. Neither case launches anything.
+      const found = peerWake.existingSession({ harness: selected,
+        project: a.project, chatUrl: normalizePeerChatUrl(a.chatUrl) });
+      const liveness = found.ambiguous ? null : sessionLiveness(found.session);
+      if (found.ambiguous || liveness === 'live' || liveness === 'starting')
+        return peers.send(a);
+      // Nothing is polling this binding (or a previous wake went quiet).
+      // Queue the command, then start the named harness exactly once.
+      const wake = peerWake.wake({ ...a, harness: selected });
+      // `state` stays the mailbox state of this message; the process start is
+      // reported separately so a queued command is never read as "executing".
+      return JSON.stringify({ ...wake.queued, sessionId: wake.sessionId,
+        harness: wake.harness, mode: wake.mode, wakeState: wake.state,
+        wakeTaskId: wake.taskId, wakeFailedReason: wake.reason || null,
+        wake, confirmedExecution: false });
     }) },
   };
   const projectsWithStatus = async () => {
@@ -132,7 +166,7 @@ export const MagpieProjectReview = async (_input, options = {}) => {
     return JSON.stringify({
       ...data,
       codex: {
-        integrationVersion: '0.4.32-alpha.1',
+        integrationVersion: '0.4.33-alpha.1',
         toolsRegistered: true,
         toolCount: 27,
         pendingReviewCount,
@@ -141,6 +175,15 @@ export const MagpieProjectReview = async (_input, options = {}) => {
         permissionMode: resolveCodexPermissionMode(options),
         remoteAutoStart: remoteOn,
         remoteGateEnabled: process.platform === 'win32' && existsSync(remotePaths().codexEnabledFile),
+      },
+      // Lets ChatGPT know which harnesses it may actually wake in this build
+      // before it promises the user a harness will be started.
+      peerWake: {
+        enabled: options.peerMessagingEnabled === true && options.agentLaunchEnabled === true,
+        launchPermission: options.agentLaunchEnabled === true,
+        permissionMode: options.agentLaunchPermission === 'native' ? 'native' : 'read-only',
+        harnesses: Object.keys(WAKE_MODES),
+        note: 'Waking starts the named harness once and adopts its mailbox session. It is a dispatch receipt, not proof of execution.',
       },
     });
   };

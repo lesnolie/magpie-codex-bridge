@@ -77,6 +77,7 @@ export function desktopPrompt({project,goal,chatUrl,taskId,launchId}){
     '3. Only after the verification, run local chat-session prepare/activate for this TASK_ID and TARGET_CHAT.',
     '4. Do not assume the deep link started a turn. Do not use another ChatGPT chat.',
     '5. After pairing, follow the received command. Either peer may request actions or return results; use ego-browser for Web replies without a fixed reviewer/executor role.',
+    '6. Carry out an in-scope, already-authorized command directly. Do not ask for per-step confirmation and do not run a HELLO/ACK ceremony.',
     '',
     'USER GOAL:',
     goal

@@ -85,7 +85,7 @@ export function createHarnessRunner(options = {}, deps = {}) {
     j.child = null;
   }
   return {
-    launch({ harness, project, prompt, chatUrl }={}) {
+    launch({ harness, project, prompt, chatUrl, peerMailbox }={}) {
       if (options.agentLaunchEnabled !== true)
         throw Error('Agent CLI launch is disabled in local Magpie settings');
       const selected = normalizeHarness(harness);
@@ -137,13 +137,26 @@ export function createHarnessRunner(options = {}, deps = {}) {
         if(j.state === 'running') { complete(j,'timeout',null,'Harness CLI exceeded the local safety time limit');child.kill(); }
       },timeLimit);
       j.timer.unref?.();
+      // A woken harness must be able to read the very command that woke it and
+      // answer in the same conversation. The exact mailbox identity is passed in
+      // so the agent adopts that session instead of inventing a second one.
+      const mailbox = peerMailbox && typeof peerMailbox.sessionId === 'string'
+        ? ['PEER_MAILBOX_SESSION_ID: '+peerMailbox.sessionId,
+           'PEER_MAILBOX_MODE: '+(peerMailbox.mode || 'cli'),
+           'Adopt this EXACT sessionId with a single agent_register({... resumeExisting:true}) call',
+           'for this harness, project and chat URL, then agent_poll it for the waking command.',
+           'Acknowledge each command with agent_ack only after you actually processed it, and reply',
+           'in the SAME conversation through ego-browser. Never invent a second mailbox session.']
+        : ['No Magpie mailbox session was provisioned. Register one with agent_register before polling.'];
       const instruction = [
         'Invoke the installed magpie-web-collab Skill when available; use ego-browser for all Harness-to-Web messages.',
         'You and ChatGPT Web are peers; follow the actual command, not a fixed reviewer/executor role.',
         'TASK_ID: '+taskId,
         'HARNESS: '+selected,
         'PROJECT: '+project,
+        ...mailbox,
         'During this active agent turn, work on the task, send useful REQUEST/RESULT messages through ego-browser, read new Web replies and continue when actionable.',
+        'Do not ask the user or ChatGPT to confirm each step; carry out permitted, in-scope work directly.',
         'No repeated HELLO/ACK messages, no assumed reviewer role, and no claims of execution based only on opening a window.',
         'Work only in the supplied project and obey your native local permission policy.',
         url ? 'ChatGPT Web conversation: '+url : 'No verified ChatGPT conversation was provided. Do not guess one.',

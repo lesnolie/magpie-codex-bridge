@@ -80,6 +80,28 @@ test('running CLI task blocks a second start and can be cancelled',()=>{
   assert.equal(JSON.parse(runner.cancel({harness:'claude',project:'TMN',taskId:a.taskId})).state,'cancelled');
   assert.throws(()=>runner.status({harness:'dsh',taskId:a.taskId}),/harness mismatch/);
 });
+test('a woken harness is told to adopt the provisioned mailbox session',()=>{
+  const {runner,launches}=setup();
+  const r=JSON.parse(runner.launch({harness:'claude',project:'TMN',prompt:'Continue',
+    chatUrl:CHAT,peerMailbox:{sessionId:'session-abc',mode:'cli'}}));
+  assert.equal(r.state,'running');
+  const input=launches[0].child.input;
+  assert.match(input,/PEER_MAILBOX_SESSION_ID: session-abc/);
+  assert.match(input,/PEER_MAILBOX_MODE: cli/);
+  assert.match(input,/resumeExisting:true/);
+  assert.match(input,/Never invent a second mailbox session/);
+  assert.match(input,/Do not ask the user or ChatGPT to confirm each step/);
+  launches[0].child.emit('close',0);
+});
+
+test('a launch without a mailbox session says to register before polling',()=>{
+  const {runner,launches}=setup();
+  runner.launch({harness:'claude',project:'TMN',prompt:'Solo run'});
+  assert.match(launches[0].child.input,/No Magpie mailbox session was provisioned/);
+  assert.match(launches[0].child.input,/agent_register before polling/);
+  launches[0].child.emit('close',0);
+});
+
 test('Windows invokes only a fixed shim command; task text stays in stdin',()=>{
   const calls=[];
   const spawn=(file,args,opts)=>{

@@ -137,7 +137,7 @@ function discoveryResult(id) {
       supportedVersions: [MODERN_MCP_VERSION],
       capabilities: { tools: {} },
       _meta: SERVER_META,
-      instructions: 'Read-only source and agent-session metadata are always available. Codex execution and peer message sends have separate locally configured permission gates. Peer message sends queue commands for an already running agent and cannot wake a stopped process; only a local agent may register, poll or acknowledge.' ,
+      instructions: 'Read-only source and agent-session metadata are always available. Codex execution, agent launches and peer message sends each have a separate locally configured permission gate. agent_message_send queues a command to the named harness and, only when the local launch permission is enabled, may start that harness once so it can consume the command; a launch is never proof of execution. Only a local agent may register, poll or acknowledge.' ,
       ttlMs: 0,
       cacheScope: 'private',
     },

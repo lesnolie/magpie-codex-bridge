@@ -1,4 +1,57 @@
-# Magpie Local Project Review (v0.4.32 alpha)
+# Magpie Local Project Review (v0.4.33 alpha)
+
+## Closed loop: ChatGPT Web ⇄ Magpie ⇄ harness ⇄ ego-browser ⇄ ChatGPT Web
+
+ChatGPT can now start the conversation from a cold machine state, and both
+peers act on the command they receive instead of trading confirmations.
+
+```text
+ChatGPT Web -> Magpie MCP -> agent_message_send
+                               |-- live session?  -> queue for its next poll
+                               `-- stopped?       -> queue + wake that harness once
+harness -> ego-browser -> exact ChatGPT conversation -> ChatGPT continues
+```
+
+`agent_message_send({harness, project, chatUrl, taskId, messageId, command, message})`
+is the single command entry point:
+
+- **Live harness** — a registration whose `lastPollAt` is within 2 minutes
+  drains its own mailbox. The command is queued and nothing is launched.
+- **Stopped harness** — when the local **允许 ChatGPT 启动指定 Harness** switch
+  is on, the same call provisions the mailbox session, queues the command
+  there, then starts that one harness with instructions to adopt that exact
+  `PEER_MAILBOX_SESSION_ID`. The harness polls the waking command itself, acks
+  it after processing, and answers in the same ChatGPT conversation through
+  ego-browser.
+- **Startup permission off** — the command is queued only, and the response
+  says so. `wake:false` explicitly requests queue-only behavior.
+
+Waking covers **codex** (headless app-server, so nobody has to press Send),
+**claude** and **dsh** (their own CLIs). Any other harness name returns a clear
+"no wake adapter" error; the plugin never substitutes a different runtime, and
+an ambiguous binding is never resolved by launching yet another process.
+
+Returned states keep the difference between *routing* and *execution*:
+
+| field | meaning |
+| --- | --- |
+| `state` | mailbox state of this message: `queued` |
+| `wakeState` | process dispatch: `running` / `wake-failed` |
+| `queuedOnly` | the harness was **not** started; the command still waits |
+| `confirmedExecution` | always `false` here — only a real reply or a later status proves work |
+
+A failed wake still leaves the command in the mailbox, so starting that harness
+by hand later picks the work up instead of losing it. Repeating the same
+`messageId` returns the original receipt and never starts a second process.
+
+### No confirmation ceremony
+
+Both Skills state the same rule: a command inside the already-authorized
+project, chat and permission scope is carried out directly. Neither peer asks
+"shall I proceed?" or requires HELLO/ACK/DONE acknowledgment rounds. `BLOCKED`
+is reserved for a real obstacle — a missing capability, sign-in/CAPTCHA, an
+ambiguous target, a denied permission, or a genuine scope change.
+
 
 ## Experimental DSH Desktop auto-inbox (opt-in, needs real-device verification)
 
@@ -141,17 +194,18 @@ with native tools. Do not guess file paths, invent download APIs or
 execute downloaded code without authorization. This rule is in both
 collaboration Skills, not in the upstream ego-browser Skill.
 
-**Limits:** An exited Desktop/CLI agent cannot poll and therefore cannot
-be automatically reactivated by the mailbox. Registered harness names
-are self-declared session labels, not independently authenticated
-Magpie agent identities. Existing source-inspection projects continue
-to come from the Codex Desktop registry; registering a mailbox session
-does **not** expand file permissions. Generic Desktop attach and launch for other, unadapted harnesses remains unimplemented; using
-Magpie's Agents page to select models does not itself provide those
-process-control APIs. Production use requires a real-machine round-trip
-with ego and Magpie MCP on the user's machine.
+**Limits:** A stopped Desktop GUI session cannot be resumed into the same
+window by Magpie, and a running harness still polls only while its own turn is
+active. Registered harness names are self-declared session labels, not
+independently authenticated Magpie agent identities. Source-inspection projects
+still come from the Codex Desktop registry; registering a mailbox session does
+**not** expand file permissions. Waking targets codex, claude and dsh only —
+generic Desktop attach and launch for other, unadapted harnesses remains
+unimplemented, and using Magpie's Agents page to select models does not itself
+provide those process-control APIs. Production use requires a real-machine
+round-trip with ego and Magpie MCP on the user's machine.
 
-## Command-driven peer interaction (proposed design / Skill preview)
+## Command-driven peer interaction
 
 There is **no predetermined executor, reviewer, planner or owner**.
 ChatGPT Web and the local harness are peers. The **current command**

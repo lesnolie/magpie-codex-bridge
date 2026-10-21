@@ -59,14 +59,14 @@
       <div class="row">
         <div class="row-text">
           <label for="peerMessagingEnabled">允许 ChatGPT 发送 Agent 消息</label>
-          <p class="hint">仅向已在本地注册的 Agent 会话排队发送命令。Harness 在运行中通过 Magpie MCP 读取，回复通过 ego-browser 发往 ChatGPT Web。此开关不授权启动进程或扩大文件访问权限。</p>
+          <p class="hint">向本机已注册的 Agent 会话发送命令。若同时开启下面的「启动指定 Harness」，目标 Harness 没有在运行时，同一条命令会把它启动一次并接管其邮箱会话。Harness 回复通过 ego-browser 发往 ChatGPT Web。此开关本身不授权启动进程，也不扩大文件访问权限。</p>
         </div>
         <input class="switch" id="peerMessagingEnabled" type="checkbox">
       </div>
       <div class="row">
         <div class="row-text">
           <label for="agentLaunchEnabled">允许 ChatGPT 启动指定 Harness <span class="badge">实验</span></label>
-          <p class="hint">选择谁就启动谁：Codex 保持原生接口，新增 Claude Code CLI 和 DeepSeek Harness（dsh）CLI；不新增 OpenCode 启动。仅访问本机已授权项目，默认只读。不允许远程指定任意程序路径。</p>
+          <p class="hint">选择谁就启动谁：Codex 走 app-server 唤醒，Claude Code 和 DeepSeek Harness（dsh）走各自 CLI。只启动这三种；不新增 OpenCode 等未适配运行时。仅访问本机已授权项目，默认只读。不允许远程指定任意程序路径。</p>
         </div>
         <input class="switch" id="agentLaunchEnabled" type="checkbox">
       </div>

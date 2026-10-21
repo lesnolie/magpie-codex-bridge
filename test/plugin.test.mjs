@@ -18,7 +18,12 @@ writeFileSync(path.join(root, 'src', 'app.lua'), 'local hello = "world"\nprint(h
 writeFileSync(path.join(root, '.env'), 'PRIVATE_API_KEY=secret');
 writeFileSync(path.join(root, 'secret.key'), 'private');
 writeFileSync(path.join(base, 'outside.lua'), 'OUTSIDE');
-symlinkSync(path.join(base, 'outside.lua'), path.join(root, 'linked.lua'));
+// Windows rejects symlink creation unless Developer Mode or an elevated
+// process is used. Track availability so the symlink-escaping assertions run
+// where the prerequisite exists instead of failing the whole file at import.
+let symlinksSupported = true;
+try { symlinkSync(path.join(base, 'outside.lua'), path.join(root, 'linked.lua')); }
+catch (error) { if (error.code !== 'EPERM') throw error; symlinksSupported = false; }
 execFileSync('git', ['init', '-q', root]);
 const register = projects => writeFileSync(state, JSON.stringify({ 'local-projects': projects }));
 register({ tmn: {name:'TMN',rootPaths:[root]} });
@@ -44,9 +49,11 @@ test('reading and search are scoped to validated Codex paths; secrets and symlin
   assert.deepEqual(files.entries.map(e=>e.name), ['src']);
   assert.match(JSON.parse(await tools.read_file({project:'TMN',file:'src/app.lua',startLine:2})).text, /2: print\(hello\)/);
   assert.equal(JSON.parse(await tools.search_text({project:'TMN',query:'hello'})).matches.length,2);
-  for (const file of ['.env','secret.key','linked.lua','../outside.lua']) {
+  for (const file of ['.env','secret.key','../outside.lua']) {
     await assert.rejects(tools.read_file({project:'TMN',file}));
   }
+  if (symlinksSupported) await assert.rejects(tools.read_file({project:'TMN',file:'linked.lua'}),
+    /Symbolic|symlink|outside|Unknown|denied/i);
   const status = JSON.parse(await tools.git_status({project:'TMN'}));
   assert.equal(status.changes.some(x=>/\.env|key/.test(x)),false);
 });

@@ -1,12 +1,12 @@
 {
   "name": "magpie-codex-bridge",
-  "version": "0.4.33-alpha.1",
+  "version": "0.4.34-alpha.1",
   "description": "ChatGPT Web peer collaboration with locally authorized Codex, Claude Code and DeepSeek Harness",
   "type": "module",
   "main": "./index.mjs",
   "exports": "./index.mjs",
   "scripts": {
-    "check": "node --check index.mjs && node --check src/model-catalog.mjs && node --check page/model-catalog.js && node --check src/codex-review.mjs && node --check src/codex-binary.mjs && node --check src/codex-tasks.mjs && node --check src/peer-messages.mjs && node --check src/harness-runner.mjs && node --check src/peer-wake.mjs && node --check src/dsh-desktop-focus.mjs && node --check integrations/dsh-desktop-inbox/index.mjs && node --check src/projects.mjs && node --check src/remote-service.mjs && node --check scripts/cloudflare-mcp-manager.mjs && node --check page/app.js && node --check scripts/cloudflare-mcp-adapter.mjs && node --check skills/magpie-codex-collab/chat-session.mjs && node --check src/native-collab.mjs",
+    "check": "node --check index.mjs && node --check src/model-catalog.mjs && node --check page/model-catalog.js && node --check src/codex-review.mjs && node --check src/codex-binary.mjs && node --check src/codex-tasks.mjs && node --check src/peer-messages.mjs && node --check src/harness-runner.mjs && node --check src/dsh-desktop-manager.mjs && node --check scripts/dsh-desktop-installer.mjs && node --check src/peer-wake.mjs && node --check src/dsh-desktop-focus.mjs && node --check integrations/dsh-desktop-inbox/index.mjs && node --check src/projects.mjs && node --check src/remote-service.mjs && node --check scripts/cloudflare-mcp-manager.mjs && node --check page/app.js && node --check scripts/cloudflare-mcp-adapter.mjs && node --check skills/magpie-codex-collab/chat-session.mjs && node --check src/native-collab.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {
